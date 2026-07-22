@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/user/specter/internal/core"
@@ -88,8 +89,12 @@ func sample(doc *core.Document, schema *core.Schema, params map[string]string, s
 			// A property named like a path parameter is filled from the request,
 			// so the response is about the resource that was asked for.
 			if v, ok := params[name]; ok {
-				obj[name] = coerce(prop, v)
-				continue
+				if typed, usable := coerce(prop, v); usable {
+					obj[name] = typed
+					continue
+				}
+				// The requested value cannot be what the document says this
+				// property is, so a generated one is the only honest answer.
 			}
 			obj[name] = sample(doc, prop, params, seen, depth+1)
 		}
@@ -176,34 +181,51 @@ func stringValue(schema *core.Schema) string {
 
 // coerce converts a path parameter, which arrives as text, to the type the
 // schema declares — otherwise a numeric id comes back quoted.
-func coerce(schema *core.Schema, raw string) any {
+//
+// It reports whether the value could be represented in the documented type. It
+// often cannot: a path parameter is text, and GET /users/abc against a document
+// whose id is an integer has no integer in it. Echoing "abc" back anyway would
+// answer with a body this document rejects, which is the one thing this package
+// promises not to do, so the caller falls back to a generated value instead.
+// Realism is worth having, but not at the cost of the invariant it decorates.
+func coerce(schema *core.Schema, raw string) (any, bool) {
 	if schema == nil {
-		return raw
+		return raw, true
 	}
 	switch schema.Type {
 	case "integer":
-		n := 0
-		neg := false
-		for i, r := range raw {
-			if i == 0 && r == '-' {
-				neg = true
-				continue
-			}
-			if r < '0' || r > '9' {
-				return raw // not a number after all; echo it unchanged
-			}
-			n = n*10 + int(r-'0')
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return nil, false
 		}
-		if neg {
-			n = -n
+		return int(n), true
+	case "number":
+		f, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return nil, false
 		}
-		return n
-	case "number", "boolean":
-		// Left as text: a malformed value would be a worse answer than an
-		// honest string, and path parameters are documented as strings anyway.
-		return raw
+		return f, true
+	case "boolean":
+		b, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, false
+		}
+		return b, true
+	case "", "string":
+		// An enum names the only values the schema allows, and a parameter
+		// outside it is not one of them however well-formed it looks.
+		if len(schema.Enum) > 0 {
+			for _, allowed := range schema.Enum {
+				if s, ok := allowed.(string); ok && s == raw {
+					return raw, true
+				}
+			}
+			return nil, false
+		}
+		return raw, true
 	}
-	return raw
+	// An array or object in a path parameter is not something to guess at.
+	return nil, false
 }
 
 func resolve(doc *core.Document, name string) *core.Schema {

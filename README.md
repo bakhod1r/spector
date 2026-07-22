@@ -43,6 +43,10 @@ specter -graphql -dir ./graph -o graphql.json
 | `-o`          | Output file (defaults to stdout)                           |
 | `-all`        | Write openapi.json, grpc.json and graphql.json into `-o` (a directory) |
 | `-lint`       | Report routing problems instead of a document; exits 1 if any |
+| `-contract`   | Generate contract artefacts into this directory, e.g. `./contract` |
+| `-contract-format` | Comma-separated: `http`, `go`, `curl` (default: all three) |
+| `-contract-api` | Base URL the artefacts call (default: the document's first server) |
+| `-contract-package` | Package name for the generated Go tests (default: the directory name) |
 | `-mock`       | Serve the document as a mock API on an address, e.g. `:8080` |
 | `-mock-origin` | Comma-separated origins allowed to call the mock (default any) |
 | `-mock-credentials` | Allow cookies and `Authorization` headers on mock requests |
@@ -343,6 +347,59 @@ nothing — silence has to be reportable for the map to mean anything.
 
 `examples/deps` is a small service with real dependencies; `examples/shop` is
 in-memory on purpose and correctly shows none.
+
+## Contract artefacts
+
+A generated document is a claim, and until something executes it, nothing checks
+it. The service moves, the document does not, and they drift apart quietly —
+which is what makes a stale document worse than none: it is believed.
+
+`-contract` writes three artefacts that call the API and compare it against its
+own document:
+
+```sh
+specter -contract ./contract -dir ./api
+```
+
+| File | What it is for |
+| ---- | -------------- |
+| `requests.http` | Every endpoint as a runnable request, for VS Code's REST Client or the JetBrains HTTP client. Open, click Send. |
+| `contract_test.go` + `check.go` | The same requests as Go tests, for CI. Behind a `contract` build tag, so `go test ./...` is unaffected. |
+| `smoke.sh` | Status codes only, in POSIX shell — for a pipeline that has curl and nothing else. |
+
+```sh
+SPECTER_BASE_URL=http://localhost:8080 go test -tags contract ./contract
+SPECTER_BASE_URL=http://localhost:8080 sh contract/smoke.sh
+```
+
+Requests are runnable as written: path parameters are filled, required query and
+header parameters are sent, and request bodies are sampled from the schema, so
+they satisfy the document rather than needing to be edited first. Optional
+parameters are left out — a guessed value makes a call fail for a reason that is
+not the contract.
+
+What the Go tests assert:
+
+- **Status** is one of the documented codes. All of them count: a 404 the
+  document promises is the endpoint behaving, not failing.
+- **Content-Type** is JSON where a JSON body was documented.
+- **Shape** — required properties are present, types match, enum values are in
+  range. A property the response carries and the document does not is reported
+  and passes: the API growing past its document is worth knowing, but it is not
+  a broken contract.
+
+Failures name both sides, because which one is wrong is a judgement call:
+
+```
+GET /users: response.items[0].price: documented as a number, got a string
+```
+
+Flags: `-contract-format` selects `http,go,curl`; `-contract-api` sets the base
+URL (default: the document's first server); `-contract-package` names the Go
+package (default: the directory name).
+
+The output is source, like the admin panel — the first version is free and every
+version after it is yours.
 
 ## Mock server
 
@@ -695,6 +752,7 @@ internal/pbgo         *.pb.go -> gRPC document
 internal/graphqlsdl   .graphql -> GraphQL document
 internal/gqlgenx      gqlgen Go code -> GraphQL document
 internal/grpcx        gRPC invoke proxy (grpcurl)
+internal/contract     document -> .http, Go contract tests, smoke.sh
 internal/ui           embedded HTML console (single file, no assets)
 mount                 gin/echo/chi/stdlib/fiber/gorillamux mount helpers
 ```

@@ -71,17 +71,23 @@ func TestNumberInRangeExclusiveBounds(t *testing.T) {
 }
 
 func TestCoerce(t *testing.T) {
-	if got := coerce(nil, "42"); got != "42" {
-		t.Errorf("nil schema: = %v, want the raw text", got)
+	if got, ok := coerce(nil, "42"); !ok || got != "42" {
+		t.Errorf("nil schema: = %v, %v, want the raw text", got, ok)
 	}
-	if got := coerce(&core.Schema{Type: "integer"}, "-7"); got != -7 {
-		t.Errorf("negative int: = %v, want -7", got)
+	if got, ok := coerce(&core.Schema{Type: "integer"}, "-7"); !ok || got != -7 {
+		t.Errorf("negative int: = %v, %v, want -7", got, ok)
 	}
-	if got := coerce(&core.Schema{Type: "number"}, "1.5"); got != "1.5" {
-		t.Errorf("number stays text: = %v", got)
+	if got, ok := coerce(&core.Schema{Type: "number"}, "1.5"); !ok || got != 1.5 {
+		t.Errorf("number: = %v, %v, want the typed 1.5", got, ok)
 	}
-	if got := coerce(&core.Schema{Type: "string"}, "abc"); got != "abc" {
-		t.Errorf("string: = %v", got)
+	if got, ok := coerce(&core.Schema{Type: "string"}, "abc"); !ok || got != "abc" {
+		t.Errorf("string: = %v, %v", got, ok)
+	}
+
+	// A value that cannot be the documented type is refused rather than echoed:
+	// answering with it would produce a body this document rejects.
+	if got, ok := coerce(&core.Schema{Type: "integer"}, "abc"); ok {
+		t.Errorf("non-numeric integer: = %v, want it refused", got)
 	}
 }
 

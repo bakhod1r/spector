@@ -231,15 +231,36 @@ func TestPathParameterIsTypedNotQuoted(t *testing.T) {
 	}
 }
 
-// A non-numeric id is echoed rather than mangled into a number.
-func TestNonNumericPathParameterIsEchoedAsText(t *testing.T) {
+// A non-numeric id cannot be echoed into an integer field, so it is not echoed
+// at all.
+//
+// This is the echo giving way to the invariant it decorates. Echoing "abc" back
+// into a property the document types as an integer answers with a body this
+// document rejects — precisely the failure the package exists to avoid, and one
+// a generated client trips over immediately. Realism is worth having, but not
+// at the cost of the rule it was there to make vivid.
+func TestNonNumericPathParameterIsNotEchoedIntoATypedField(t *testing.T) {
 	doc := docWith(map[string]*core.Schema{
 		"User": {Type: "object", Properties: map[string]*core.Schema{"id": {Type: "integer"}}},
 	}, "/users/{id}", "get", okOp("User"))
 
 	obj := body(t, get(t, doc, http.MethodGet, "/users/abc")).(map[string]any)
+	if _, isString := obj["id"].(string); isString {
+		t.Errorf("id = %#v, a string where the document says integer", obj["id"])
+	}
+}
+
+// A string id, though, is echoed: there the requested value and the documented
+// type agree, and answering about some other resource would be the confusion
+// the echo exists to prevent.
+func TestStringPathParameterIsEchoed(t *testing.T) {
+	doc := docWith(map[string]*core.Schema{
+		"User": {Type: "object", Properties: map[string]*core.Schema{"id": {Type: "string"}}},
+	}, "/users/{id}", "get", okOp("User"))
+
+	obj := body(t, get(t, doc, http.MethodGet, "/users/abc")).(map[string]any)
 	if obj["id"] != "abc" {
-		t.Errorf("id = %v, want abc echoed unchanged", obj["id"])
+		t.Errorf("id = %v, want the requested abc", obj["id"])
 	}
 }
 

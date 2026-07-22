@@ -48,6 +48,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	sdkOut := fs.String("sdk-out", "", "directory the generated client is written into (default ./sdk)")
 	sdkPkg := fs.String("sdk-package", "", "package name for the generated Go client (default: client)")
 	watch := fs.Bool("watch", false, "stay running and regenerate whenever the scanned sources change")
+	contractOut := fs.String("contract", "", "generate contract artefacts into this directory (e.g. ./contract)")
+	contractFormat := fs.String("contract-format", "", "comma-separated: http, go, curl (default: all three)")
+	contractAPI := fs.String("contract-api", "", "base URL the artefacts call (default: the document's first server)")
+	contractPkg := fs.String("contract-package", "", "package name for the generated Go tests (default: the directory name)")
 	mockAddr := fs.String("mock", "", "serve the document as a mock API on this address (e.g. :8080)")
 	mockOrigins := fs.String("mock-origin", "", "comma-separated origins allowed to call the mock (default any)")
 	mockCreds := fs.Bool("mock-credentials", false, "allow cookies and Authorization headers on mock requests")
@@ -322,6 +326,51 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	// -contract writes artefacts that run against the API, so the document
+	// stops being a claim nobody checks.
+	if *contractOut != "" {
+		pkg := *contractPkg
+		if pkg == "" {
+			pkg = packageName(*contractOut)
+		}
+		var formats []string
+		for _, f := range strings.Split(*contractFormat, ",") {
+			if f = strings.TrimSpace(f); f != "" {
+				formats = append(formats, f)
+			}
+		}
+
+		files, gerr := specter.GenerateContract(cfg, specter.ContractOptions{
+			BaseURL: *contractAPI,
+			Package: pkg,
+			Formats: formats,
+		})
+		if gerr != nil {
+			return fail(gerr)
+		}
+		if err := os.MkdirAll(*contractOut, 0o755); err != nil {
+			return fail(err)
+		}
+		for _, f := range files {
+			path := filepath.Join(*contractOut, f.Name)
+			// smoke.sh is meant to be run, not sourced.
+			perm := os.FileMode(0o644)
+			if strings.HasSuffix(f.Name, ".sh") {
+				perm = 0o755
+			}
+			if err := os.WriteFile(path, f.Data, perm); err != nil {
+				return fail(err)
+			}
+			fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(f.Data))
+		}
+
+		dir := goPackagePath(*contractOut)
+		fmt.Fprintf(stderr, "\nspecter: run them against a live API with:\n"+
+			"  SPECTER_BASE_URL=http://localhost:8080 go test -tags contract %s\n"+
+			"  SPECTER_BASE_URL=http://localhost:8080 sh %s/smoke.sh\n", dir, dir)
+		return 0
+	}
+
 	// -mock serves rather than emits, so it does not return while it runs.
 	if *mockAddr != "" {
 		doc, derr := specter.Generate(cfg)
@@ -586,6 +635,18 @@ func applyConfigFile(cfg *specter.Config, fs *flag.FlagSet, path, dir string) er
 	cfg.AdminURL = fc.AdminURL
 	cfg.AccessKey = fc.AccessKey
 	return nil
+}
+
+// goPackagePath renders an output directory the way `go test` wants it. A
+// relative directory needs the ./ prefix to be a package pattern at all, and an
+// absolute one has to be left alone: trimming its leading slash would print a
+// path that does not exist.
+func goPackagePath(dir string) string {
+	slashed := filepath.ToSlash(dir)
+	if filepath.IsAbs(dir) {
+		return slashed
+	}
+	return "./" + strings.TrimPrefix(strings.TrimPrefix(slashed, "./"), "/")
 }
 
 // packageName turns an output directory into a legal Go package name.

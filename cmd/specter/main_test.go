@@ -465,3 +465,111 @@ func TestMissingNamedConfigExits1(t *testing.T) {
 		t.Errorf("exit = %d, want 1, stderr: %s", code, stderr)
 	}
 }
+
+// -contract writes artefacts that execute the document rather than restate it.
+func TestContractGeneratesEveryArtefact(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	out := filepath.Join(t.TempDir(), "contract")
+
+	code, _, stderr := exec(t, "-dir", dir, "-contract", out)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	for _, name := range []string{"requests.http", "contract_test.go", "check.go", "smoke.sh"} {
+		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
+			t.Errorf("%s was not written: %v", name, err)
+		}
+	}
+	if !strings.Contains(stderr, "-tags contract") {
+		t.Errorf("stderr = %q, want the run instructions", stderr)
+	}
+}
+
+// smoke.sh is meant to be run, and a file without the execute bit is a papercut
+// on the one artefact whose whole point is being cheap to run.
+func TestSmokeScriptIsExecutable(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	out := filepath.Join(t.TempDir(), "contract")
+
+	if code, _, stderr := exec(t, "-dir", dir, "-contract", out, "-contract-format", "curl"); code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	info, err := os.Stat(filepath.Join(out, "smoke.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Errorf("smoke.sh mode = %v, want the execute bit set", info.Mode().Perm())
+	}
+}
+
+func TestContractFormatSelectsArtefacts(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	out := filepath.Join(t.TempDir(), "contract")
+
+	if code, _, stderr := exec(t, "-dir", dir, "-contract", out, "-contract-format", "http"); code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "requests.http" {
+		t.Errorf("wrote %v, want only requests.http", entries)
+	}
+}
+
+func TestContractRejectsAnUnknownFormat(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	code, _, stderr := exec(t, "-dir", dir, "-contract", t.TempDir(), "-contract-format", "postman")
+	if code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "postman") {
+		t.Errorf("stderr = %q, want the bad format named", stderr)
+	}
+}
+
+// The base URL decides where every generated artefact points, so a flag that
+// was ignored would send a whole suite at the wrong host.
+func TestContractBaseURLReachesTheArtefacts(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	out := filepath.Join(t.TempDir(), "contract")
+
+	if code, _, stderr := exec(t, "-dir", dir, "-contract", out, "-contract-api", "https://staging.example.com"); code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "requests.http"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "@baseUrl = https://staging.example.com") {
+		t.Errorf("base URL was not applied:\n%s", data)
+	}
+}
+
+// The generated Go must compile, and its package clause has to match wherever
+// the user put it.
+func TestContractPackageNameFollowsTheDirectory(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	out := filepath.Join(t.TempDir(), "api-checks")
+
+	if code, _, stderr := exec(t, "-dir", dir, "-contract", out); code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "check.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "package apichecks") {
+		t.Errorf("package clause not derived from the directory:\n%s", firstLines(string(data), 12))
+	}
+}
+
+func firstLines(s string, n int) string {
+	lines := strings.SplitN(s, "\n", n+1)
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
+}

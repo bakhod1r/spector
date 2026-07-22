@@ -26,6 +26,7 @@ import (
 	stdlibadapter "github.com/user/specter/internal/adapter/stdlib"
 	"github.com/user/specter/internal/admin"
 	"github.com/user/specter/internal/advice"
+	"github.com/user/specter/internal/contract"
 	"github.com/user/specter/internal/core"
 	"github.com/user/specter/internal/gen"
 	"github.com/user/specter/internal/gqlgenx"
@@ -286,6 +287,31 @@ func GenerateAdmin(cfg Config, opts AdminOptions) ([]AdminFile, error) {
 		return nil, err
 	}
 	return admin.Generate(doc, opts)
+}
+
+// ContractOptions configures the generated contract artefacts.
+type ContractOptions = contract.Options
+
+// ContractFile is one generated file, named relative to the output directory.
+type ContractFile = contract.File
+
+// GenerateContract builds artefacts that exercise the API against its own
+// document: a .http file for the editor, Go tests for CI, and a shell smoke
+// test for a pipeline with nothing installed.
+//
+// A generated document is a claim, and until it is executed nothing checks it.
+// A document and the service it describes drift apart quietly, which is the one
+// failure that makes documentation worse than none — it is believed. These
+// artefacts are what makes the drift fail a build instead.
+//
+// Like the admin panel, the output is source rather than a runtime: the first
+// version is free and every version after it belongs to the project.
+func GenerateContract(cfg Config, opts ContractOptions) ([]ContractFile, error) {
+	doc, err := Generate(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return contract.Generate(doc, opts)
 }
 
 // AdminModel reports the resources GenerateAdmin would produce, without
