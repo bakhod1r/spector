@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"io"
+	// Aliased: `fs` is the flag set inside run, and one meaning per name is
+	// worth more than the shorter import.
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/user/specter"
 )
@@ -24,7 +29,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	dirFlag := fs.String("dir", ".", "directory to scan")
 	configPath := fs.String("config", "", "JSON config file (default: specter.json in -dir, if present)")
-	adapter := fs.String("adapter", "", "framework adapter (gin); autodetected if empty")
+	adapter := fs.String("adapter", "", "framework adapter (gin, chi, echo, fiber, gorillamux, stdlib); autodetected if empty")
 	title := fs.String("title", "", "API title (defaults to directory name)")
 	version := fs.String("version", "0.1.0", "API version")
 	out := fs.String("o", "", "output file (defaults to stdout)")
@@ -39,12 +44,29 @@ func run(args []string, stdout, stderr io.Writer) int {
 	adminPrefix := fs.String("admin-prefix", "/admin", "path the generated panel is served under")
 	adminPkg := fs.String("admin-package", "", "package name for the generated panel (default: the directory name)")
 	adminImport := fs.String("admin-import", "", "import path of the generated package (default: derived from go.mod)")
+	sdkLang := fs.String("sdk", "", "generate a typed client instead of a document: ts or go")
+	sdkOut := fs.String("sdk-out", "", "directory the generated client is written into (default ./sdk)")
+	sdkPkg := fs.String("sdk-package", "", "package name for the generated Go client (default: client)")
+	watch := fs.Bool("watch", false, "stay running and regenerate whenever the scanned sources change")
 	mockAddr := fs.String("mock", "", "serve the document as a mock API on this address (e.g. :8080)")
 	mockOrigins := fs.String("mock-origin", "", "comma-separated origins allowed to call the mock (default any)")
 	mockCreds := fs.Bool("mock-credentials", false, "allow cookies and Authorization headers on mock requests")
 	mockMaxAge := fs.Int("mock-max-age", 0, "seconds a browser may cache the mock's CORS preflight")
+	mcpFlag := fs.Bool("mcp", false, "serve specter as an MCP server over stdio")
+	oasVersion := fs.String("openapi-version", "3.0", "OpenAPI version to emit: 3.0 or 3.1")
+	postman := fs.Bool("postman", false, "export a Postman collection v2.1 (Insomnia imports it too)")
+	markdown := fs.Bool("markdown", false, "export static Markdown API docs")
+	mockAuth := fs.Bool("mock-auth", false, "mock enforces documented security: missing credentials get 401")
+	genTests := fs.String("gen-tests", "", "write a Go integration test file to this path (e.g. ./apitest/api_test.go)")
+	testPkg := fs.String("test-package", "", "package name for the generated test file (default: apitest)")
+	coverageFlag := fs.Bool("coverage", false, "report documentation coverage instead of a document")
+	coverageMin := fs.Float64("coverage-min", 0, "exit 1 when coverage is below this percent (implies -coverage)")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+
+	if *mcpFlag {
+		return runMCP(stderr)
 	}
 
 	cfg := specter.Config{
@@ -90,53 +112,58 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fail(err)
 		}
-
-		type artifact struct {
-			file string
-			doc  any
-			err  error
-			// empty reports whether the scan found nothing, which is not a
-			// failure: a REST-only project has no protos and should not be
-			// handed an empty grpc.json pretending otherwise.
-			empty bool
-		}
-
-		doc, derr := specter.Generate(cfg)
-		gdoc, gerr := specter.GenerateGrpc(cfg)
-		qdoc, qerr := specter.GenerateGraphql(cfg)
-
-		artifacts := []artifact{
-			{"openapi.json", doc, derr, doc != nil && len(doc.Paths) == 0},
-			{"grpc.json", gdoc, gerr, gdoc != nil && len(gdoc.Services) == 0},
-			{"graphql.json", qdoc, qerr, qdoc != nil && len(qdoc.Queries) == 0 && len(qdoc.Types) == 0},
-		}
-
-		written := 0
-		for _, a := range artifacts {
-			if a.err != nil {
-				fmt.Fprintf(stderr, "specter: %s: %v\n", a.file, a.err)
-				continue
+		emit := func() int {
+			type artifact struct {
+				file string
+				doc  any
+				err  error
+				// empty reports whether the scan found nothing, which is not a
+				// failure: a REST-only project has no protos and should not be
+				// handed an empty grpc.json pretending otherwise.
+				empty bool
 			}
-			if a.empty {
-				fmt.Fprintf(stderr, "specter: %s skipped: nothing found in %s\n", a.file, *dirFlag)
-				continue
+
+			doc, derr := specter.Generate(cfg)
+			gdoc, gerr := specter.GenerateGrpc(cfg)
+			qdoc, qerr := specter.GenerateGraphql(cfg)
+
+			artifacts := []artifact{
+				{"openapi.json", doc, derr, doc != nil && len(doc.Paths) == 0},
+				{"grpc.json", gdoc, gerr, gdoc != nil && len(gdoc.Services) == 0},
+				{"graphql.json", qdoc, qerr, qdoc != nil && len(qdoc.Queries) == 0 && len(qdoc.Types) == 0},
 			}
-			data, merr := json.MarshalIndent(a.doc, "", "  ")
-			if merr != nil {
-				return fail(merr)
+
+			written := 0
+			for _, a := range artifacts {
+				if a.err != nil {
+					fmt.Fprintf(stderr, "specter: %s: %v\n", a.file, a.err)
+					continue
+				}
+				if a.empty {
+					fmt.Fprintf(stderr, "specter: %s skipped: nothing found in %s\n", a.file, *dirFlag)
+					continue
+				}
+				data, merr := json.MarshalIndent(a.doc, "", "  ")
+				if merr != nil {
+					return fail(merr)
+				}
+				path := filepath.Join(dir, a.file)
+				if werr := os.WriteFile(path, append(data, '\n'), 0o644); werr != nil {
+					return fail(werr)
+				}
+				fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(data)+1)
+				written++
 			}
-			path := filepath.Join(dir, a.file)
-			if werr := os.WriteFile(path, append(data, '\n'), 0o644); werr != nil {
-				return fail(werr)
+			if written == 0 {
+				fmt.Fprintln(stderr, "specter: nothing was written")
+				return 1
 			}
-			fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(data)+1)
-			written++
+			return 0
 		}
-		if written == 0 {
-			fmt.Fprintln(stderr, "specter: nothing was written")
-			return 1
+		if code := emit(); !*watch {
+			return code
 		}
-		return 0
+		return watchLoop(cfg.Dir, stderr, emit)
 	}
 
 	// -admin writes a project rather than a document: Go source you own and
@@ -182,6 +209,119 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	// -sdk writes a typed client the caller owns, in the same spirit as -admin:
+	// source to commit and edit, not a runtime to depend on.
+	if *sdkLang != "" {
+		dir := *sdkOut
+		if dir == "" {
+			dir = "./sdk"
+		}
+		emit := func() int {
+			files, gerr := specter.GenerateSDK(cfg, specter.SDKOptions{
+				Lang:    *sdkLang,
+				Package: *sdkPkg,
+			})
+			if gerr != nil {
+				return fail(gerr)
+			}
+			for _, f := range files {
+				path := filepath.Join(dir, f.Name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					return fail(err)
+				}
+				if err := os.WriteFile(path, f.Data, 0o644); err != nil {
+					return fail(err)
+				}
+				fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(f.Data))
+			}
+			return 0
+		}
+		if code := emit(); !*watch {
+			return code
+		}
+		return watchLoop(cfg.Dir, stderr, emit)
+	}
+
+	// writeOut sends bytes to -o or stdout, shared by the export modes.
+	writeOut := func(data []byte) int {
+		if len(data) == 0 || data[len(data)-1] != '\n' {
+			data = append(data, '\n')
+		}
+		if *out == "" {
+			if _, werr := stdout.Write(data); werr != nil {
+				return fail(werr)
+			}
+			return 0
+		}
+		if werr := os.WriteFile(*out, data, 0o644); werr != nil {
+			return fail(werr)
+		}
+		fmt.Fprintln(stderr, "wrote", *out)
+		return 0
+	}
+
+	// -postman and -markdown are exports of the same document the default mode
+	// emits, so they share its generation and only differ in rendering.
+	if *postman || *markdown {
+		doc, derr := specter.Generate(cfg)
+		if derr != nil {
+			return fail(derr)
+		}
+		if len(doc.Paths) == 0 {
+			warnEmpty("routes", *dirFlag)
+		}
+		if *postman {
+			data, perr := specter.ExportPostman(doc)
+			if perr != nil {
+				return fail(perr)
+			}
+			return writeOut(data)
+		}
+		return writeOut(specter.ExportMarkdown(doc))
+	}
+
+	// -gen-tests writes a test file rather than a document. The path is given
+	// in full (not a directory) because Go cares that it ends in _test.go.
+	if *genTests != "" {
+		doc, derr := specter.Generate(cfg)
+		if derr != nil {
+			return fail(derr)
+		}
+		if len(doc.Paths) == 0 {
+			warnEmpty("routes", *dirFlag)
+		}
+		data := specter.GenerateTests(doc, specter.TestgenOptions{Package: *testPkg})
+		if !strings.HasSuffix(*genTests, "_test.go") {
+			fmt.Fprintln(stderr, "specter: warning: file does not end in _test.go, so `go test` will not run it")
+		}
+		if err := os.MkdirAll(filepath.Dir(*genTests), 0o755); err != nil {
+			return fail(err)
+		}
+		if err := os.WriteFile(*genTests, data, 0o644); err != nil {
+			return fail(err)
+		}
+		fmt.Fprintf(stderr, "wrote %s (%d bytes)\nrun with: SPECTER_BASE_URL=http://localhost:8080 go test %s\n",
+			*genTests, len(data), filepath.Dir(*genTests))
+		return 0
+	}
+
+	// -coverage answers "how documented is this?" rather than emitting the
+	// document; like -lint its exit code is the result so CI can gate on it.
+	if *coverageFlag || *coverageMin > 0 {
+		doc, derr := specter.Generate(cfg)
+		if derr != nil {
+			return fail(derr)
+		}
+		report := specter.MeasureCoverage(doc)
+		fmt.Fprint(stdout, report.Render())
+		if *coverageMin > 0 && report.Percent() < *coverageMin {
+			fmt.Fprintf(stderr, "specter: coverage %.1f%% is below the required %.1f%%\n",
+				report.Percent(), *coverageMin)
+			return 1
+		}
+		return 0
+	}
+
 	// -mock serves rather than emits, so it does not return while it runs.
 	if *mockAddr != "" {
 		doc, derr := specter.Generate(cfg)
@@ -191,6 +331,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		opts := specter.MockOptions{
 			AllowCredentials: *mockCreds,
 			MaxAge:           *mockMaxAge,
+			EnforceAuth:      *mockAuth,
 		}
 		for _, o := range strings.Split(*mockOrigins, ",") {
 			if o = strings.TrimSpace(o); o != "" {
@@ -237,42 +378,65 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	var v any
-	switch {
-	case *grpc:
-		gdoc, err := specter.GenerateGrpc(cfg)
+	// regen builds the requested document and marshals it. It is a closure
+	// rather than straight-line code so -watch can re-run exactly what the
+	// first pass did, with the same flags applied.
+	regen := func() ([]byte, error) {
+		var v any
+		switch {
+		case *grpc:
+			gdoc, err := specter.GenerateGrpc(cfg)
+			if err != nil {
+				return nil, err
+			}
+			if len(gdoc.Services) == 0 {
+				warnEmpty("gRPC services", orDir(*protoDir))
+			}
+			v = gdoc
+		case *graphql:
+			qdoc, err := specter.GenerateGraphql(cfg)
+			if err != nil {
+				return nil, err
+			}
+			if len(qdoc.Queries) == 0 && len(qdoc.Types) == 0 {
+				warnEmpty("GraphQL schema", orDir(*graphqlDir))
+			}
+			v = qdoc
+		default:
+			doc, err := specter.Generate(cfg)
+			if err != nil {
+				return nil, err
+			}
+			if len(doc.Paths) == 0 {
+				warnEmpty("routes", *dirFlag)
+			}
+			v = doc
+			// 3.1 is a conversion of the same document, not a second generator, so
+			// everything upstream — adapters, config, middleware — is untouched.
+			switch *oasVersion {
+			case "", "3.0":
+			case "3.1":
+				tree, terr := specter.ToV31(doc)
+				if terr != nil {
+					return nil, terr
+				}
+				v = tree
+			default:
+				return nil, fmt.Errorf("unsupported -openapi-version %q (want 3.0 or 3.1)", *oasVersion)
+			}
+		}
+
+		data, err := json.MarshalIndent(v, "", "  ")
 		if err != nil {
-			return fail(err)
+			return nil, err
 		}
-		if len(gdoc.Services) == 0 {
-			warnEmpty("gRPC services", orDir(*protoDir))
-		}
-		v = gdoc
-	case *graphql:
-		qdoc, err := specter.GenerateGraphql(cfg)
-		if err != nil {
-			return fail(err)
-		}
-		if len(qdoc.Queries) == 0 && len(qdoc.Types) == 0 {
-			warnEmpty("GraphQL schema", orDir(*graphqlDir))
-		}
-		v = qdoc
-	default:
-		doc, err := specter.Generate(cfg)
-		if err != nil {
-			return fail(err)
-		}
-		if len(doc.Paths) == 0 {
-			warnEmpty("routes", *dirFlag)
-		}
-		v = doc
+		return append(data, '\n'), nil
 	}
 
-	data, err := json.MarshalIndent(v, "", "  ")
+	data, err := regen()
 	if err != nil {
 		return fail(err)
 	}
-	data = append(data, '\n')
 
 	if *out == "" {
 		if _, err := stdout.Write(data); err != nil {
@@ -284,7 +448,80 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 	fmt.Fprintln(stderr, "wrote", *out)
+	if *watch {
+		return watchLoop(cfg.Dir, stderr, func() int {
+			data, merr := regen()
+			if merr != nil {
+				return fail(merr)
+			}
+			if werr := os.WriteFile(*out, data, 0644); werr != nil {
+				return fail(werr)
+			}
+			fmt.Fprintln(stderr, "wrote", *out)
+			return 0
+		})
+	}
 	return 0
+}
+
+// watchInterval is how often the watched tree is re-fingerprinted. A variable
+// so tests do not have to wait a wall-clock second per iteration.
+var watchInterval = time.Second
+
+// watchMaxIterations bounds the loop for tests; 0 (the default) means forever.
+var watchMaxIterations = 0
+
+// watchLoop re-runs emit whenever a source file under dir changes. It polls
+// rather than using OS file events: a fingerprint a second is invisible on any
+// project, needs no dependency, and behaves identically on every platform.
+func watchLoop(dir string, stderr io.Writer, emit func() int) int {
+	fmt.Fprintf(stderr, "specter: watching %s for changes (interval %s)\n", dir, watchInterval)
+	last := fingerprint(dir)
+	for i := 0; watchMaxIterations == 0 || i < watchMaxIterations; i++ {
+		time.Sleep(watchInterval)
+		cur := fingerprint(dir)
+		if cur == last {
+			continue
+		}
+		last = cur
+		fmt.Fprintln(stderr, "specter: change detected, regenerating")
+		// A failed regeneration does not end the watch: the next save may fix
+		// the very error this one introduced.
+		emit()
+	}
+	return 0
+}
+
+// fingerprint hashes the name, size and mtime of every source file under dir.
+// Content hashing would cost reads for no gain: an edit that changes neither
+// size nor mtime does not exist in practice.
+func fingerprint(dir string) string {
+	h := fnv.New64a()
+	filepath.WalkDir(dir, func(path string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return nil // a vanished file is itself a change the next pass sees
+		}
+		if d.IsDir() {
+			// Generated output directories would retrigger the watch forever.
+			name := d.Name()
+			if name == ".git" || name == "node_modules" || name == "vendor" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		switch filepath.Ext(path) {
+		case ".go", ".proto", ".graphql", ".graphqls", ".json":
+		default:
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil
+		}
+		fmt.Fprintf(h, "%s|%d|%d\n", path, info.Size(), info.ModTime().UnixNano())
+		return nil
+	})
+	return fmt.Sprintf("%x", h.Sum64())
 }
 
 // fileConfig is the part of specter.Config a project declares rather than

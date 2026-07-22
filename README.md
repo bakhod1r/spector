@@ -33,7 +33,7 @@ specter -graphql -dir ./graph -o graphql.json
 | ------------- | ---------------------------------------------------------- |
 | `-dir`        | Directory to scan (default `.`)                            |
 | `-config`     | JSON config file (default: `specter.json` in `-dir`, if present) |
-| `-adapter`    | `gin`, `chi`, `echo`, or `stdlib`; autodetected when empty  |
+| `-adapter`    | `gin`, `chi`, `echo`, `fiber`, `gorillamux`, or `stdlib`; autodetected when empty |
 | `-title`      | API title (defaults to the directory name)                 |
 | `-version`    | API version (default `0.1.0`)                              |
 | `-grpc`       | Export the gRPC document instead of OpenAPI                |
@@ -52,6 +52,52 @@ specter -graphql -dir ./graph -o graphql.json
 | `-admin-prefix` | Path the panel is served under (default `/admin`)        |
 | `-admin-package` | Package name for the generated panel (default: the directory name) |
 | `-admin-import` | Import path of the generated package (derived from `go.mod`) |
+| `-sdk`        | Generate a typed client instead of a document: `ts` or `go` |
+| `-sdk-out`    | Directory the client is written into (default `./sdk`)     |
+| `-sdk-package` | Package name for the generated Go client (default `client`) |
+| `-watch`      | Stay running and regenerate whenever the scanned sources change |
+
+### Client SDKs
+
+```sh
+specter -dir ./api -sdk ts -sdk-out ./web/src/api
+specter -dir ./api -sdk go -sdk-package usersapi -sdk-out ./client
+```
+
+One file, no runtime dependency: the TypeScript client is `fetch`, the Go client
+is `net/http`. Each schema becomes an `interface`/`struct` and each operation a
+typed method, named after its `operationId` when the document has one and after
+its method and path otherwise.
+
+```ts
+const api = new Client({ baseUrl: "https://api.example.com", token });
+const users = await api.listUsers({ limit: 20 }); // User[]
+```
+
+```go
+api := usersapi.New("https://api.example.com")
+api.Token = token
+users, err := api.ListUsers(ctx, nil) // []User
+```
+
+The output is source you own, in the same spirit as the admin panel: commit it,
+edit it, and regenerate when the API changes. It is not a framework to
+configure, and nothing imports specter at runtime.
+
+### Watch mode
+
+`-watch` keeps the command running and regenerates when a source file changes.
+It combines with the modes that write files — `-o`, `-all`, `-sdk` — so a client
+or a spec stays in step with the code while you edit it:
+
+```sh
+specter -dir ./api -o openapi.json -watch
+specter -dir ./api -sdk ts -sdk-out ./web/src/api -watch
+```
+
+The tree is polled once a second and fingerprinted by name, size and mtime;
+`.git`, `vendor` and `node_modules` are skipped. A regeneration that fails does
+not end the watch — the next save may be the fix.
 
 ### `specter.json`
 
@@ -138,9 +184,10 @@ mount.Echo(e, cfg)     // *echo.Echo
 mount.Chi(r, cfg)      // chi.Router
 mount.Stdlib(mux, cfg) // *http.ServeMux
 mount.Fiber(app, cfg)  // fiber.Router
+mount.GorillaMux(r, cfg) // *mux.Router
 ```
 
-Importing `mount` compiles all five frameworks into your binary. If that
+Importing `mount` compiles all six frameworks into your binary. If that
 matters, skip the package: `specter.Handler(cfg)` is a plain `http.Handler`,
 and mounting it by hand is two lines.
 
@@ -488,16 +535,20 @@ that ambiguity is worth removing either way.
 | gin            |   ✅   |     ✅      |  ✅   |   ✅   |   `r.Group(...)`    |      ✅      |     ✅     |
 | chi            |   ✅   |     ✅      |  ✅   |   ✅   |   `r.Route(...)`    |      ✅      |     ✅     |
 | echo           |   ✅   |     ✅      |  ✅   |   ✅   |   `e.Group(...)`    |      ✅      |     ✅     |
+| fiber          |   ✅   |     ✅      |  ✅   |   ✅   |  `app.Group(...)`   |      ✅      |     ✅     |
+| gorilla/mux    |   ✅   |     ✅      |  ✅   |   ✅   | `PathPrefix(...).Subrouter()` | ✅ |    ✅     |
 | net/http (1.22)|   ✅   |     ✅      |  ✅   |   ✅   | sub-mux + `StripPrefix` | ✅      |     ✅     |
 
 What Specter infers from handlers:
 
-- **Request/response bodies** from `c.ShouldBindJSON`, `c.JSON`,
-  `json.Decoder/Encoder`, `render.JSON`, etc., resolved to `$ref` schemas.
+- **Request/response bodies** from `c.ShouldBindJSON`, `c.Bind`, `c.BodyParser`,
+  `c.JSON`, `json.Decoder/Encoder`, `render.JSON`, etc., resolved to `$ref`
+  schemas.
 - **Query & header parameters** from `c.Query`, `c.QueryParam`, `c.GetHeader`,
   `r.URL.Query().Get`, `r.Header.Get`, `r.FormValue`.
 - **Real status codes** from `c.JSON(201, ...)`, `w.WriteHeader(http.StatusNotFound)`,
-  `c.Status(...)`, `c.NoContent(...)` — multiple responses per operation are
+  `c.Status(...)`, `c.NoContent(...)`, `c.SendStatus(...)`, and fiber's
+  `c.Status(201).JSON(...)` chain — multiple responses per operation are
   supported, and the primary response type is taken from the first 2xx rather
   than whichever body the handler happened to write first.
 - **Summaries & descriptions** from the handler's Go doc comment.
@@ -635,15 +686,17 @@ type the URL.
 specter.go            public API: Generate, GenerateGrpc, GenerateGraphql, Handler
 cmd/specter           CLI
 internal/core         OpenAPI/gRPC/GraphQL model + struct→schema scanner
-internal/adapter/*    gin, chi, echo, stdlib route scanners (shared in astutil)
+internal/adapter/*    gin, chi, echo, fiber, gorillamux, stdlib route scanners
+                      (shared handler analysis in astutil)
 internal/gen          routes + schemas -> OpenAPI document
+internal/sdk          OpenAPI document -> TypeScript / Go client source
 internal/proto        .proto  -> gRPC document
 internal/pbgo         *.pb.go -> gRPC document
 internal/graphqlsdl   .graphql -> GraphQL document
 internal/gqlgenx      gqlgen Go code -> GraphQL document
 internal/grpcx        gRPC invoke proxy (grpcurl)
 internal/ui           embedded HTML console (single file, no assets)
-mount                 gin/echo/chi/stdlib/fiber mount helpers
+mount                 gin/echo/chi/stdlib/fiber/gorillamux mount helpers
 ```
 
 The console's realtime clients (WebSocket, SSE, and the MQTT codec) live in

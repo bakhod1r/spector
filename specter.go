@@ -14,9 +14,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/user/specter/internal/coverage"
+	"github.com/user/specter/internal/export"
+	"github.com/user/specter/internal/testgen"
+
 	chiadapter "github.com/user/specter/internal/adapter/chi"
 	echoadapter "github.com/user/specter/internal/adapter/echo"
+	fiberadapter "github.com/user/specter/internal/adapter/fiber"
 	ginadapter "github.com/user/specter/internal/adapter/gin"
+	gorillamuxadapter "github.com/user/specter/internal/adapter/gorillamux"
 	stdlibadapter "github.com/user/specter/internal/adapter/stdlib"
 	"github.com/user/specter/internal/admin"
 	"github.com/user/specter/internal/advice"
@@ -30,6 +36,7 @@ import (
 	"github.com/user/specter/internal/mock"
 	"github.com/user/specter/internal/pbgo"
 	"github.com/user/specter/internal/proto"
+	"github.com/user/specter/internal/sdk"
 	"github.com/user/specter/internal/source"
 	"github.com/user/specter/internal/ui"
 )
@@ -176,6 +183,10 @@ func adapterFor(cfg Config) core.Adapter {
 		return &chiadapter.Adapter{}
 	case "echo":
 		return &echoadapter.Adapter{}
+	case "fiber":
+		return &fiberadapter.Adapter{}
+	case "gorillamux", "mux", "gorilla":
+		return &gorillamuxadapter.Adapter{}
 	case "stdlib":
 		return &stdlibadapter.Adapter{}
 	default:
@@ -200,6 +211,10 @@ func detect(dir string) string {
 					return "chi"
 				case strings.Contains(p, "labstack/echo"):
 					return "echo"
+				case strings.Contains(p, "gofiber/fiber"):
+					return "fiber"
+				case strings.Contains(p, "gorilla/mux"):
+					return "gorillamux"
 				}
 			}
 		}
@@ -282,6 +297,25 @@ func AdminModel(cfg Config) (admin.Model, error) {
 		return admin.Model{}, err
 	}
 	return admin.Build(doc), nil
+}
+
+// SDKOptions configures the client generator: language ("ts" or "go"),
+// package name, and base URL.
+type SDKOptions = sdk.Options
+
+// SDKFile is one generated file, named relative to the output directory.
+type SDKFile = sdk.File
+
+// GenerateSDK builds a typed client for the scanned API in the requested
+// language. Like GenerateAdmin it returns source rather than serving anything:
+// the output has no dependency beyond the standard library (net/http, fetch)
+// and is meant to be committed and edited.
+func GenerateSDK(cfg Config, opts SDKOptions) ([]SDKFile, error) {
+	doc, err := Generate(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return sdk.Generate(doc, opts)
 }
 
 func Generate(cfg Config) (*core.Document, error) {
@@ -465,6 +499,45 @@ func GenerateGraphql(cfg Config) (*core.GraphqlDoc, error) {
 		return gg, nil
 	}
 	return doc, err
+}
+
+// ExportPostman renders the document as a Postman collection v2.1. Insomnia
+// imports the same format, so one export serves both clients.
+func ExportPostman(doc *Document) ([]byte, error) {
+	return export.Postman(doc)
+}
+
+// ExportMarkdown renders the document as a static Markdown API reference,
+// suitable for a README or a docs site.
+func ExportMarkdown(doc *Document) []byte {
+	return export.Markdown(doc)
+}
+
+// ToV31 converts the document to OpenAPI 3.1, returning a generic JSON tree
+// because the 3.0 and 3.1 spellings of exclusive bounds cannot share a struct.
+func ToV31(doc *Document) (map[string]any, error) {
+	return doc.ToV31()
+}
+
+// TestgenOptions configures GenerateTests.
+type TestgenOptions = testgen.Options
+
+// GenerateTests writes a Go integration test file from the document: one test
+// per operation, requests filled from examples and schemas, asserting the
+// response status is documented. The tests target SPECTER_BASE_URL and skip
+// when it is unset.
+func GenerateTests(doc *Document, opts TestgenOptions) []byte {
+	return testgen.Generate(doc, opts)
+}
+
+// CoverageReport is what MeasureCoverage returns.
+type CoverageReport = coverage.Report
+
+// MeasureCoverage reports how documented the API is: which operations lack a
+// summary, a typed response, an error response, and so on, with an overall
+// percentage.
+func MeasureCoverage(doc *Document) CoverageReport {
+	return coverage.Measure(doc)
 }
 
 func Handler(cfg Config) http.Handler {

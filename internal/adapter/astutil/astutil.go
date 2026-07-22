@@ -383,8 +383,8 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 			if h.Request.Name == "" && len(call.Args) >= 1 {
 				h.Request = ArgType(call.Args[len(call.Args)-1], types)
 			}
-		case "ShouldBindJSON", "BindJSON", "ShouldBind", "Bind":
-			// "Bind" is echo's spelling of the same thing.
+		case "ShouldBindJSON", "BindJSON", "ShouldBind", "Bind", "BodyParser":
+			// "Bind" is echo's spelling of the same thing; "BodyParser" fiber's.
 			if h.Request.Name == "" && len(call.Args) == 1 {
 				h.Request = ArgType(call.Args[0], types)
 			}
@@ -409,12 +409,20 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 				addResp(statusOr(status, 200), t)
 			} else if len(call.Args) == 1 {
 				// render.JSON(w, r, x) style handled via Encode; here a bare
-				// JSON(x) is treated as a 200 body.
+				// JSON(x) is treated as a 200 body — unless it chains off
+				// fiber's c.Status(201).JSON(x), which names the code itself.
 				t := ArgType(call.Args[0], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
-				addResp(200, t)
+				addResp(statusOr(chainedStatus(sel.X), 200), t)
+			}
+		case "SendStatus":
+			// fiber c.SendStatus(code): a bodiless response.
+			if len(call.Args) == 1 {
+				if s := statusValue(call.Args[0]); s != 0 {
+					addResp(s, TypeInfo{})
+				}
 			}
 		case "Status", "AbortWithStatus", "NoContent":
 			// gin c.Status(code) / echo c.NoContent(code): a bodiless response.
@@ -456,6 +464,21 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 	h.Responses = dedupeResponses(h.Responses)
 	h.Response = primaryResponse(h.Responses, h.Response)
 	return h
+}
+
+// chainedStatus reads the code out of fiber's c.Status(201).JSON(x) chain: the
+// receiver of the JSON call is itself the Status call. Returns 0 when the
+// receiver is anything else.
+func chainedStatus(recv ast.Expr) int {
+	call, ok := recv.(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return 0
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Status" {
+		return 0
+	}
+	return statusValue(call.Args[0])
 }
 
 // primaryResponse picks the type that best represents "what this endpoint

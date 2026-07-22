@@ -56,6 +56,15 @@ func HandlerWith(doc *core.Document, opts Options) http.Handler {
 			return
 		}
 
+		if opts.EnforceAuth {
+			if missing, ok := authCheck(doc, route.op, r); !ok {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				writeProblem(w, http.StatusUnauthorized,
+					"missing credentials: "+missing)
+				return
+			}
+		}
+
 		// An explicitly requested status wins, so a client can exercise its
 		// error handling without the mock having to guess when to fail.
 		status := route.status

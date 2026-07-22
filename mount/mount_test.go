@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gorilla/mux"
 	"github.com/labstack/echo/v4"
 	"github.com/user/specter"
 )
@@ -24,11 +25,12 @@ type serveFunc func(t *testing.T, method, path string) (status int, header http.
 // content — a framework whose helper drifts fails here rather than in a user's
 // browser.
 var mounters = map[string]func(specter.Config) serveFunc{
-	"gin":    ginServer,
-	"echo":   echoServer,
-	"chi":    chiServer,
-	"stdlib": stdlibServer,
-	"fiber":  fiberServer,
+	"gin":        ginServer,
+	"echo":       echoServer,
+	"chi":        chiServer,
+	"stdlib":     stdlibServer,
+	"fiber":      fiberServer,
+	"gorillamux": gorillaMuxServer,
 }
 
 func fromHandler(h http.Handler) serveFunc {
@@ -56,6 +58,12 @@ func echoServer(cfg specter.Config) serveFunc {
 func chiServer(cfg specter.Config) serveFunc {
 	r := chi.NewRouter()
 	Chi(r, cfg)
+	return fromHandler(r)
+}
+
+func gorillaMuxServer(cfg specter.Config) serveFunc {
+	r := mux.NewRouter()
+	GorillaMux(r, cfg)
 	return fromHandler(r)
 }
 

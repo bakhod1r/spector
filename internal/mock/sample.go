@@ -68,6 +68,13 @@ func sample(doc *core.Document, schema *core.Schema, params map[string]string, s
 		return merged
 	}
 
+	// A declared example is the author saying what a value looks like, which
+	// beats anything fabricated — but a path parameter from the request still
+	// wins above, because the caller asked about that resource specifically.
+	if schema.Example != nil {
+		return schema.Example
+	}
+
 	// An enum is the tightest constraint there is: any value outside it is
 	// invalid, so it wins over every other rule.
 	if len(schema.Enum) > 0 {

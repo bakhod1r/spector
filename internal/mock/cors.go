@@ -37,6 +37,13 @@ type Options struct {
 	// MaxAge is how long a browser may cache the preflight, in seconds.
 	// Zero leaves it unset and the browser uses its own default.
 	MaxAge int
+
+	// EnforceAuth makes the mock check documented security requirements: a
+	// request to a protected operation without credentials gets a 401 problem
+	// document naming the scheme it lacks. Presence is checked, not validity —
+	// the mock cannot know what a real token looks like, but it can catch the
+	// frontend that forgot to send one at all.
+	EnforceAuth bool
 }
 
 // DefaultOptions is what the mock uses when nothing is configured: open to any
