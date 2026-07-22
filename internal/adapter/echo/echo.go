@@ -13,6 +13,7 @@ import (
 	"github.com/user/specter/internal/adapter/astutil"
 	"github.com/user/specter/internal/calls"
 	"github.com/user/specter/internal/core"
+	"github.com/user/specter/internal/middleware"
 	"github.com/user/specter/internal/realtime"
 )
 
@@ -39,12 +40,14 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
+	mw := middleware.NewIndex()
 	var files []*ast.File
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
 			files = append(files, file)
 			scanner.Collect(file)
 			index.Collect(file)
+			mw.Collect(file)
 		}
 	}
 
@@ -62,13 +65,13 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 
 	var routes []core.Route
 	for _, file := range files {
-		collectRoutes(file, groups, handlers, &routes, loc, index)
+		collectRoutes(file, groups, handlers, &routes, loc, index, mw)
 	}
 
 	return routes, scanner.Schemas, nil
 }
 
-func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index) {
+func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -84,7 +87,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		if sel.Sel.Name == "Any" && len(call.Args) >= 2 {
 			if path, ok := astutil.StringLit(call.Args[0]); ok {
 				for _, m := range []string{"get", "post", "put", "patch", "delete"} {
-					addRoute(m, path, call.Args[1], sel, call, groups, handlers, routes, loc, index)
+					addRoute(m, path, call.Args[1], call.Args[2:], sel, call, groups, handlers, routes, loc, index, mw)
 				}
 			}
 			return true
@@ -94,7 +97,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		if sel.Sel.Name == "Match" && len(call.Args) >= 3 {
 			if path, ok := astutil.StringLit(call.Args[1]); ok {
 				for _, m := range matchMethods(call.Args[0]) {
-					addRoute(m, path, call.Args[2], sel, call, groups, handlers, routes, loc, index)
+					addRoute(m, path, call.Args[2], call.Args[3:], sel, call, groups, handlers, routes, loc, index, mw)
 				}
 			}
 			return true
@@ -108,16 +111,21 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		if !ok {
 			return true
 		}
-		addRoute(method, path, call.Args[1], sel, call, groups, handlers, routes, loc, index)
+		addRoute(method, path, call.Args[1], call.Args[2:], sel, call, groups, handlers, routes, loc, index, mw)
 		return true
 	})
 }
 
-func addRoute(method, path string, handlerArg ast.Expr, sel *ast.SelectorExpr, call ast.Node,
-	groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index) {
+// addRoute records one route. inline is the middleware attached to the
+// registration itself: echo takes it after the handler, where gin takes it
+// before, so the slice is worked out by the caller rather than here.
+func addRoute(method, path string, handlerArg ast.Expr, inline []ast.Expr, sel *ast.SelectorExpr, call ast.Node,
+	groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index) {
 
 	prefix := ""
+	recvName := ""
 	if recv, ok := sel.X.(*ast.Ident); ok {
+		recvName = recv.Name
 		prefix = resolveGroup(recv.Name, groups)
 	}
 
@@ -126,6 +134,7 @@ func addRoute(method, path string, handlerArg ast.Expr, sel *ast.SelectorExpr, c
 		Method:      method,
 		Path:        normalizePath(prefix + path),
 		HandlerName: name,
+		Middleware:  mw.For(recvName, call.Pos(), inline),
 	}
 	fd := handlers[name]
 	route.Source = loc.Handler(fd, call)

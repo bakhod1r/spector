@@ -150,6 +150,65 @@ func TestDocCommentBecomesSummary(t *testing.T) {
 	}
 }
 
+// Middleware is what says whether a route is protected, and echo attaches it
+// the same way gin does — on the router, on the group, or on the registration
+// itself. All three have to arrive on the route.
+func TestMiddlewareInferred(t *testing.T) {
+	m, _ := scan(t)
+
+	names := func(r core.Route) []string {
+		var out []string
+		for _, mw := range r.Middleware {
+			out = append(out, mw.Name)
+		}
+		return out
+	}
+	has := func(r core.Route, want string) bool {
+		for _, n := range names(r) {
+			if n == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	list := m["get /api/v1/users"]
+	if !has(list, "requestID") {
+		t.Errorf("root Use not inherited: %v", names(list))
+	}
+	if !has(list, "tenantGuard") {
+		t.Errorf("group middleware missing: %v", names(list))
+	}
+
+	// Inline middleware in echo trails the handler, unlike gin.
+	del := m["delete /api/v1/users/{id}"]
+	if !has(del, "adminOnly") {
+		t.Errorf("inline middleware missing: %v", names(del))
+	}
+
+	// A route outside the group must not inherit the group's guard.
+	if health := m["get /health"]; has(health, "tenantGuard") {
+		t.Errorf("group middleware leaked onto /health: %v", names(health))
+	}
+
+	// The body is better evidence than the name: tenantGuard says nothing, but
+	// it reads a credential header and rejects with 401.
+	for _, mw := range list.Middleware {
+		if mw.Name != "tenantGuard" {
+			continue
+		}
+		if mw.Kind != "auth" {
+			t.Errorf("tenantGuard kind = %q, want auth", mw.Kind)
+		}
+		if len(mw.Headers) == 0 || mw.Headers[0] != "X-Tenant-Key" {
+			t.Errorf("headers = %v, want [X-Tenant]", mw.Headers)
+		}
+		if len(mw.Statuses) == 0 || mw.Statuses[0] != 401 {
+			t.Errorf("statuses = %v, want [401]", mw.Statuses)
+		}
+	}
+}
+
 func TestScanMissingDirErrors(t *testing.T) {
 	if _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
 		t.Error("expected an error for a missing dir")

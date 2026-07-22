@@ -354,3 +354,114 @@ func TestMainPropagatesFailureExitCode(t *testing.T) {
 		t.Errorf("stderr = %q, want a prefixed error", stderr)
 	}
 }
+
+const configSrc = `{
+  "title": "Shop",
+  "version": "2.0",
+  "servers": [{"url": "https://api.example.com", "description": "prod"}],
+  "security": {
+    "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+  }
+}`
+
+// The document the CLI writes must be the document the console serves. Servers
+// and security schemes are declared, not inferable, so without a config file
+// the two disagree — and the file is the only place a map of schemes can
+// reasonably be written.
+func TestConfigFileFillsTheDocument(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "specter.json": configSrc})
+	code, stdout, stderr := exec(t, "-dir", dir, "-config", filepath.Join(dir, "specter.json"))
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+
+	var doc struct {
+		Info struct {
+			Title   string `json:"title"`
+			Version string `json:"version"`
+		} `json:"info"`
+		Servers []struct {
+			URL string `json:"url"`
+		} `json:"servers"`
+		Components struct {
+			SecuritySchemes map[string]struct {
+				Type   string `json:"type"`
+				Scheme string `json:"scheme"`
+			} `json:"securitySchemes"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if len(doc.Servers) != 1 || doc.Servers[0].URL != "https://api.example.com" {
+		t.Errorf("servers = %+v, want the configured one", doc.Servers)
+	}
+	if s := doc.Components.SecuritySchemes["bearerAuth"]; s.Type != "http" || s.Scheme != "bearer" {
+		t.Errorf("securitySchemes = %+v, want bearerAuth", doc.Components.SecuritySchemes)
+	}
+	if doc.Info.Title != "Shop" || doc.Info.Version != "2.0" {
+		t.Errorf("info = %+v, want the file's title and version", doc.Info)
+	}
+}
+
+// A file is a default, not an override: a flag the user actually typed wins.
+// The version flag has a non-empty default, so "was it set" cannot be answered
+// by looking at the value.
+func TestFlagsBeatTheConfigFile(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "specter.json": configSrc})
+	code, stdout, stderr := exec(t, "-dir", dir, "-config", filepath.Join(dir, "specter.json"), "-version", "9.9")
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	var doc struct {
+		Info struct {
+			Title   string `json:"title"`
+			Version string `json:"version"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Info.Version != "9.9" {
+		t.Errorf("version = %q, want the flag to win", doc.Info.Version)
+	}
+	if doc.Info.Title != "Shop" {
+		t.Errorf("title = %q, want the file's, which no flag overrode", doc.Info.Title)
+	}
+}
+
+// A specter.json sitting in the scanned directory is picked up without being
+// named, so the console and the CLI agree by default rather than by discipline.
+func TestConfigFileFoundInScanDir(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "specter.json": configSrc})
+	code, stdout, stderr := exec(t, "-dir", dir)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "https://api.example.com") {
+		t.Errorf("servers missing; the adjacent specter.json was not read:\n%s", stdout)
+	}
+}
+
+// A config that cannot be parsed is a mistake to report, not to ignore: the
+// document would silently lose everything the file was there to declare.
+func TestBrokenConfigFileExits1(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "bad.json": "{not json"})
+	code, _, stderr := exec(t, "-dir", dir, "-config", filepath.Join(dir, "bad.json"))
+	if code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "bad.json") {
+		t.Errorf("stderr = %q, want the file named", stderr)
+	}
+}
+
+// An explicitly named file that is not there is a typo worth reporting; an
+// absent specter.json is not.
+func TestMissingNamedConfigExits1(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	code, _, stderr := exec(t, "-dir", dir, "-config", filepath.Join(dir, "nope.json"))
+	if code != 1 {
+		t.Errorf("exit = %d, want 1, stderr: %s", code, stderr)
+	}
+}

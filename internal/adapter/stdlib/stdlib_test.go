@@ -44,6 +44,73 @@ func TestScan(t *testing.T) {
 	}
 }
 
+// net/http has no Use: middleware is applied by wrapping, so the wrappers are
+// the only place a guard shows up. A scan that ignored them would document
+// every one of these endpoints as public.
+func TestMiddlewareInferred(t *testing.T) {
+	routes, _, err := (&Adapter{}).Scan("testdata/sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := routeMap(routes)
+
+	names := func(key string) []string {
+		var out []string
+		for _, mw := range m[key].Middleware {
+			out = append(out, mw.Name)
+		}
+		return out
+	}
+	has := func(key, want string) bool {
+		for _, n := range names(key) {
+			if n == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Wrapping the server's handler applies to everything it serves.
+	if !has("get /api/v1/users", "logging") {
+		t.Errorf("server-level wrapper missing: %v", names("get /api/v1/users"))
+	}
+	if !has("get /health", "logging") {
+		t.Errorf("server-level wrapper missing on /health: %v", names("get /health"))
+	}
+	// Wrapping a mounted sub-mux applies to every route on it, and to nothing
+	// outside it.
+	if !has("get /api/v1/users", "apiKeyGuard") {
+		t.Errorf("mount wrapper missing: %v", names("get /api/v1/users"))
+	}
+	if has("get /health", "apiKeyGuard") {
+		t.Errorf("mount wrapper leaked outside the sub-mux: %v", names("get /health"))
+	}
+	// Wrapping one handler applies to that route alone.
+	if !has("delete /api/v1/users/{id}", "adminOnly") {
+		t.Errorf("per-route wrapper missing: %v", names("delete /api/v1/users/{id}"))
+	}
+	if has("get /api/v1/users", "adminOnly") {
+		t.Errorf("per-route wrapper leaked: %v", names("get /api/v1/users"))
+	}
+
+	// A wrapped handler is still the handler: its facts must survive.
+	if del := m["delete /api/v1/users/{id}"]; del.HandlerName != "deleteUser" {
+		t.Errorf("handler = %q, want deleteUser through the wrapper", del.HandlerName)
+	}
+
+	for _, mw := range m["get /api/v1/users"].Middleware {
+		if mw.Name != "apiKeyGuard" {
+			continue
+		}
+		if mw.Kind != "auth" {
+			t.Errorf("kind = %q, want auth", mw.Kind)
+		}
+		if len(mw.Statuses) != 1 || mw.Statuses[0] != 401 {
+			t.Errorf("statuses = %v, want [401]", mw.Statuses)
+		}
+	}
+}
+
 func TestSplitPattern(t *testing.T) {
 	cases := map[string][2]string{
 		"GET /users/{id}":   {"get", "/users/{id}"},

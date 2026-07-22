@@ -9,6 +9,7 @@ import (
 	"github.com/user/specter/internal/adapter/astutil"
 	"github.com/user/specter/internal/calls"
 	"github.com/user/specter/internal/core"
+	"github.com/user/specter/internal/middleware"
 	"github.com/user/specter/internal/realtime"
 )
 
@@ -38,12 +39,14 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
+	mw := middleware.NewIndex()
 	var files []*ast.File
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
 			files = append(files, file)
 			scanner.Collect(file)
 			index.Collect(file)
+			mw.Collect(file)
 		}
 	}
 
@@ -56,7 +59,8 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		}
 	}
 
-	mountPrefix := collectMounts(files)
+	mounts := collectMounts(files)
+	served := collectServed(files)
 
 	var routes []core.Route
 	loc := astutil.Locator{Fset: fset, Dir: dir}
@@ -84,18 +88,31 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 			if !ok {
 				return true
 			}
-			// If this mux was mounted under a prefix, prepend it. This
-			// mirrors gin's router groups / chi's Route for versioning:
-			//   v1 := http.NewServeMux(); v1.HandleFunc("GET /users", ...)
-			//   mux.Handle("/v1/", http.StripPrefix("/v1", v1))
+			// net/http has no Use: middleware is applied by wrapping, at
+			// three levels that all end up in front of this route.
+			var wrappers []ast.Expr
 			if recv, ok := sel.X.(*ast.Ident); ok {
-				path = mountPrefix[recv.Name] + path
+				// If this mux was mounted under a prefix, prepend it. This
+				// mirrors gin's router groups / chi's Route for versioning:
+				//   v1 := http.NewServeMux(); v1.HandleFunc("GET /users", ...)
+				//   mux.Handle("/v1/", http.StripPrefix("/v1", v1))
+				m := mounts[recv.Name]
+				path = m.prefix + path
+				// Whatever wraps the server's handler runs in front of every
+				// route it serves, including the ones on a mounted sub-mux.
+				wrappers = append(wrappers, served[m.parent]...)
+				wrappers = append(wrappers, served[recv.Name]...)
+				wrappers = append(wrappers, m.wrappers...)
 			}
-			name := astutil.HandlerName(call.Args[1])
+			handlerArg, inline := unwrap(call.Args[1])
+			wrappers = append(wrappers, inline...)
+
+			name := astutil.HandlerName(handlerArg)
 			route := core.Route{
 				Method:      method,
 				Path:        path,
 				HandlerName: name,
+				Middleware:  mw.Chain(wrappers),
 			}
 			fd := handlers[name]
 			route.Source = loc.Handler(fd, call)
@@ -115,12 +132,21 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 	return routes, scanner.Schemas, nil
 }
 
-// collectMounts maps a sub-mux variable name to the path prefix it is mounted
-// under, by scanning for mux.Handle("/v1/", <handler referencing the sub-mux>)
-// calls. The handler argument may be the sub-mux directly or wrapped in
-// http.StripPrefix(...); the last argument of a wrapping call is unwrapped.
-func collectMounts(files []*ast.File) map[string]string {
-	mounts := map[string]string{}
+// mount is where a sub-mux is mounted: the prefix its routes hang under, the
+// mux it was mounted on, and whatever wraps it there — a guard around a mounted
+// sub-mux applies to every route on it.
+type mount struct {
+	prefix   string
+	parent   string
+	wrappers []ast.Expr
+}
+
+// collectMounts maps a sub-mux variable name to how it is mounted, by scanning
+// for mux.Handle("/v1/", <handler referencing the sub-mux>) calls. The handler
+// argument may be the sub-mux directly or wrapped in http.StripPrefix(...) and
+// middleware; the wrapping is peeled off to find it.
+func collectMounts(files []*ast.File) map[string]mount {
+	mounts := map[string]mount{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -135,8 +161,19 @@ func collectMounts(files []*ast.File) map[string]string {
 			if !ok {
 				return true
 			}
-			if id := mountIdent(call.Args[1]); id != "" {
-				mounts[id] = strings.TrimSuffix(prefix, "/")
+			inner, wrappers := unwrap(call.Args[1])
+			id := astutil.HandlerName(inner)
+			if id == "" {
+				return true
+			}
+			parent := ""
+			if recv, ok := sel.X.(*ast.Ident); ok {
+				parent = recv.Name
+			}
+			mounts[id] = mount{
+				prefix:   strings.TrimSuffix(prefix, "/"),
+				parent:   parent,
+				wrappers: wrappers,
 			}
 			return true
 		})
@@ -144,18 +181,90 @@ func collectMounts(files []*ast.File) map[string]string {
 	return mounts
 }
 
-// mountIdent extracts the sub-mux variable name from a mount handler argument,
-// unwrapping wrappers like http.StripPrefix(prefix, mux) to their last arg.
-func mountIdent(arg ast.Expr) string {
-	switch a := arg.(type) {
-	case *ast.Ident:
-		return a.Name
-	case *ast.CallExpr:
-		if len(a.Args) > 0 {
-			return mountIdent(a.Args[len(a.Args)-1])
+// collectServed maps a mux variable to what wraps it where it is handed to a
+// server. That wrapping runs in front of everything the mux serves, which makes
+// it the closest thing net/http has to a global r.Use.
+//
+//	http.ListenAndServe(":8080", logging(mux))
+//	srv := &http.Server{Handler: logging(mux)}
+func collectServed(files []*ast.File) map[string][]ast.Expr {
+	served := map[string][]ast.Expr{}
+	record := func(expr ast.Expr) {
+		inner, wrappers := unwrap(expr)
+		if id := astutil.HandlerName(inner); id != "" && len(wrappers) > 0 {
+			served[id] = append(served[id], wrappers...)
 		}
 	}
-	return ""
+
+	for _, file := range files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch t := n.(type) {
+			case *ast.CallExpr:
+				sel, ok := t.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				switch sel.Sel.Name {
+				case "ListenAndServe", "Serve":
+					if len(t.Args) == 2 {
+						record(t.Args[1])
+					}
+				case "ListenAndServeTLS":
+					if len(t.Args) == 4 {
+						record(t.Args[3])
+					}
+				}
+			case *ast.KeyValueExpr:
+				// http.Server{Handler: logging(mux)}
+				if key, ok := t.Key.(*ast.Ident); ok && key.Name == "Handler" {
+					record(t.Value)
+				}
+			}
+			return true
+		})
+	}
+	return served
+}
+
+// unwrap peels the middleware off a handler expression, returning the handler
+// underneath and the wrappers in the order they run — outermost first.
+//
+//	logging(auth(handler))  ->  handler, [logging, auth]
+//
+// Conversions and adapters are not middleware and are skipped, so a handler
+// written as http.HandlerFunc(h) or http.StripPrefix("/v1", mux) is not
+// reported as running behind something called HandlerFunc.
+func unwrap(expr ast.Expr) (handler ast.Expr, wrappers []ast.Expr) {
+	for {
+		call, ok := expr.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return expr, wrappers
+		}
+		if !transparent(call.Fun) {
+			wrappers = append(wrappers, call.Fun)
+		}
+		// The handler is conventionally the last argument: StripPrefix takes
+		// the prefix first, and a middleware constructor its options.
+		expr = call.Args[len(call.Args)-1]
+	}
+}
+
+// transparent reports whether a wrapping call is plumbing rather than
+// middleware.
+func transparent(fun ast.Expr) bool {
+	sel, ok := fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	if !ok || pkg.Name != "http" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "HandlerFunc", "StripPrefix", "Handler":
+		return true
+	}
+	return false
 }
 
 func splitPattern(pattern string) (method, path string, ok bool) {

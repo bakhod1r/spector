@@ -49,6 +49,13 @@ func analyze(fd *ast.FuncDecl) (headers []string, statuses []int) {
 		return true
 	})
 
+	for _, code := range returnedRejections(fd.Body) {
+		if !seenStatus[code] {
+			seenStatus[code] = true
+			statuses = append(statuses, code)
+		}
+	}
+
 	sort.Strings(headers)
 	sort.Ints(statuses)
 	return headers, statuses
@@ -76,17 +83,89 @@ func headerRead(sel *ast.SelectorExpr, call *ast.CallExpr) (string, bool) {
 	return "", false
 }
 
-// abortStatus recognises a middleware rejecting a request. Only aborts count:
-// a middleware that writes a status and continues is not refusing the request,
-// and the handler's own responses are documented separately.
+// abortStatus recognises a middleware rejecting a request outright, in the
+// spellings that mean nothing else. Only aborts count: a middleware that writes
+// a status and continues is not refusing the request, and the handler's own
+// responses are documented separately.
 func abortStatus(sel *ast.SelectorExpr, call *ast.CallExpr) (int, bool) {
 	switch sel.Sel.Name {
+	// gin.
 	case "AbortWithStatusJSON", "AbortWithStatus", "AbortWithError":
+		if len(call.Args) >= 1 {
+			return intLit(call.Args[0])
+		}
+	// net/http and chi: http.Error(w, msg, code) writes the status and ends
+	// the response, so there is nothing to qualify.
+	case "Error":
+		if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "http" && len(call.Args) == 3 {
+			return intLit(call.Args[2])
+		}
+	// echo: building an HTTPError is refusing the request.
+	case "NewHTTPError":
 		if len(call.Args) >= 1 {
 			return intLit(call.Args[0])
 		}
 	}
 	return 0, false
+}
+
+// returnedRejections finds the refusals that only a statement's context can
+// tell apart from an ordinary response.
+//
+//	w.WriteHeader(http.StatusForbidden); return   // net/http, chi
+//	return c.NoContent(http.StatusForbidden)      // echo
+//
+// The same calls without the return are a middleware answering and carrying on,
+// which is not a refusal. Only 4xx and 5xx count: a returned 200 is a response,
+// however it is written.
+func returnedRejections(body *ast.BlockStmt) []int {
+	var out []int
+	add := func(expr ast.Expr) {
+		call, ok := expr.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return
+		}
+		if _, ok := call.Fun.(*ast.SelectorExpr); !ok {
+			return
+		}
+		if code, ok := intLit(call.Args[0]); ok && code >= 400 {
+			out = append(out, code)
+		}
+	}
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch t := n.(type) {
+		case *ast.ReturnStmt:
+			for _, res := range t.Results {
+				add(res)
+			}
+		case *ast.BlockStmt:
+			// A write immediately followed by a return: the status was the
+			// last word on the request.
+			for i := 0; i+1 < len(t.List); i++ {
+				es, ok := t.List[i].(*ast.ExprStmt)
+				if !ok {
+					continue
+				}
+				if _, isReturn := t.List[i+1].(*ast.ReturnStmt); !isReturn {
+					continue
+				}
+				call, ok := es.X.(*ast.CallExpr)
+				if !ok {
+					continue
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "WriteHeader" || len(call.Args) != 1 {
+					continue
+				}
+				if code, ok := intLit(call.Args[0]); ok && code >= 400 {
+					out = append(out, code)
+				}
+			}
+		}
+		return true
+	})
+	return out
 }
 
 func stringLit(expr ast.Expr) (string, bool) {

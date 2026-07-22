@@ -56,14 +56,31 @@ func catchAll(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+func requestID(next echo.HandlerFunc) echo.HandlerFunc { return next }
+
+// tenantGuard is named after nothing in particular: what it demands is only
+// visible in its body.
+func tenantGuard(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if c.Request().Header.Get("X-Tenant-Key") == "" {
+			return echo.NewHTTPError(http.StatusUnauthorized, "no tenant")
+		}
+		return next(c)
+	}
+}
+
+func adminOnly(next echo.HandlerFunc) echo.HandlerFunc { return next }
+
 func Register(e *echo.Echo) {
+	e.Use(requestID)
+
 	api := e.Group("/api")
-	v1 := api.Group("/v1")
+	v1 := api.Group("/v1", tenantGuard)
 
 	v1.GET("/users", listUsers)
 	v1.GET("/users/:id", getUser)
 	v1.POST("/users", createUser)
-	v1.DELETE("/users/:id", deleteUser)
+	v1.DELETE("/users/:id", deleteUser, adminOnly)
 
 	e.GET("/health", health)
 	e.Any("/proxy", catchAll)

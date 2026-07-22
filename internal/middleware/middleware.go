@@ -135,7 +135,25 @@ func (ix *Index) For(recv string, pos token.Pos, routeArgs []ast.Expr) Chain {
 	var names []string
 	names = append(names, ix.inherited(recv, pos, map[string]bool{})...)
 	names = append(names, exprNames(routeArgs)...)
+	return ix.chainOf(names)
+}
 
+// Chain describes middleware expressions in the order they were given.
+//
+// It exists for routers whose middleware cannot be resolved by variable name.
+// chi nests its groups in closures that shadow the router variable, so the
+// caller tracks what is in scope as it walks and hands the result here; the
+// naming and body analysis is the same either way.
+func (ix *Index) Chain(exprs []ast.Expr) Chain {
+	if ix == nil {
+		return nil
+	}
+	return ix.chainOf(exprNames(exprs))
+}
+
+// chainOf turns names into described middleware, keeping the first mention of
+// each: a middleware registered on both a router and a group runs once.
+func (ix *Index) chainOf(names []string) Chain {
 	seen := map[string]bool{}
 	var chain Chain
 	for _, name := range names {

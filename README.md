@@ -32,6 +32,7 @@ specter -graphql -dir ./graph -o graphql.json
 | Flag          | Description                                                |
 | ------------- | ---------------------------------------------------------- |
 | `-dir`        | Directory to scan (default `.`)                            |
+| `-config`     | JSON config file (default: `specter.json` in `-dir`, if present) |
 | `-adapter`    | `gin`, `chi`, `echo`, or `stdlib`; autodetected when empty  |
 | `-title`      | API title (defaults to the directory name)                 |
 | `-version`    | API version (default `0.1.0`)                              |
@@ -51,6 +52,31 @@ specter -graphql -dir ./graph -o graphql.json
 | `-admin-prefix` | Path the panel is served under (default `/admin`)        |
 | `-admin-package` | Package name for the generated panel (default: the directory name) |
 | `-admin-import` | Import path of the generated package (derived from `go.mod`) |
+
+### `specter.json`
+
+Servers and security schemes are declared, not inferred, and a map of schemes
+does not fit on a command line. Put them in a `specter.json` next to the code
+and the CLI writes the same document the embedded console serves:
+
+```json
+{
+  "title": "Shop API",
+  "version": "1.2.0",
+  "servers": [{ "url": "https://api.example.com", "description": "production" }],
+  "security": {
+    "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+  },
+  "basePath": "/docs",
+  "adminUrl": "/admin",
+  "accessKey": ""
+}
+```
+
+It is picked up automatically when it sits in `-dir`; `-config` names one
+elsewhere. The file is a default, not an override — a flag you actually typed
+wins. A `-config` that does not exist, or a file that does not parse, is an
+error rather than a silent fallback.
 
 ## Embedded console (library)
 
@@ -457,12 +483,12 @@ that ambiguity is worth removing either way.
 
 ## Supported REST frameworks
 
-| Framework      | Routes | Path params | Query | Header | Groups / versioning | Status codes |
-| -------------- | :----: | :---------: | :---: | :----: | :-----------------: | :----------: |
-| gin            |   ✅   |     ✅      |  ✅   |   ✅   |   `r.Group(...)`    |      ✅      |
-| chi            |   ✅   |     ✅      |  ✅   |   ✅   |   `r.Route(...)`    |      ✅      |
-| echo           |   ✅   |     ✅      |  ✅   |   ✅   |   `e.Group(...)`    |      ✅      |
-| net/http (1.22)|   ✅   |     ✅      |  ✅   |   ✅   | sub-mux + `StripPrefix` | ✅      |
+| Framework      | Routes | Path params | Query | Header | Groups / versioning | Status codes | Middleware |
+| -------------- | :----: | :---------: | :---: | :----: | :-----------------: | :----------: | :--------: |
+| gin            |   ✅   |     ✅      |  ✅   |   ✅   |   `r.Group(...)`    |      ✅      |     ✅     |
+| chi            |   ✅   |     ✅      |  ✅   |   ✅   |   `r.Route(...)`    |      ✅      |     ✅     |
+| echo           |   ✅   |     ✅      |  ✅   |   ✅   |   `e.Group(...)`    |      ✅      |     ✅     |
+| net/http (1.22)|   ✅   |     ✅      |  ✅   |   ✅   | sub-mux + `StripPrefix` | ✅      |     ✅     |
 
 What Specter infers from handlers:
 
@@ -507,9 +533,9 @@ return type, and the referenced types.
 
 ## Servers and security
 
-Two things cannot be read from source: which hosts serve the API, and how
-callers authenticate. Whether a route is protected is decided by middleware,
-which the AST does not follow. Declare them instead:
+Which hosts serve the API cannot be read from source, and the exact shape of a
+security scheme — where the token goes, what format it is in — is a detail no
+middleware name reveals. Declare them:
 
 ```go
 specter.Config{
@@ -527,11 +553,37 @@ specter.Config{
 
 These land in `servers`, `components.securitySchemes`, and a document-level
 `security` block. Multiple schemes are listed as alternatives — any one
-satisfies a request. Per-operation requirements are not inferred, so a document
-that mixes public and protected routes needs hand-editing after generation.
+satisfies a request. A declared scheme always beats an inferred one.
 
 Schemes are emitted in name order, so regenerating produces a byte-identical
 document rather than churn in review.
+
+### Which routes are protected
+
+That part *is* read from source. Authentication almost never appears in the
+handler — it runs in middleware on the router — so a generator that reads only
+handler bodies documents every endpoint as public, including the ones that
+answer 401 to everybody.
+
+Specter follows the middleware instead, per route and in order:
+
+| Router     | How middleware is found                                        |
+| ---------- | -------------------------------------------------------------- |
+| gin        | `r.Use(...)`, `r.Group(path, mw...)`, `r.GET(path, mw..., h)`   |
+| echo       | `e.Use(...)`, `e.Group(path, mw...)`, `e.GET(path, h, mw...)`   |
+| chi        | `r.Use(...)`, `r.Route`/`r.Group` closures, `r.With(mw).Get(...)` |
+| net/http   | wrapping: `mw(handler)`, a wrapped mounted sub-mux, and the wrapper around the server's own handler |
+
+Position decides: `r.Use(x)` applies to what is registered after it, and a
+guard on one group never reaches its siblings.
+
+The middleware's *name* is a convention, so what it produces is reported as a
+guess — `JWTAuth`, `RequireAPIKey`, `CORS`, `RateLimiter` are recognised. Its
+*body* is evidence, and overrides the guess: the headers it reads become
+required parameters, and the statuses it rejects with (`c.AbortWithStatus`,
+`http.Error`, `echo.NewHTTPError`, a `WriteHeader` followed by `return`) become
+documented responses. That is what makes a `TenantGuard` or `SignMiddleware` —
+names no pattern list could know — documentable at all.
 
 ## Gating the console
 

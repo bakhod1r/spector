@@ -23,6 +23,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("specter", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dirFlag := fs.String("dir", ".", "directory to scan")
+	configPath := fs.String("config", "", "JSON config file (default: specter.json in -dir, if present)")
 	adapter := fs.String("adapter", "", "framework adapter (gin); autodetected if empty")
 	title := fs.String("title", "", "API title (defaults to directory name)")
 	version := fs.String("version", "0.1.0", "API version")
@@ -58,6 +59,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fail := func(err error) int {
 		fmt.Fprintln(stderr, "specter:", err)
 		return 1
+	}
+
+	// Servers and security schemes are declared rather than inferred, and a map
+	// of schemes does not fit on a command line. Without the file the CLI's
+	// document and the console's disagree about the same API.
+	if err := applyConfigFile(&cfg, fs, *configPath, *dirFlag); err != nil {
+		return fail(err)
 	}
 	// An empty result is not an error: the scan ran, it just found nothing.
 	// A warning names the directory so the cause is obvious.
@@ -277,6 +285,70 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stderr, "wrote", *out)
 	return 0
+}
+
+// fileConfig is the part of specter.Config a project declares rather than
+// derives. It is spelled out here rather than reusing specter.Config directly:
+// Config is public API, and giving it JSON tags would turn it into a
+// serialization contract that could not be changed afterwards.
+type fileConfig struct {
+	Title    string                            `json:"title"`
+	Version  string                            `json:"version"`
+	Adapter  string                            `json:"adapter"`
+	Servers  []specter.Server                  `json:"servers"`
+	Security map[string]specter.SecurityScheme `json:"security"`
+	BasePath string                            `json:"basePath"`
+	AdminURL string                            `json:"adminUrl"`
+	// AccessKey gates the console. It is read here so one file describes the
+	// whole deployment, but it has no effect on the document the CLI writes.
+	AccessKey string `json:"accessKey"`
+}
+
+// applyConfigFile fills cfg from a JSON file, leaving anything the user typed
+// on the command line alone. The file is a default, not an override: a flag
+// that was actually passed always wins, which cannot be decided by looking at
+// values because -version has a non-empty default of its own.
+//
+// path names a file explicitly and must exist. With no -config, a specter.json
+// next to the scanned source is used if there is one, so the console and the
+// CLI agree by default rather than by discipline.
+func applyConfigFile(cfg *specter.Config, fs *flag.FlagSet, path, dir string) error {
+	explicit := path != ""
+	if !explicit {
+		path = filepath.Join(dir, "specter.json")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !explicit && os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var fc fileConfig
+	if err := json.Unmarshal(data, &fc); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+
+	if fc.Title != "" && !passed["title"] {
+		cfg.Title = fc.Title
+	}
+	if fc.Version != "" && !passed["version"] {
+		cfg.Version = fc.Version
+	}
+	if fc.Adapter != "" && !passed["adapter"] {
+		cfg.Adapter = fc.Adapter
+	}
+	cfg.Servers = fc.Servers
+	cfg.Security = fc.Security
+	cfg.BasePath = fc.BasePath
+	cfg.AdminURL = fc.AdminURL
+	cfg.AccessKey = fc.AccessKey
+	return nil
 }
 
 // packageName turns an output directory into a legal Go package name.
