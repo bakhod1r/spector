@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push supersedes an in-flight run on the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # A stale go.mod means `go get` was run without tidying, which shows up
+      # as direct dependencies marked `// indirect`.
+      - name: go mod tidy is clean
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage floor
+        run: |
+          total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}' | tr -d '%')"
+          echo "total coverage: ${total}%"
+          # Guards against a large regression, not against every percentage
+          # point — raise it deliberately, never lower it to make CI green.
+          if [ "$(echo "$total < 90" | bc -l)" -eq 1 ]; then
+            echo "coverage ${total}% is below the 90% floor"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+
+  e2e:
+    name: Browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: e2e/package.json
+
+      # The MQTT pane speaks to a real broker on purpose: the client codec is
+      # hand-written, so testing it against an independent implementation is
+      # the only way a shared misunderstanding gets caught.
+      - name: Start Mosquitto
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mosquitto
+          mosquitto -c "$GITHUB_WORKSPACE/e2e/mosquitto.conf" -d
+          for i in $(seq 1 20); do
+            if nc -z 127.0.0.1 9001; then echo "broker up"; exit 0; fi
+            sleep 1
+          done
+          echo "broker never came up"; exit 1
+
+      - name: Install browser suite
+        working-directory: e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run browser suites
+        working-directory: e2e
+        run: npm test
+
+  # A spec that validates is not necessarily a spec a generator can use. This
+  # runs the document through a real client generator and compiles the result,
+  # which is what actually proves it is consumable.
+  codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Generate the spec
+        run: go run ./cmd/specter -dir ./examples/shop -o /tmp/shop.json
+
+      - name: Generate a Go client from it
+        run: |
+          go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest \
+            -generate types,client -package gen -o /tmp/gen/gen.go /tmp/shop.json
+
+      # printf rather than a heredoc: a heredoc inside a YAML block scalar
+      # depends on indentation surviving two levels of stripping, and gets
+      # silently mangled when it does not.
+      - name: Compile the generated client
+        run: |
+          cd /tmp/gen
+          printf 'module cgcheck\n\ngo 1.24\n' > go.mod
+          go mod tidy
+          go build ./...

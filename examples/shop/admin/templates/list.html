@@ -1,0 +1,54 @@
+{{define "content"}}
+{{$r := .Resource}}
+<header>
+  <h2>{{$r.Label}}</h2>
+  <span class="count">{{len .Rows}} item{{if ne (len .Rows) 1}}s{{end}}</span>
+  <span class="spacer"></span>
+  {{/* The New button exists only if the API has a create endpoint. */}}
+  {{if $r.Create}}<a class="btn primary" href="{{.Prefix}}/{{$r.Name}}/new">{{$r.Create.Label}}</a>{{end}}
+</header>
+
+{{if not .Rows}}
+  <div class="empty">Nothing to show.<div class="hint">{{$r.List.Method}} {{$r.List.Path}} returned no items.</div></div>
+{{else}}
+<div class="scroll">
+<table>
+  <thead><tr>
+    {{range $r.Fields}}<th>{{.Label}}</th>{{end}}
+    {{if $r.HasMenu}}<th></th>{{end}}
+  </tr></thead>
+  <tbody>
+  {{range $i, $row := .Rows}}
+    {{$id := rowID $r $row}}
+    <tr>
+      {{range $f := $r.Fields}}
+        <td>
+          {{/* The identifying cell is the link into the detail view, and only
+               when there is a detail endpoint to link to. */}}
+          {{if and $f.Primary $r.Get $id}}<a href="{{$.Prefix}}/{{$r.Name}}/{{$id}}">{{cell $row $f.Name}}</a>
+          {{else if $f.Image}}{{with cell $row $f.Name}}<img class="thumb" src="{{.}}" alt="" loading="lazy">{{end}}
+          {{else if $f.Ref}}{{with cell $row $f.Name}}<a href="{{$.Prefix}}/{{$f.Ref}}/{{.}}">{{.}}</a>{{end}}
+          {{else}}{{cell $row $f.Name}}{{end}}
+        </td>
+      {{end}}
+      {{if $r.HasMenu}}
+      <td class="actions">
+        <button class="dots" aria-label="Options">&#8942;</button>
+        <div class="menu">
+          {{if and $r.Get $id}}<a href="{{$.Prefix}}/{{$r.Name}}/{{$id}}">{{$r.Get.Label}}</a>{{end}}
+          {{if and $r.Update $id}}<a href="{{$.Prefix}}/{{$r.Name}}/{{$id}}/edit">{{$r.Update.Label}}</a>{{end}}
+          {{if and $r.Delete $id}}
+          <form method="post" action="{{$.Prefix}}/{{$r.Name}}/{{$id}}/delete" onsubmit="return confirm('{{$r.Delete.Label}}? This cannot be undone.')">
+            <button type="submit" class="danger">{{$r.Delete.Label}}</button>
+          </form>
+          {{end}}
+        </div>
+      </td>
+      {{end}}
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}

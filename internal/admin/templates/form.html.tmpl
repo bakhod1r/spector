@@ -1,0 +1,51 @@
+{{define "content"}}
+{{$r := .Resource}}
+<div class="crumb"><a href="{{.Prefix}}/{{$r.Name}}">{{$r.Label}}</a> / {{if .ID}}{{.ID}}{{else}}new{{end}}</div>
+<header><h2>{{.Action.Label}}</h2></header>
+
+{{if not $r.Form}}
+  <div class="empty">
+    No form could be built.
+    <div class="hint">{{.Action.Method}} {{.Action.Path}} declares no JSON request body, so there are no fields to show.</div>
+  </div>
+{{else}}
+<form class="stack" method="post" action="{{.Post}}" enctype="multipart/form-data">
+  {{range $f := $r.Form}}
+  <div>
+    <label for="f-{{$f.Name}}">{{$f.Label}}{{if $f.Required}} <span class="req">*</span>{{end}}</label>
+    {{if $f.Image}}
+      {{/* Both are offered: an upload for a new picture, the URL box for one
+           that already lives somewhere. */}}
+      {{with value $.Item $f.Name}}<img class="photo" src="{{.}}" alt="">{{end}}
+      <input type="file" name="{{$f.Name}}__file" accept="image/png,image/jpeg,image/gif,image/webp">
+      <input id="f-{{$f.Name}}" name="{{$f.Name}}" value="{{value $.Item $f.Name}}" placeholder="or paste an image URL">
+    {{else if $f.Enum}}
+      <select id="f-{{$f.Name}}" name="{{$f.Name}}">
+        {{if not $f.Required}}<option value=""></option>{{end}}
+        {{range $f.Enum}}<option value="{{.}}"{{if eq . (value $.Item $f.Name)}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    {{else if eq $f.Type "boolean"}}
+      <select id="f-{{$f.Name}}" name="{{$f.Name}}">
+        <option value="false"{{if eq (value $.Item $f.Name) "false"}} selected{{end}}>false</option>
+        <option value="true"{{if eq (value $.Item $f.Name) "true"}} selected{{end}}>true</option>
+      </select>
+    {{else if or (eq $f.Type "object") (eq $f.Type "array")}}
+      {{/* A nested value has no flat input that could represent it honestly,
+           so it is edited as JSON rather than silently flattened. */}}
+      <textarea id="f-{{$f.Name}}" name="{{$f.Name}}" rows="4" placeholder="JSON">{{value $.Item $f.Name}}</textarea>
+      <div class="hint">JSON {{$f.Type}}</div>
+    {{else}}
+      <input id="f-{{$f.Name}}" name="{{$f.Name}}"
+             type="{{inputType $f}}"{{if eq $f.Type "number"}} step="any"{{end}}
+             value="{{value $.Item $f.Name}}"{{if $f.Required}} required{{end}}>
+      {{if $f.Format}}<div class="hint">{{$f.Format}}</div>{{end}}
+    {{end}}
+  </div>
+  {{end}}
+  <div>
+    <button class="btn primary" type="submit">{{.Action.Label}}</button>
+    <a class="btn" href="{{.Prefix}}/{{$r.Name}}">Cancel</a>
+  </div>
+</form>
+{{end}}
+{{end}}

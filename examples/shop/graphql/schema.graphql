@@ -1,0 +1,70 @@
+"An amount of money in a given currency."
+type Money {
+  amount: Float!
+  currency: String!
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  CANCELLED
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  roles: [String!]!
+}
+
+type Product {
+  id: ID!
+  name: String!
+  price: Money!
+  tags: [String!]!
+  inStock: Boolean!
+}
+
+type OrderLine {
+  product: Product!
+  quantity: Int!
+}
+
+type Order {
+  id: ID!
+  user: User!
+  lines: [OrderLine!]!
+  total: Money!
+  status: OrderStatus!
+}
+
+input NewOrderLine {
+  productId: ID!
+  quantity: Int!
+}
+
+input PlaceOrderInput {
+  userId: ID!
+  lines: [NewOrderLine!]!
+}
+
+type Query {
+  "Fetch a single user by id."
+  user(id: ID!): User
+  "List users, newest first."
+  users(limit: Int = 20): [User!]!
+  "Fetch a single product by id."
+  product(id: ID!): Product
+  "Search products by free text and optional tag."
+  products(query: String, tag: String, limit: Int = 20): [Product!]!
+  "Fetch an order by id."
+  order(id: ID!): Order
+}
+
+type Mutation {
+  "Place a new order for a user."
+  placeOrder(input: PlaceOrderInput!): Order!
+  "Cancel an order that has not shipped yet."
+  cancelOrder(id: ID!): Order!
+}

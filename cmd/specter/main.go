@@ -1,0 +1,346 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/user/specter"
+)
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run holds the whole CLI so it can be exercised without a process boundary:
+// streams are injected and failures come back as an exit code rather than a
+// call to os.Exit.
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("specter", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dirFlag := fs.String("dir", ".", "directory to scan")
+	adapter := fs.String("adapter", "", "framework adapter (gin); autodetected if empty")
+	title := fs.String("title", "", "API title (defaults to directory name)")
+	version := fs.String("version", "0.1.0", "API version")
+	out := fs.String("o", "", "output file (defaults to stdout)")
+	grpc := fs.Bool("grpc", false, "export the gRPC document (.proto/.pb.go) instead of OpenAPI")
+	protoDir := fs.String("proto", "", "directory to scan for gRPC sources (defaults to -dir)")
+	graphql := fs.Bool("graphql", false, "export the GraphQL document (.graphql/gqlgen) instead of OpenAPI")
+	graphqlDir := fs.String("graphqlDir", "", "directory to scan for GraphQL sources (defaults to -dir)")
+	lintOnly := fs.Bool("lint", false, "report routing problems instead of a document; exits 1 if any are found")
+	all := fs.Bool("all", false, "write openapi.json, grpc.json and graphql.json into -o (a directory)")
+	adminOut := fs.String("admin", "", "generate a gin admin panel into this directory (e.g. ./admin)")
+	adminAPI := fs.String("admin-api", "", "base URL the generated panel calls (default: the document's first server)")
+	adminPrefix := fs.String("admin-prefix", "/admin", "path the generated panel is served under")
+	adminPkg := fs.String("admin-package", "", "package name for the generated panel (default: the directory name)")
+	adminImport := fs.String("admin-import", "", "import path of the generated package (default: derived from go.mod)")
+	mockAddr := fs.String("mock", "", "serve the document as a mock API on this address (e.g. :8080)")
+	mockOrigins := fs.String("mock-origin", "", "comma-separated origins allowed to call the mock (default any)")
+	mockCreds := fs.Bool("mock-credentials", false, "allow cookies and Authorization headers on mock requests")
+	mockMaxAge := fs.Int("mock-max-age", 0, "seconds a browser may cache the mock's CORS preflight")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	cfg := specter.Config{
+		Dir:        *dirFlag,
+		Adapter:    *adapter,
+		Title:      *title,
+		Version:    *version,
+		ProtoDir:   *protoDir,
+		GraphqlDir: *graphqlDir,
+	}
+
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "specter:", err)
+		return 1
+	}
+	// An empty result is not an error: the scan ran, it just found nothing.
+	// A warning names the directory so the cause is obvious.
+	warnEmpty := func(what, scanDir string) {
+		fmt.Fprintf(stderr, "specter: warning: no %s found in %s\n", what, scanDir)
+	}
+	orDir := func(specific string) string {
+		if specific == "" {
+			return *dirFlag
+		}
+		return specific
+	}
+
+	// -all writes every document a project has, so a project with REST, gRPC
+	// and GraphQL is one command rather than three — each with its own flags to
+	// get wrong.
+	if *all {
+		dir := *out
+		if dir == "" {
+			dir = "."
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fail(err)
+		}
+
+		type artifact struct {
+			file string
+			doc  any
+			err  error
+			// empty reports whether the scan found nothing, which is not a
+			// failure: a REST-only project has no protos and should not be
+			// handed an empty grpc.json pretending otherwise.
+			empty bool
+		}
+
+		doc, derr := specter.Generate(cfg)
+		gdoc, gerr := specter.GenerateGrpc(cfg)
+		qdoc, qerr := specter.GenerateGraphql(cfg)
+
+		artifacts := []artifact{
+			{"openapi.json", doc, derr, doc != nil && len(doc.Paths) == 0},
+			{"grpc.json", gdoc, gerr, gdoc != nil && len(gdoc.Services) == 0},
+			{"graphql.json", qdoc, qerr, qdoc != nil && len(qdoc.Queries) == 0 && len(qdoc.Types) == 0},
+		}
+
+		written := 0
+		for _, a := range artifacts {
+			if a.err != nil {
+				fmt.Fprintf(stderr, "specter: %s: %v\n", a.file, a.err)
+				continue
+			}
+			if a.empty {
+				fmt.Fprintf(stderr, "specter: %s skipped: nothing found in %s\n", a.file, *dirFlag)
+				continue
+			}
+			data, merr := json.MarshalIndent(a.doc, "", "  ")
+			if merr != nil {
+				return fail(merr)
+			}
+			path := filepath.Join(dir, a.file)
+			if werr := os.WriteFile(path, append(data, '\n'), 0o644); werr != nil {
+				return fail(werr)
+			}
+			fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(data)+1)
+			written++
+		}
+		if written == 0 {
+			fmt.Fprintln(stderr, "specter: nothing was written")
+			return 1
+		}
+		return 0
+	}
+
+	// -admin writes a project rather than a document: Go source you own and
+	// edit, not a runtime to configure.
+	if *adminOut != "" {
+		pkg := *adminPkg
+		if pkg == "" {
+			pkg = packageName(*adminOut)
+		}
+		imp := *adminImport
+		if imp == "" {
+			// Derived rather than demanded: the module path plus where the
+			// output sits inside it is exactly what the entrypoint needs, and
+			// asking for it invites a typo that only shows up at build time.
+			imp = importPath(*adminOut)
+			if imp == "" {
+				fmt.Fprintln(stderr, "specter: no go.mod found, so cmd/adminpanel is skipped; pass -admin-import to generate it")
+			}
+		}
+
+		files, gerr := specter.GenerateAdmin(cfg, specter.AdminOptions{
+			Package:    pkg,
+			Prefix:     *adminPrefix,
+			BaseURL:    *adminAPI,
+			ImportPath: imp,
+			Dir:        *adminOut,
+		})
+		if gerr != nil {
+			return fail(gerr)
+		}
+		for _, f := range files {
+			path := filepath.Join(*adminOut, f.Name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return fail(err)
+			}
+			if err := os.WriteFile(path, f.Data, 0o644); err != nil {
+				return fail(err)
+			}
+			fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(f.Data))
+		}
+		fmt.Fprintf(stderr, "\nspecter: run it with:\n  go run ./%s/cmd/adminpanel -api http://localhost:8080 -addr :9090\n",
+			strings.Trim(filepath.ToSlash(*adminOut), "./"))
+		return 0
+	}
+
+	// -mock serves rather than emits, so it does not return while it runs.
+	if *mockAddr != "" {
+		doc, derr := specter.Generate(cfg)
+		if derr != nil {
+			return fail(derr)
+		}
+		opts := specter.MockOptions{
+			AllowCredentials: *mockCreds,
+			MaxAge:           *mockMaxAge,
+		}
+		for _, o := range strings.Split(*mockOrigins, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				opts.AllowOrigins = append(opts.AllowOrigins, o)
+			}
+		}
+
+		fmt.Fprintf(stderr, "specter: mocking %d paths on %s\n", len(doc.Paths), *mockAddr)
+		fmt.Fprintln(stderr, "specter: responses are shaped, not stateful — a POST does not change a later GET")
+		if len(opts.AllowOrigins) == 0 {
+			fmt.Fprintln(stderr, "specter: CORS open to any origin; use -mock-origin to restrict it")
+		}
+		// Worth saying out loud: this is the combination the CORS spec forbids
+		// with a wildcard, so the mock echoes the caller's origin instead.
+		if *mockCreds && len(opts.AllowOrigins) == 0 {
+			fmt.Fprintln(stderr, "specter: credentials allowed, so the caller's own origin is echoed back rather than *")
+		}
+		if serr := specter.ServeMock(*mockAddr, doc, opts); serr != nil {
+			return fail(serr)
+		}
+		return 0
+	}
+
+	// -lint answers a different question from the other modes: it reports
+	// problems rather than emitting a document, and its exit code is the
+	// result, so CI can gate on it.
+	if *lintOnly {
+		routes, serr := specter.ScanRoutes(cfg)
+		if serr != nil {
+			return fail(serr)
+		}
+		findings, lerr := specter.Lint(cfg, routes)
+		if lerr != nil {
+			return fail(lerr)
+		}
+		for _, f := range findings {
+			fmt.Fprintln(stdout, f)
+		}
+		if len(findings) > 0 {
+			fmt.Fprintf(stderr, "specter: %d problem(s) found\n", len(findings))
+			return 1
+		}
+		fmt.Fprintln(stderr, "specter: no routing problems found")
+		return 0
+	}
+
+	var v any
+	switch {
+	case *grpc:
+		gdoc, err := specter.GenerateGrpc(cfg)
+		if err != nil {
+			return fail(err)
+		}
+		if len(gdoc.Services) == 0 {
+			warnEmpty("gRPC services", orDir(*protoDir))
+		}
+		v = gdoc
+	case *graphql:
+		qdoc, err := specter.GenerateGraphql(cfg)
+		if err != nil {
+			return fail(err)
+		}
+		if len(qdoc.Queries) == 0 && len(qdoc.Types) == 0 {
+			warnEmpty("GraphQL schema", orDir(*graphqlDir))
+		}
+		v = qdoc
+	default:
+		doc, err := specter.Generate(cfg)
+		if err != nil {
+			return fail(err)
+		}
+		if len(doc.Paths) == 0 {
+			warnEmpty("routes", *dirFlag)
+		}
+		v = doc
+	}
+
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fail(err)
+	}
+	data = append(data, '\n')
+
+	if *out == "" {
+		if _, err := stdout.Write(data); err != nil {
+			return fail(err)
+		}
+		return 0
+	}
+	if err := os.WriteFile(*out, data, 0644); err != nil {
+		return fail(err)
+	}
+	fmt.Fprintln(stderr, "wrote", *out)
+	return 0
+}
+
+// packageName turns an output directory into a legal Go package name.
+func packageName(dir string) string {
+	base := filepath.Base(filepath.Clean(dir))
+	var b strings.Builder
+	for _, r := range base {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + 32)
+		}
+	}
+	name := b.String()
+	// A package cannot start with a digit, and an empty name is not a package
+	// at all; either way "admin" is the honest fallback.
+	if name == "" || (name[0] >= '0' && name[0] <= '9') {
+		return "admin"
+	}
+	return name
+}
+
+// importPath derives the generated package's import path from the nearest
+// go.mod and where the output directory sits beneath it. It returns "" when
+// there is no module to derive from, which the caller reports rather than
+// guessing a path that would not compile.
+func importPath(out string) string {
+	abs, err := filepath.Abs(out)
+	if err != nil {
+		return ""
+	}
+	dir := abs
+	for {
+		data, rerr := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if rerr == nil {
+			module := moduleOf(data)
+			if module == "" {
+				return ""
+			}
+			rel, rerr := filepath.Rel(dir, abs)
+			if rerr != nil || rel == "." {
+				return module
+			}
+			// An output outside the module cannot be imported from it.
+			if strings.HasPrefix(rel, "..") {
+				return ""
+			}
+			return module + "/" + filepath.ToSlash(rel)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+func moduleOf(gomod []byte) string {
+	for _, line := range strings.Split(string(gomod), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "module"); ok {
+			return strings.Trim(strings.TrimSpace(rest), `"`)
+		}
+	}
+	return ""
+}

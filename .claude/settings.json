@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep"
+    ],
+    "additionalDirectories": [
+      "/Users/mrb/Library/LaunchAgents"
+    ]
+  }
+}

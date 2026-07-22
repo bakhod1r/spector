@@ -1,0 +1,2252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Specter</title>
+<!-- Inline SVG: the console ships as one file with no external
+     assets, and a favicon request that 404s is still a request. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%2312141b'/%3E%3Cg%20fill='none'%20stroke='%23d6ec4b'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M13%205c-3%200-3%203-3%205s0%203-3%204c3%201%203%202%203%204s0%205%203%205'/%3E%3Cpath%20d='M19%205c3%200%203%203%203%205s0%203%203%204c-3%201-3%202-3%204s0%205-3%205'/%3E%3C/g%3E%3Cpath%20d='M18.6%209.5%2013.4%2022.5'%20stroke='%23f6f1de'%20stroke-width='2.6'%20stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#0f1117; --panel:#181b24; --border:#272b36; --text:#e6e8ee; --muted:#8b90a0; --accent:#5b8cff; --green:#22c55e; --red:#ef4444; --input-bg:#0f1117; --code-bg:#0b0d12; --hover:#1e222d; --header-h:60px; }
+  :root[data-theme="light"] { --bg:#f6f7f9; --panel:#ffffff; --border:#e3e6eb; --text:#1a1d24; --muted:#6b7280; --accent:#3b6df6; --green:#16a34a; --red:#dc2626; --input-bg:#ffffff; --code-bg:#f4f5f7; --hover:#eef0f3; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:14px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap; position:sticky; top:0; z-index:40; background:var(--bg); }
+  header h1 { margin:0; font-size:19px; }
+  header .ver { color:var(--muted); font-size:13px; }
+  header .spacer { flex:1; }
+  select, input, textarea { background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-family:inherit; font-size:13px; }
+  input.mono, textarea { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  textarea { width:100%; min-height:110px; resize:vertical; }
+  input:not(.search):not(.envname) { width:100%; }
+  header select { min-width:150px; }
+  header .search { width:200px; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 12px; font-size:13px; cursor:pointer; font-weight:500; }
+  button:hover { border-color:var(--accent); }
+  button.on { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  button.primary:hover { filter:brightness(1.1); }
+  a.linkbtn { text-decoration:none; }
+  .layout { display:flex; max-width:1240px; margin:0 auto; }
+  .side { width:290px; border-right:1px solid var(--border); padding:14px; position:sticky; top:var(--header-h); align-self:flex-start; height:calc(100vh - var(--header-h)); overflow-y:auto; }
+  .navtitle { color:var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin:0 0 8px 4px; }
+  .catnav-item { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+  .catnav-item:hover { background:var(--hover); }
+  .catnav-item .nm { text-transform:capitalize; flex:1; }
+  /* Top-level sidebar accordions (Categories / Collections / History), styled
+     after the VS Code explorer: uppercase header, chevron, collapsible body. */
+  .sect { margin-bottom:2px; }
+  .sect-head { display:flex; align-items:center; gap:6px; padding:5px 6px; cursor:pointer; user-select:none; border-radius:5px; }
+  .sect-head:hover { background:var(--hover); }
+  .sect-head .nm { text-transform:uppercase; font-size:11px; font-weight:700; letter-spacing:.5px; color:var(--muted); }
+  .sect-head .caret { color:var(--muted); font-size:11px; width:10px; text-align:center; transition:transform .15s; }
+  .sect:not(.collapsed) > .sect-head .caret { transform:rotate(90deg); }
+  .sect.collapsed > .sect-body { display:none; }
+  .sect-body { padding:2px 0 6px 4px; }
+  .catnav-item .ct { color:var(--muted); font-size:11px; background:var(--input-bg); border:1px solid var(--border); border-radius:12px; padding:0 7px; }
+  .catnav-item .caret { color:var(--muted); font-size:11px; width:10px; text-align:center; transition:transform .15s; }
+  .catnav-group:not(.collapsed) > .catnav-item .caret { transform:rotate(90deg); }
+  .catnav-group.collapsed > .catnav-ops { display:none; }
+  .catnav-ops { margin:2px 0 6px 14px; border-left:1px solid var(--border); padding-left:6px; }
+  .catnav-op { display:flex; align-items:center; gap:6px; padding:4px 6px; border-radius:5px; cursor:pointer; font-size:12px; }
+  .catnav-op:hover { background:var(--hover); }
+  .catnav-op .p { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+  .catnav-op .method { font-size:9px; }
+  .side .tabs { display:flex; gap:6px; margin:16px 0 12px; padding-top:14px; border-top:1px solid var(--border); }
+  .side .tabs button { flex:1; padding:6px; }
+  main { flex:1; padding:20px 24px; min-width:0; }
+  .op { border:1px solid var(--border); border-radius:8px; margin-bottom:12px; overflow:hidden; background:var(--panel); }
+  .op-head { display:flex; align-items:center; gap:12px; padding:12px 16px; cursor:pointer; user-select:none; }
+  .op-head:hover { background:var(--hover); }
+  .method { font-weight:700; font-size:11px; text-transform:uppercase; padding:4px 8px; border-radius:5px; min-width:58px; text-align:center; color:#fff; }
+  .m-get{background:#3b82f6}.m-post{background:#22c55e}.m-put{background:#f59e0b}.m-patch{background:#a855f7}.m-delete{background:#ef4444}.m-head,.m-options{background:#64748b}
+  .path { font-family:ui-monospace,monospace; font-size:13.5px; word-break:break-all; }
+  .summary { color:var(--muted); margin-left:auto; font-size:12.5px; }
+  /* Realtime endpoints discovered in the code. The badge sits in the card head
+     because "this does not return a body" has to be visible before the card is
+     opened and the response section is read. */
+  .rtbadge { font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+             border-radius:4px; padding:2px 6px; margin-left:8px; color:#fff; }
+  .rtbadge.websocket { background:#a855f7; }
+  .rtbadge.sse { background:#0ea5e9; }
+  .rtnote { font-size:12.5px; color:var(--muted); border-left:3px solid var(--border);
+            padding:6px 10px; margin-bottom:8px; }
+  .found { border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:12px; background:var(--input-bg); }
+  .found h4 { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin:0 0 8px; }
+  .found button { font-family:ui-monospace,monospace; font-size:12px; margin:0 6px 6px 0; }
+
+  /* Standards advice. Deliberately quiet: these are recommendations about
+     someone's working API, not errors, and styling them like failures would
+     make the console feel like it is scolding the reader. */
+  .advice { border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px;
+            padding:8px 11px; margin-top:6px; background:var(--input-bg); }
+  .advice.consider { border-left-color:var(--muted); }
+  .advice .msg { font-size:12.5px; }
+  .advice .ref { color:var(--muted); font-size:11px; margin-top:3px; font-family:ui-monospace,monospace; }
+  .advice .sev { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.04em;
+                 text-transform:uppercase; color:var(--accent); margin-right:6px; }
+  .advice.consider .sev { color:var(--muted); }
+
+  /* Middleware chain. Auth is highlighted because it is the one kind that
+     changes whether a call succeeds at all. */
+  .mws { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:4px; }
+  .mw { font-size:11.5px; font-family:ui-monospace,monospace; border:1px solid var(--border);
+        border-radius:4px; padding:2px 8px; background:var(--input-bg); color:var(--muted); }
+  .mw.auth { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .mw .arrow { color:var(--border); }
+  .mwnote { color:var(--muted); font-size:11.5px; margin-top:6px; }
+
+  /* Dependency chips. Each kind gets a colour so a handler's shape is legible
+     before any of the labels are read. */
+  .deps { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+  .dep { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-family:ui-monospace,monospace;
+         border:1px solid var(--border); border-radius:12px; padding:2px 9px; background:var(--input-bg); }
+  .dep .dot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+  .dep.k-db .dot{background:#f59e0b} .dep.k-http .dot{background:#3b82f6}
+  .dep.k-grpc .dot{background:#a855f7} .dep.k-cache .dot{background:#22c55e}
+  .dep.k-queue .dot{background:#ec4899}
+  /* A guess must not look like a fact. */
+  .dep.likely { border-style:dashed; color:var(--muted); }
+  .depnote { color:var(--muted); font-size:11.5px; margin-top:6px; }
+
+  /* Source view. The gutter is a separate column so the code keeps its own
+     indentation and can be copied without picking up line numbers. */
+  .srcbox { margin-top:10px; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+  .srcpath { font-family:ui-monospace,monospace; font-size:11.5px; color:var(--muted); padding:6px 10px; background:var(--panel); border-bottom:1px solid var(--border); }
+  .srccode { display:flex; overflow-x:auto; background:var(--code-bg); }
+  .srcnums { flex:0 0 auto; padding:10px 8px; text-align:right; color:var(--muted); user-select:none; border-right:1px solid var(--border); }
+  .srclines { flex:1 1 auto; padding:10px 12px; }
+  .srcnums div, .srclines div { font-family:ui-monospace,monospace; font-size:12.5px; line-height:1.55; white-space:pre; }
+  .srclines div.hit { background:rgba(91,140,255,.16); }
+  .srcnums div.hit { color:var(--accent); font-weight:700; }
+  .op-body { padding:16px; border-top:1px solid var(--border); display:none; }
+  .op.open .op-body { display:block; }
+  label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
+  .req { color:var(--red); font-size:11px; margin-left:6px; }
+  .subtabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin:6px 0 10px; flex-wrap:wrap; }
+  .subtabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; color:var(--muted); padding:6px 10px; }
+  .subtabs button.on { color:var(--text); border-bottom-color:var(--accent); }
+  .pane { display:none; }
+  .pane.on { display:block; }
+  .kv { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px; }
+  .btnrow { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .toggle { display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; margin:6px 0; }
+  .toggle button { border:0; border-radius:0; padding:4px 12px; font-size:12px; color:var(--muted); }
+  .toggle button.on { background:var(--accent); color:#fff; }
+  .resp { margin-top:14px; }
+  .status { font-weight:700; padding:3px 9px; border-radius:5px; display:inline-block; }
+  .s-ok{background:#14361f;color:#4ade80}.s-err{background:#3a1616;color:#f87171}
+  .meta { color:var(--muted); font-size:12px; margin-left:10px; }
+  pre { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:12px; overflow:auto; margin:6px 0 0; font-size:12.5px; white-space:pre; }
+  .empty { color:var(--muted); padding:30px; text-align:center; }
+  .expected { margin:6px 0; }
+  .ecode { font-weight:600; font-size:12.5px; margin-bottom:2px; }
+  h2.section { font-size:14px; margin:26px 0 12px; padding-top:16px; border-top:1px solid var(--border); color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .cat { margin-bottom:22px; }
+  .cat-head { display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none; padding:8px 4px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+  .cat-head .caret { color:var(--muted); font-size:12px; transition:transform .15s; }
+  .cat.collapsed .caret { transform:rotate(-90deg); }
+  .cat-head .name { font-size:16px; font-weight:700; text-transform:capitalize; }
+  .cat-head .count { color:var(--muted); font-size:12px; background:var(--panel); border:1px solid var(--border); border-radius:20px; padding:1px 9px; }
+  .cat.collapsed .cat-ops { display:none; }
+  .apitabs { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-left:6px; }
+  .apitabs button { border:0; border-radius:0; padding:7px 16px; background:transparent; color:var(--muted); font-weight:600; }
+  .apitabs button.on { background:var(--accent); color:#fff; }
+  .badge { font-size:10px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:5px; color:#fff; letter-spacing:.03em; }
+  .b-unary{background:#3b82f6}.b-server{background:#8b5cf6}.b-client{background:#f59e0b}.b-bidi{background:#ec4899}
+  .model, .saved { border:1px solid var(--border); border-radius:8px; margin-bottom:10px; background:var(--panel); overflow:hidden; scroll-margin-top:16px; }
+  .model-head { padding:10px 14px; font-weight:700; font-family:ui-monospace,monospace; border-bottom:1px solid var(--border); }
+  a.typelink { color:var(--accent); cursor:pointer; }
+  a.typelink:hover { text-decoration:underline; }
+  pre.pseudo { margin:0; padding:12px 14px; background:var(--code-bg); font-family:ui-monospace,monospace; font-size:13px; line-height:1.7; white-space:pre; overflow-x:auto; }
+  pre.pseudo .kw { color:var(--muted); }
+  pre.pseudo .ty { color:var(--accent); }
+  .item { padding:9px 11px; border:1px solid var(--border); border-radius:7px; margin-bottom:7px; cursor:pointer; background:var(--input-bg); }
+  .item:hover { border-color:var(--accent); }
+  .item .m { font-size:10px; font-weight:700; text-transform:uppercase; margin-right:6px; }
+  .item .p { font-family:ui-monospace,monospace; font-size:12px; }
+  .item .sub { color:var(--muted); font-size:11px; margin-top:2px; }
+  .test { font-size:12px; padding:3px 0; }
+  .test.pass::before { content:"✓ "; color:var(--green); }
+  .test.fail::before { content:"✗ "; color:var(--red); }
+  .hidden { display:none !important; }
+  .log { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:8px; margin-top:8px; height:260px; overflow-y:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .log .ln { display:flex; gap:8px; padding:2px 0; border-bottom:1px solid var(--border); }
+  .log .ln:last-child { border-bottom:0; }
+  .log .ts { color:var(--muted); flex:none; }
+  .log .txt { white-space:pre-wrap; word-break:break-word; flex:1; }
+  .log .in .txt { color:var(--green); }
+  .log .out .txt { color:var(--accent); }
+  .log .sys .txt { color:var(--muted); }
+  .log .err .txt { color:var(--red); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); display:inline-block; flex:none; }
+  .dot.live { background:var(--green); }
+  .dot.dead { background:var(--red); }
+  .hint { color:var(--muted); font-size:11.5px; margin:4px 0 0; }
+  code.var { color:var(--accent); }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-start; justify-content:center; z-index:50; padding:60px 16px; }
+  .overlay.on { display:flex; }
+  .modal { background:var(--panel); border:1px solid var(--border); border-radius:12px; width:100%; max-width:640px; max-height:80vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  .modal-head { display:flex; align-items:center; gap:10px; padding:16px 20px; border-bottom:1px solid var(--border); }
+  .modal-head h3 { margin:0; font-size:16px; flex:1; }
+  .modal-body { padding:18px 20px; }
+  .env-row { display:flex; gap:8px; align-items:center; margin-bottom:14px; }
+  .env-row select { flex:1; }
+  .vartable { width:100%; border-collapse:collapse; margin-top:4px; }
+  .vartable th { text-align:left; color:var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; padding:0 8px 6px; }
+  .vartable td { padding:4px; }
+  .vartable input { width:100%; }
+  .vartable .del { padding:6px 10px; color:var(--muted); }
+  .vartable .del:hover { color:var(--red); border-color:var(--red); }
+  .modal-foot { padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:8px; }
+  .modal-foot .spacer { flex:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">API</h1><span class="ver" id="ver"></span>
+  <div class="apitabs">
+    <button id="tabRest" class="on">REST</button>
+    <button id="tabGrpc">gRPC</button>
+    <button id="tabGraphql">GraphQL</button>
+    <button id="tabRealtime">Realtime</button>
+  </div>
+  <div class="spacer"></div>
+  <span style="color:var(--muted);font-size:12px">Env</span>
+  <select id="envSel"></select>
+  <button id="envManage">Manage</button>
+  <input class="search" id="search" placeholder="Filter endpoints…">
+  <a class="linkbtn" href="openapi.json" download="openapi.json"><button>Spec</button></a>
+  <a class="linkbtn hidden" id="adminLink"><button>Admin panel</button></a>
+  <button id="exportBtn" title="Export collections, environments and history">Export</button>
+  <button id="importBtn" title="Import a Specter collection file">Import</button>
+  <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+  <button id="themeBtn" title="Toggle theme">🌙</button>
+</header>
+<div class="layout">
+  <aside class="side">
+    <div class="sect" id="catSect">
+      <div class="sect-head"><span class="caret">❯</span><span class="nm">Categories</span></div>
+      <div class="sect-body"><div id="catNav"></div></div>
+    </div>
+    <div class="sect collapsed" id="collGroup">
+      <div class="sect-head"><span class="caret">❯</span><span class="nm">Collections</span></div>
+      <div class="sect-body"><div id="collPane"></div></div>
+    </div>
+    <div class="sect collapsed" id="histGroup">
+      <div class="sect-head"><span class="caret">❯</span><span class="nm">History</span></div>
+      <div class="sect-body"><div id="histPane"></div></div>
+    </div>
+  </aside>
+  <main id="app"><div class="empty">Loading…</div></main>
+</div>
+<div class="overlay" id="envOverlay">
+  <div class="modal">
+    <div class="modal-head"><h3>Environments</h3><button id="envClose">Close</button></div>
+    <div class="modal-body">
+      <div class="env-row">
+        <select id="mEnvSel"></select>
+        <button id="mEnvAdd">+ New</button>
+        <button id="mEnvRename">Rename</button>
+        <button id="mEnvDelete">Delete</button>
+      </div>
+      <table class="vartable">
+        <thead><tr><th style="width:38%">Variable</th><th>Value</th><th></th></tr></thead>
+        <tbody id="mVarBody"></tbody>
+      </table>
+      <button id="mVarAdd" style="margin-top:10px">+ Add variable</button>
+      <p class="hint">Reference anywhere with <code class="var">{{name}}</code> — in URL, params, headers, body, auth. Saved in this browser.</p>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span><button class="primary" id="mSave">Save</button></div>
+  </div>
+</div>
+<script>
+const methodOrder = ["get","post","put","patch","delete","head","options"];
+const LS_KEY = "specter.state";
+
+function initTheme() {
+  let t = localStorage.getItem("specter.theme");
+  if (!t) t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+  applyTheme(t);
+}
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  localStorage.setItem("specter.theme", t);
+  const btn = document.getElementById("themeBtn");
+  if (btn) btn.textContent = t === "light" ? "☀️" : "🌙";
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute("data-theme") || "dark";
+  applyTheme(cur === "light" ? "dark" : "light");
+}
+initTheme();
+let SPEC = null;
+let store = loadStore();
+
+function loadStore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_KEY));
+    if (s && s.environments) return s;
+  } catch (e) {}
+  return {
+    activeEnvId: "local",
+    environments: [{ id:"local", name:"local", vars:{ baseUrl: location.origin, token:"" } }],
+    opState: {},
+    collections: [{ id:"default", name:"Saved", requests:[] }],
+    history: [],
+  };
+}
+function saveStore() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+
+// ---- import / export ----
+const EXPORT_FORMAT = "specter.collection";
+const EXPORT_VERSION = 1;
+
+function buildExport(s) {
+  return {
+    format: EXPORT_FORMAT,
+    version: EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    activeEnvId: s.activeEnvId,
+    environments: s.environments,
+    collections: s.collections,
+    history: s.history,
+  };
+}
+
+// Throws with a human-readable reason when the payload is not a Specter export.
+function parseImport(text) {
+  let doc;
+  try { doc = JSON.parse(text); }
+  catch (e) { throw new Error("Not valid JSON: " + e.message); }
+  if (!doc || typeof doc !== "object") throw new Error("Expected a JSON object.");
+  if (doc.format !== EXPORT_FORMAT) throw new Error("Not a Specter collection file (missing format marker).");
+  if (doc.version > EXPORT_VERSION) throw new Error("File was written by a newer Specter (version " + doc.version + ").");
+  if (!Array.isArray(doc.environments) || !Array.isArray(doc.collections)) {
+    throw new Error("File is missing environments or collections.");
+  }
+  return {
+    activeEnvId: doc.activeEnvId,
+    environments: doc.environments,
+    collections: doc.collections,
+    history: Array.isArray(doc.history) ? doc.history : [],
+  };
+}
+
+// Merge keeps everything already in `base`; incoming entries that collide on id
+// are re-issued a fresh one so nothing is silently overwritten.
+function mergeStore(base, incoming) {
+  const out = JSON.parse(JSON.stringify(base));
+  const envIds = new Set(out.environments.map(e => e.id));
+  for (const env of incoming.environments) {
+    const copy = JSON.parse(JSON.stringify(env));
+    if (envIds.has(copy.id)) copy.id = uid();
+    envIds.add(copy.id);
+    out.environments.push(copy);
+  }
+  const reqs = out.collections[0].requests;
+  const reqIds = new Set(reqs.map(r => r.id));
+  for (const coll of incoming.collections) {
+    for (const req of (coll.requests || [])) {
+      const copy = JSON.parse(JSON.stringify(req));
+      if (reqIds.has(copy.id)) copy.id = uid();
+      reqIds.add(copy.id);
+      reqs.push(copy);
+    }
+  }
+  return out;
+}
+
+function exportStore() {
+  const blob = new Blob([JSON.stringify(buildExport(store), null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "specter-collection.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importStore(text) {
+  let incoming;
+  try { incoming = parseImport(text); }
+  catch (e) { alert("Import failed. " + e.message); return; }
+
+  const envCount = incoming.environments.length;
+  const reqCount = incoming.collections.reduce((n, c) => n + (c.requests || []).length, 0);
+  const replace = confirm(
+    "Importing " + envCount + " environment(s) and " + reqCount + " request(s).\n\n" +
+    "OK — replace everything currently stored.\n" +
+    "Cancel — merge into what you already have."
+  );
+
+  if (replace) {
+    store = {
+      activeEnvId: incoming.activeEnvId || (incoming.environments[0] || {}).id,
+      environments: incoming.environments,
+      collections: incoming.collections.length ? incoming.collections : [{ id:"default", name:"Saved", requests:[] }],
+      history: incoming.history,
+    };
+  } else {
+    store = mergeStore(store, incoming);
+  }
+  if (!store.environments.find(e => e.id === store.activeEnvId)) {
+    store.activeEnvId = (store.environments[0] || {}).id;
+  }
+  saveStore();
+  renderEnvSelector();
+  renderSide();
+}
+function activeEnv() { return store.environments.find(e => e.id === store.activeEnvId) || store.environments[0]; }
+
+// grpcHostVar is the variable name a service's methods share. One service
+// usually lives at one address, so binding the target per service rather than
+// per method means moving it is a single edit instead of one per RPC.
+function grpcHostVar(service) {
+  return service.charAt(0).toLowerCase() + service.slice(1) + "Host";
+}
+
+// seedGrpcHosts creates a variable per discovered service, so Manage lists them
+// and the value can be set once. Existing values are never overwritten: the
+// point is to offer the variable, not to reset what someone configured.
+function seedGrpcHosts(services) {
+  let added = false;
+  for (const env of store.environments) {
+    for (const svc of services || []) {
+      const key = grpcHostVar(svc.name);
+      if (env.vars[key] === undefined) {
+        env.vars[key] = env.vars.grpcHost || "localhost:50051";
+        added = true;
+      }
+    }
+  }
+  if (added) saveStore();
+}
+function uid() { return Math.random().toString(36).slice(2, 9); }
+
+function interpolate(text, env) {
+  if (text == null) return text;
+  return String(text).replace(/{{\s*([\w.]+)\s*}}/g, (m, name) =>
+    (env.vars[name] !== undefined ? env.vars[name] : m));
+}
+function interpolateMap(map, env) {
+  const out = {};
+  for (const k in map) out[interpolate(k, env)] = interpolate(map[k], env);
+  return out;
+}
+
+// ---- spec helpers ----
+let GRPC = null;
+let GRAPHQL = null;
+let mode = localStorage.getItem("specter.mode") || "rest";
+
+async function load() {
+  SPEC = await (await fetch("openapi.json")).json();
+  try { GRPC = await (await fetch("grpc.json")).json(); } catch (e) { GRPC = null; }
+  try { GRAPHQL = await (await fetch("graphql.json")).json(); } catch (e) { GRAPHQL = null; }
+  document.getElementById("title").textContent = SPEC.info.title || "API";
+  document.getElementById("ver").textContent = SPEC.info.version || "";
+  // The admin panel link appears only when the server injected its URL; the
+  // panel does its own authentication, so linking to it exposes nothing.
+  var adminUrl = (window.__specter || {}).adminUrl;
+  if (adminUrl) {
+    var link = document.getElementById("adminLink");
+    link.href = adminUrl;
+    link.classList.remove("hidden");
+  }
+  renderEnvSelector();
+  renderSide();
+  wireToolbar();
+
+  // A hash in the URL wins over the last-used mode in localStorage: an
+  // incoming link should land where it points, not where you last were.
+  const route = parseHash(location.hash);
+  if (route.mode || route.anchor || route.q) {
+    applyRoute(route);
+  } else {
+    renderActive();
+    setRoute(mode, "", "", true);
+  }
+
+  addEventListener("hashchange", () => {
+    if (suppressHashChange) return;
+    const r = parseHash(location.hash);
+    if (!r.mode) return;
+    applyRoute(r);
+  });
+}
+
+// ---- routing ----
+// The console keeps its place in the URL so a reload lands where you were and
+// a link to an endpoint can be shared. Shape: #/<mode>[/<anchor>][?q=<filter>]
+const MODES = ["rest", "grpc", "graphql", "realtime"];
+
+function parseHash(hash) {
+  const raw = String(hash || "").replace(/^#\/?/, "");
+  const [pathPart, queryPart] = raw.split("?");
+  const seg = pathPart.split("/").filter(Boolean);
+  const m = MODES.includes(seg[0]) ? seg[0] : null;
+  let q = "";
+  if (queryPart) {
+    const hit = new URLSearchParams(queryPart).get("q");
+    if (hit) q = hit;
+  }
+  return { mode: m, anchor: seg[1] ? decodeURIComponent(seg[1]) : "", q };
+}
+
+function buildHash(mode, anchor, q) {
+  let h = "#/" + mode;
+  if (anchor) h += "/" + encodeURIComponent(anchor);
+  if (q) h += "?q=" + encodeURIComponent(q);
+  return h;
+}
+
+// Writing the hash must not feed back into the hashchange handler, or every
+// programmatic update would re-render the pane the user is interacting with.
+let suppressHashChange = false;
+function setRoute(mode, anchor, q, replace) {
+  const h = buildHash(mode, anchor, q);
+  if (h === location.hash) return;
+  suppressHashChange = true;
+  if (replace) history.replaceState(null, "", h);
+  else history.pushState(null, "", h);
+  setTimeout(() => { suppressHashChange = false; }, 0);
+}
+
+function currentFilter() {
+  const s = document.getElementById("search");
+  return s ? s.value.trim() : "";
+}
+
+// Applies a route to the page. Returns true when the mode changed, so callers
+// know whether a full re-render already happened.
+function applyRoute(route, { rerender = true } = {}) {
+  const changed = route.mode && route.mode !== mode;
+  if (route.mode) {
+    mode = route.mode;
+    localStorage.setItem("specter.mode", mode);
+  }
+  const search = document.getElementById("search");
+  if (search && route.q !== search.value) {
+    search.value = route.q;
+  }
+  if (rerender) renderActive();
+  if (route.q) applyFilter(route.q);
+  if (route.anchor) revealAnchor(route.anchor);
+  return changed;
+}
+
+function applyFilter(q) {
+  const needle = q.toLowerCase();
+  document.querySelectorAll(".op").forEach(op => {
+    op.classList.toggle("hidden", !op.dataset.key.includes(needle));
+  });
+}
+
+// The pane is rebuilt asynchronously in some modes, so retry briefly before
+// giving up on an anchor that may not exist at all.
+function revealAnchor(anchor, tries = 10) {
+  const el = document.getElementById(anchor);
+  if (!el) {
+    if (tries > 0) setTimeout(() => revealAnchor(anchor, tries - 1), 50);
+    return;
+  }
+  const group = el.closest(".cat");
+  if (group) group.classList.remove("collapsed");
+  el.classList.add("open");
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function renderActive() {
+  document.getElementById("tabRest").classList.toggle("on", mode==="rest");
+  document.getElementById("tabGrpc").classList.toggle("on", mode==="grpc");
+  document.getElementById("tabGraphql").classList.toggle("on", mode==="graphql");
+  document.getElementById("tabRealtime").classList.toggle("on", mode==="realtime");
+  document.getElementById("search").placeholder = mode==="rest" ? "Filter endpoints…" : "Filter methods…";
+  document.getElementById("app").innerHTML = "";
+  // Leaving the tab tears down live connections; the panes are rebuilt from
+  // scratch on return, so a socket with no pane would just leak.
+  closeRealtime();
+  if (mode === "grpc") renderGrpc();
+  else if (mode === "graphql") renderGraphql();
+  else if (mode === "realtime") renderRealtime();
+  else render(SPEC);
+}
+function resolveRef(spec, ref) { return (spec.components.schemas || {})[ref.replace("#/components/schemas/","")]; }
+function sample(spec, schema, seen) {
+  if (!schema) return null;
+  seen = seen || new Set();
+  if (schema.$ref) { if (seen.has(schema.$ref)) return {}; seen.add(schema.$ref); return sample(spec, resolveRef(spec, schema.$ref), seen); }
+  switch (schema.type) {
+    case "array": return [sample(spec, schema.items, seen)].filter(v => v !== null);
+    case "string": return schema.format === "date-time" ? new Date().toISOString() : "string";
+    case "integer": case "number": return 0;
+    case "boolean": return true;
+    default:
+      if (schema.additionalProperties) return { key: sample(spec, schema.additionalProperties, seen) };
+      const o = {}; for (const k in (schema.properties||{})) o[k] = sample(spec, schema.properties[k], seen); return o;
+  }
+}
+function schemaText(spec, schema, seen, indent) {
+  seen = seen||new Set(); indent = indent||0; const pad = "  ".repeat(indent);
+  if (!schema) return "any";
+  if (schema.$ref) { const n = schema.$ref.replace("#/components/schemas/",""); if (seen.has(n)) return n; seen.add(n); return n+" "+schemaText(spec, resolveRef(spec,schema.$ref), seen, indent); }
+  if (schema.type === "array") return schemaText(spec, schema.items, seen, indent)+"[]";
+  if (schema.type === "object" || schema.properties) {
+    const props = schema.properties||{}; const keys = Object.keys(props);
+    if (!keys.length) return schema.additionalProperties ? "map<string, "+schemaText(spec,schema.additionalProperties,seen,indent)+">" : "object";
+    let out = "{\n"; for (const k of keys) out += pad+"  "+k+": "+schemaText(spec,props[k],seen,indent+1)+"\n"; return out+pad+"}";
+  }
+  return schema.format ? schema.type+" ("+schema.format+")" : (schema.type||"object");
+}
+function typeLabel(spec, schema) {
+  if (!schema) return "any";
+  if (schema.$ref) return schema.$ref.replace("#/components/schemas/","");
+  if (schema.type === "array") return typeLabel(spec, schema.items)+"[]";
+  if (schema.type === "object" && schema.additionalProperties) return "map<string, "+typeLabel(spec,schema.additionalProperties)+">";
+  return schema.format ? schema.type+" ("+schema.format+")" : (schema.type||"object");
+}
+function refName(schema) { if (!schema) return null; if (schema.$ref) return schema.$ref.replace("#/components/schemas/",""); if (schema.type==="array") return refName(schema.items); return null; }
+
+// modelBody renders a schema as a pseudo-code type declaration:
+//
+//   extends Audit {
+//     id:   integer
+//     name: string
+//     role: Role        <- links to the Role model
+//   }
+//
+// Enum schemas render as a value union, and map-only objects as map<k, v>.
+// Types that reference another model stay clickable.
+function modelBody(spec, schema, schemas) {
+  const pre = document.createElement("pre");
+  pre.className = "pseudo";
+  const txt = s => pre.appendChild(document.createTextNode(s));
+  const kw = s => { const e=document.createElement("span"); e.className="kw"; e.textContent=s; pre.appendChild(e); };
+  const type = sch => {
+    const ref = refName(sch), label = typeLabel(spec, sch);
+    if (ref && schemas[ref]) {
+      const a = document.createElement("a");
+      a.className = "typelink";
+      a.textContent = label;
+      a.onclick = () => document.getElementById("model-"+ref).scrollIntoView({ behavior:"smooth" });
+      pre.appendChild(a);
+    } else {
+      const e = document.createElement("span"); e.className="ty"; e.textContent=label; pre.appendChild(e);
+    }
+  };
+
+  // Enum: render the allowed values as a union.
+  if (schema.enum && schema.enum.length) {
+    kw(schema.type || "enum"); txt(" = " + schema.enum.map(v => JSON.stringify(v)).join(" | "));
+    return pre;
+  }
+
+  // Embedded/composed schemas (allOf) surface as `extends A, B`.
+  const parents = (schema.allOf || []).map(refName).filter(Boolean);
+  if (parents.length) {
+    kw("extends ");
+    parents.forEach((p, i) => { if (i) txt(", "); type({ $ref:"#/components/schemas/"+p }); });
+    txt(" ");
+  }
+
+  const props = schema.properties || {};
+  const fields = Object.keys(props);
+  if (!fields.length) {
+    if (!parents.length && schema.additionalProperties) {
+      kw("map<"); txt("string, "); type(schema.additionalProperties); kw(">");
+    } else {
+      txt("{}");
+    }
+    return pre;
+  }
+
+  txt("{\n");
+  const width = Math.max(...fields.map(f => f.length));
+  for (const f of fields) {
+    txt("  " + f + ":" + " ".repeat(width - f.length + 1));
+    type(props[f]);
+    txt("\n");
+  }
+  txt("}");
+  return pre;
+}
+
+// ---- environments ----
+function renderEnvSelector() {
+  const sel = document.getElementById("envSel");
+  sel.innerHTML = "";
+  for (const e of store.environments) {
+    const o = document.createElement("option"); o.value = e.id; o.textContent = e.name; sel.appendChild(o);
+  }
+  sel.value = store.activeEnvId;
+  sel.onchange = () => { store.activeEnvId = sel.value; saveStore(); };
+}
+let envDraft = null;      // deep-cloned environments while modal is open
+let draftEnvId = null;
+
+function openEnvModal() {
+  envDraft = JSON.parse(JSON.stringify(store.environments));
+  draftEnvId = store.activeEnvId;
+  renderEnvModal();
+  document.getElementById("envOverlay").classList.add("on");
+}
+function closeEnvModal() { document.getElementById("envOverlay").classList.remove("on"); envDraft = null; }
+function draftEnv() { return envDraft.find(e => e.id === draftEnvId) || envDraft[0]; }
+
+function renderEnvModal() {
+  const sel = document.getElementById("mEnvSel");
+  sel.innerHTML = "";
+  for (const e of envDraft) { const o = document.createElement("option"); o.value = e.id; o.textContent = e.name; sel.appendChild(o); }
+  sel.value = draftEnvId;
+  renderVarRows();
+}
+function renderVarRows() {
+  const tb = document.getElementById("mVarBody");
+  tb.innerHTML = "";
+  const env = draftEnv();
+  const entries = Object.entries(env.vars);
+  if (!entries.length) { const tr = document.createElement("tr"); tr.innerHTML = '<td colspan="3" class="hint">No variables yet — add one below.</td>'; tb.appendChild(tr); }
+  entries.forEach(([k, v], i) => {
+    const tr = document.createElement("tr");
+    const tdK = document.createElement("td");
+    const ki = document.createElement("input"); ki.className = "mono"; ki.value = k; ki.placeholder = "name";
+    ki.onchange = () => { const order = Object.entries(env.vars); order[i] = [ki.value, order[i][1]]; env.vars = Object.fromEntries(order); };
+    tdK.appendChild(ki);
+    const tdV = document.createElement("td");
+    const vi = document.createElement("input"); vi.className = "mono"; vi.value = v; vi.placeholder = "value";
+    vi.oninput = () => { env.vars[k] = vi.value; };
+    tdV.appendChild(vi);
+    const tdD = document.createElement("td"); tdD.style.width = "44px";
+    const del = document.createElement("button"); del.className = "del"; del.textContent = "×";
+    del.onclick = () => { delete env.vars[k]; renderVarRows(); };
+    tdD.appendChild(del);
+    tr.append(tdK, tdV, tdD); tb.appendChild(tr);
+  });
+}
+
+function wireEnvModal() {
+  document.getElementById("mEnvSel").onchange = e => { draftEnvId = e.target.value; renderVarRows(); };
+  document.getElementById("mEnvAdd").onclick = () => {
+    const name = prompt("New environment name:", "staging"); if (!name) return;
+    const env = { id: uid(), name, vars: { baseUrl: location.origin, token: "" } };
+    envDraft.push(env); draftEnvId = env.id; renderEnvModal();
+  };
+  document.getElementById("mEnvRename").onclick = () => {
+    const env = draftEnv(); const name = prompt("Rename environment:", env.name); if (!name) return;
+    env.name = name; renderEnvModal();
+  };
+  document.getElementById("mEnvDelete").onclick = () => {
+    if (envDraft.length === 1) { alert("Keep at least one environment."); return; }
+    const env = draftEnv(); if (!confirm(`Delete environment "${env.name}"?`)) return;
+    envDraft = envDraft.filter(e => e.id !== env.id); draftEnvId = envDraft[0].id; renderEnvModal();
+  };
+  document.getElementById("mVarAdd").onclick = () => {
+    const env = draftEnv(); let n = "var", i = 1; while (env.vars[n] !== undefined) n = "var" + (++i);
+    env.vars[n] = ""; renderVarRows();
+  };
+  document.getElementById("mSave").onclick = () => {
+    store.environments = envDraft;
+    if (!store.environments.find(e => e.id === store.activeEnvId)) store.activeEnvId = store.environments[0].id;
+    else store.activeEnvId = draftEnvId;
+    saveStore(); renderEnvSelector(); closeEnvModal();
+  };
+  document.getElementById("envClose").onclick = closeEnvModal;
+  document.getElementById("envOverlay").onclick = e => { if (e.target.id === "envOverlay") closeEnvModal(); };
+}
+
+function wireToolbar() {
+  document.getElementById("themeBtn").onclick = toggleTheme;
+  applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
+  document.getElementById("envManage").onclick = openEnvModal;
+  wireEnvModal();
+  document.getElementById("search").addEventListener("input", e => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll(".op").forEach(op => op.classList.toggle("hidden", !op.dataset.key.includes(q)));
+    document.querySelectorAll(".cat").forEach(cat => {
+      const anyVisible = [...cat.querySelectorAll(".op")].some(op => !op.classList.contains("hidden"));
+      cat.classList.toggle("hidden", !anyVisible);
+    });
+    // Filtering replaces the route rather than stacking one entry per
+    // keystroke, so Back leaves the console instead of replaying the typing.
+    setRoute(mode, "", e.target.value.trim(), true);
+  });
+  for (const id of ["catSect", "collGroup", "histGroup"]) {
+    const sect = document.getElementById(id);
+    sect.querySelector(".sect-head").onclick = () => sect.classList.toggle("collapsed");
+  }
+  document.getElementById("exportBtn").onclick = exportStore;
+  const importFile = document.getElementById("importFile");
+  document.getElementById("importBtn").onclick = () => importFile.click();
+  importFile.onchange = () => {
+    const f = importFile.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { importStore(String(r.result)); importFile.value = ""; };
+    r.onerror = () => { alert("Import failed. Could not read the file."); importFile.value = ""; };
+    r.readAsText(f);
+  };
+  const tabIds = { tabRest:"rest", tabGrpc:"grpc", tabGraphql:"graphql", tabRealtime:"realtime" };
+  for (const [id, m] of Object.entries(tabIds)) {
+    document.getElementById(id).onclick = () => {
+      mode = m;
+      localStorage.setItem("specter.mode", m);
+      setRoute(m, "", currentFilter());
+      renderActive();
+    };
+  }
+}
+
+// ---- request model from spec ----
+function fromSpec(spec, path, method, op) {
+  const params = resolveParams(spec, op.parameters);
+  const grab = kind => { const o = {}; params.filter(p=>p.in===kind).forEach(p=>o[p.name]=""); return o; };
+  const rb = op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
+  const req = {
+    id: uid(),
+    key: opStateKey(method, path),
+    name: op.operationId || (method + " " + path),
+    method, path,
+    pathParams: grab("path"), queryParams: grab("query"), headers: grab("header"),
+    body: rb ? JSON.stringify(sample(spec, rb.schema), null, 2) : "",
+    auth: { type:"none", token:"", username:"", password:"", key:"", value:"", in:"header" },
+    extract: [], tests: [],
+  };
+  return hydrateOpState(req);
+}
+
+// Chaining rules and assertions are authored by hand and cost real thought, but
+// the request object they live on is rebuilt from the spec every time the pane
+// renders — switching tabs or reloading threw them away. They are keyed by
+// method and path and kept with the rest of the console's state.
+function opStateKey(method, path) { return method.toLowerCase() + " " + path; }
+
+function hydrateOpState(req) {
+  const saved = (store.opState || {})[req.key];
+  if (saved) {
+    req.extract = JSON.parse(JSON.stringify(saved.extract || []));
+    req.tests = JSON.parse(JSON.stringify(saved.tests || []));
+  }
+  return req;
+}
+
+// persistOpState records only what the user authored. Parameters and bodies are
+// left out on purpose: they are scratch values for one call, and restoring a
+// stale body over a freshly generated sample would be a worse surprise than
+// retyping it.
+function persistOpState(req) {
+  if (!req || !req.key) return;
+  store.opState = store.opState || {};
+  const hasRules = (req.extract && req.extract.length) || (req.tests && req.tests.length);
+  if (hasRules) {
+    store.opState[req.key] = {
+      extract: JSON.parse(JSON.stringify(req.extract || [])),
+      tests: JSON.parse(JSON.stringify(req.tests || [])),
+    };
+  } else {
+    delete store.opState[req.key]; // deleting the last rule means deleting it
+  }
+  saveStore();
+}
+
+// ---- build + send ----
+function buildURL(req, env) {
+  let p = req.path;
+  for (const k in req.pathParams) p = p.replace(`{${k}}`, encodeURIComponent(interpolate(req.pathParams[k], env) || ""));
+  const qs = [];
+  for (const k in req.queryParams) { const v = interpolate(req.queryParams[k], env); if (v !== "") qs.push(encodeURIComponent(k)+"="+encodeURIComponent(v)); }
+  const base = (env.vars.baseUrl || "").replace(/\/$/, "");
+  return base + p + (qs.length ? "?"+qs.join("&") : "");
+}
+function buildHeaders(req, env) {
+  const h = interpolateMap(req.headers, env);
+  if (req.body && req.method !== "get") h["Content-Type"] = h["Content-Type"] || "application/json";
+  const a = req.auth || { type:"none" };
+  if (a.type === "bearer") h["Authorization"] = "Bearer " + interpolate(a.token, env);
+  else if (a.type === "basic") h["Authorization"] = "Basic " + btoa(interpolate(a.username,env)+":"+interpolate(a.password,env));
+  else if (a.type === "apiKey" && a.in === "header" && a.key) h[interpolate(a.key,env)] = interpolate(a.value, env);
+  return h;
+}
+function buildCurl(req, env) {
+  let url = buildURL(req, env);
+  const a = req.auth || {};
+  if (a.type === "apiKey" && a.in === "query" && a.key) url += (url.includes("?")?"&":"?") + encodeURIComponent(interpolate(a.key,env))+"="+encodeURIComponent(interpolate(a.value,env));
+  const headers = buildHeaders(req, env);
+  let cmd = `curl -X ${req.method.toUpperCase()} '${url}'`;
+  for (const k in headers) cmd += ` \\\n  -H '${k}: ${headers[k]}'`;
+  if (req.body && req.method !== "get") cmd += ` \\\n  -d '${interpolate(req.body,env).replace(/'/g,"'\\''")}'`;
+  return cmd;
+}
+function pick(obj, path) {
+  if (!path || path === "$") return obj;
+  const parts = path.replace(/^\$\.?/, "").split(/[.\[\]]/).filter(Boolean);
+  let cur = obj;
+  for (const p of parts) { if (cur == null) return undefined; cur = cur[p]; }
+  return cur;
+}
+function runTest(t, res, bodyJson) {
+  let ok = false, actual = "";
+  if (t.kind === "status") { actual = String(res.status); ok = actual === String(t.expected); }
+  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = v !== undefined; }
+  else if (t.kind === "jsonEquals") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = actual === JSON.stringify(coerce(t.expected)); }
+  else if (t.kind === "headerEquals") { actual = res.headers.get(t.target) || ""; ok = actual === t.expected; }
+  return { ok, label: `${t.kind} ${t.target||""} = ${t.expected}  (got ${actual})` };
+}
+function coerce(s) { if (s==="true")return true; if (s==="false")return false; if (s!=="" && !isNaN(s))return Number(s); return s; }
+
+async function send(req, out) {
+  const env = activeEnv();
+  const url = buildURL(req, env);
+  const headers = buildHeaders(req, env);
+  const opts = { method: req.method.toUpperCase(), headers };
+  if (req.body && req.method !== "get") opts.body = interpolate(req.body, env);
+  out.innerHTML = '<div class="status">…</div>';
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    const ms = Math.round(performance.now()-t0);
+    const bytes = new Blob([text]).size;
+    let json = null, pretty = text;
+    try { json = JSON.parse(text); pretty = JSON.stringify(json, null, 2); } catch(e) {}
+
+    // chaining: extract -> env vars
+    const extracted = [];
+    for (const rule of (req.extract||[])) {
+      let val;
+      if (rule.from === "status") val = res.status;
+      else if (rule.from === "header") val = res.headers.get(rule.jsonPath);
+      else val = pick(json, rule.jsonPath);
+      if (val !== undefined && val !== null) { env.vars[rule.setVar] = String(val); extracted.push(`${rule.setVar} = ${val}`); }
+    }
+    // tests
+    const results = (req.tests||[]).map(t => runTest(t, res, json));
+
+    let hdrs = ""; res.headers.forEach((v,k)=>hdrs+=k+": "+v+"\n");
+    renderResponse(out, res, ms, bytes, pretty, hdrs.trim(), extracted, results, json);
+
+    // history
+    store.history.unshift({ at: Date.now(), method: req.method, url, status: res.status, durationMs: ms, snapshot: JSON.parse(JSON.stringify(req)), responseBody: pretty.slice(0, 4000) });
+    store.history = store.history.slice(0, 40);
+    saveStore(); renderHistory();
+  } catch (e) {
+    out.innerHTML = `<div class="status s-err">Error</div><pre></pre>`;
+    out.querySelector("pre").textContent = String(e);
+  }
+}
+function renderResponse(out, res, ms, bytes, body, hdrs, extracted, results, json) {
+  out.innerHTML = "";
+  const line = document.createElement("div");
+  const cls = res.ok ? "s-ok" : "s-err";
+  line.innerHTML = `<span class="status ${cls}">${res.status} ${res.statusText}</span><span class="meta">${ms} ms · ${bytes} B</span>`;
+  out.appendChild(line);
+  if (results && results.length) {
+    const box = document.createElement("div"); box.style.margin = "8px 0";
+    for (const r of results) { const d = document.createElement("div"); d.className = "test " + (r.ok?"pass":"fail"); d.textContent = r.label; box.appendChild(d); }
+    out.appendChild(box);
+  }
+  if (extracted && extracted.length) {
+    const e = document.createElement("div"); e.className = "hint"; e.textContent = "Extracted → " + extracted.join(", "); out.appendChild(e);
+  }
+  addLabeled(out, "Response body", body);
+  if (hdrs) addLabeled(out, "Response headers", hdrs);
+  addSaveVar(out, json);
+}
+function addLabeled(parent, label, text) {
+  const l = document.createElement("label"); l.textContent = label; parent.appendChild(l);
+  const pre = document.createElement("pre"); pre.textContent = text; parent.appendChild(pre);
+}
+
+function addSaveVar(parent, json) {
+  if (json === null || json === undefined) return;
+  const lbl = document.createElement("label"); lbl.textContent = "Save a response field to a variable (then reuse as {{name}})"; parent.appendChild(lbl);
+  const wrap = document.createElement("div"); wrap.className = "kv"; wrap.style.gridTemplateColumns = "1fr 1fr auto";
+  const path = document.createElement("input"); path.className = "mono"; path.value = "$."; path.placeholder = "$.token";
+  const name = document.createElement("input"); name.className = "mono"; name.placeholder = "variable name, e.g. token";
+  const btn = document.createElement("button"); btn.textContent = "Save to {{var}}";
+  const preview = document.createElement("div"); preview.className = "hint";
+  const refresh = () => { const v = pick(json, path.value); preview.textContent = v === undefined ? "path not found" : "value: " + JSON.stringify(v); };
+  path.oninput = refresh; refresh();
+  btn.onclick = () => {
+    const v = pick(json, path.value);
+    if (v === undefined) { alert("Path not found: " + path.value); return; }
+    if (!name.value.trim()) { alert("Enter a variable name"); return; }
+    activeEnv().vars[name.value.trim()] = typeof v === "object" ? JSON.stringify(v) : String(v);
+    saveStore();
+    btn.textContent = "Saved ✓"; setTimeout(() => btn.textContent = "Save to {{var}}", 1500);
+  };
+  wrap.append(path, name, btn); parent.appendChild(wrap); parent.appendChild(preview);
+}
+
+// ---- endpoint explorer ----
+function deriveTag(path, op) {
+  if (op.tags && op.tags.length) return op.tags[0];
+  const skip = new Set(["api","v1","v2","v3","rest","public","internal"]);
+  for (const seg of path.split("/")) {
+    if (!seg || seg.startsWith("{")) continue;
+    if (skip.has(seg.toLowerCase()) || /^v\d+$/i.test(seg)) continue;
+    return seg;
+  }
+  return "default";
+}
+
+function render(spec) {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  const paths = spec.paths || {};
+  const keys = Object.keys(paths).sort();
+  if (!keys.length) { app.innerHTML = '<div class="empty">No endpoints found.</div>'; return; }
+
+  const groups = {};
+  for (const path of keys) for (const m of methodOrder) {
+    if (!paths[path][m]) continue;
+    const tag = deriveTag(path, paths[path][m]);
+    (groups[tag] = groups[tag] || []).push({ path, m, op: paths[path][m] });
+  }
+
+  const sortedTags = Object.keys(groups).sort();
+  for (const tag of sortedTags) {
+    const cat = document.createElement("div");
+    cat.className = "cat collapsed";
+    cat.id = "cat-" + tag;
+    const head = document.createElement("div");
+    head.className = "cat-head";
+    head.innerHTML = `<span class="caret">▼</span><span class="name">${tag}</span><span class="count">${groups[tag].length}</span>`;
+    head.onclick = () => cat.classList.toggle("collapsed");
+    cat.appendChild(head);
+    const ops = document.createElement("div");
+    ops.className = "cat-ops";
+    for (const { path, m, op } of groups[tag]) ops.appendChild(opCard(spec, path, m, op));
+    cat.appendChild(ops);
+    app.appendChild(cat);
+  }
+  renderCatNav(sortedTags.map(t => ({
+    tag: t,
+    count: groups[t].length,
+    ops: groups[t].map(({ path, m, op }) => ({
+      badge: m,
+      badgeClass: "method m-" + m,
+      label: op.summary || op.operationId || path,
+      title: m.toUpperCase() + " " + path,
+      anchor: opAnchor(path, m),
+    })),
+  })));
+  renderModels(spec);
+}
+
+function renderCatNav(cats) {
+  const nav = document.getElementById("catNav");
+  if (!nav) return;
+  nav.innerHTML = "";
+  for (const { tag, count, ops } of cats) {
+    const grp = document.createElement("div");
+    grp.className = "catnav-group collapsed";
+
+    const it = document.createElement("div");
+    it.className = "catnav-item";
+    it.innerHTML = `<span class="caret">❯</span><span class="nm">${tag}</span><span class="ct">${count}</span>`;
+    it.onclick = () => grp.classList.toggle("collapsed");
+    grp.appendChild(it);
+
+    const list = document.createElement("div");
+    list.className = "catnav-ops";
+    // Every tab supplies the same shape, so gRPC and GraphQL groups list their
+    // members like REST ones do. They used to pass only a count, which made a
+    // group open onto nothing.
+    for (const entry of ops || []) {
+      const row = document.createElement("div");
+      row.className = "catnav-op";
+
+      const badge = document.createElement("span");
+      badge.className = entry.badgeClass || "method";
+      badge.textContent = entry.badge || "";
+
+      const label = document.createElement("span");
+      label.className = "p";
+      label.textContent = entry.label;
+
+      row.append(badge, label);
+      row.title = entry.title || entry.label;
+      row.onclick = () => {
+        const cat = document.getElementById("cat-" + tag);
+        if (cat) cat.classList.remove("collapsed");
+        const el = document.getElementById(entry.anchor);
+        if (!el) return;
+        el.classList.add("open");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setRoute(mode, el.id, currentFilter());
+      };
+      list.appendChild(row);
+    }
+    grp.appendChild(list);
+    nav.appendChild(grp);
+  }
+}
+
+function opAnchor(path, method) {
+  return "op-" + method + "-" + path.replace(/[^a-zA-Z0-9]+/g, "-");
+}
+
+function subtabs(container, tabs) {
+  const bar = document.createElement("div"); bar.className = "subtabs";
+  const panes = {};
+  tabs.forEach((t, i) => {
+    const b = document.createElement("button"); b.textContent = t.label; if (i===0) b.className="on";
+    const pane = document.createElement("div"); pane.className = "pane" + (i===0?" on":"");
+    t.build(pane);
+    b.onclick = () => { bar.querySelectorAll("button").forEach(x=>x.classList.remove("on")); b.classList.add("on"); container.querySelectorAll(":scope > .pane").forEach(x=>x.classList.remove("on")); pane.classList.add("on"); };
+    bar.appendChild(b); panes[t.label] = pane;
+  });
+  container.appendChild(bar);
+  tabs.forEach(t => container.appendChild(panes[t.label]));
+}
+
+function kvEditor(pane, map, keyReadonly) {
+  const rerender = () => {
+    pane.innerHTML = "";
+    for (const k of Object.keys(map)) {
+      const row = document.createElement("div"); row.className = "kv";
+      const ki = document.createElement("input"); ki.className="mono"; ki.value = k; ki.placeholder="key"; ki.readOnly = !!keyReadonly;
+      const vi = document.createElement("input"); vi.className="mono"; vi.value = map[k]; vi.placeholder="value ({{var}} ok)";
+      vi.oninput = () => map[k] = vi.value;
+      if (!keyReadonly) ki.onchange = () => { const nv = map[k]; delete map[k]; map[ki.value] = nv; };
+      row.appendChild(ki); row.appendChild(vi); pane.appendChild(row);
+    }
+    if (!keyReadonly) {
+      const add = document.createElement("button"); add.textContent = "+ Add"; add.onclick = () => { map["key"+(Object.keys(map).length+1)]=""; rerender(); };
+      pane.appendChild(add);
+    }
+    if (!Object.keys(map).length && keyReadonly) { const e=document.createElement("div"); e.className="hint"; e.textContent="none"; pane.appendChild(e); }
+  };
+  rerender();
+}
+
+function authEditor(pane, auth) {
+  const rerender = () => {
+    pane.innerHTML = "";
+    const sel = document.createElement("select");
+    ["none","bearer","basic","apiKey"].forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; if(auth.type===t)o.selected=true; sel.appendChild(o); });
+    sel.onchange = () => { auth.type = sel.value; rerender(); };
+    pane.appendChild(sel);
+    const field = (lbl, key, ph) => { const l=document.createElement("label"); l.textContent=lbl; pane.appendChild(l); const i=document.createElement("input"); i.className="mono"; i.value=auth[key]||""; i.placeholder=ph||""; i.oninput=()=>auth[key]=i.value; pane.appendChild(i); };
+    if (auth.type==="bearer") field("Token","token","{{token}}");
+    else if (auth.type==="basic") { field("Username","username"); field("Password","password"); }
+    else if (auth.type==="apiKey") {
+      field("Key name","key","X-API-Key"); field("Value","value","{{apiKey}}");
+      const l=document.createElement("label"); l.textContent="Add to"; pane.appendChild(l);
+      const s2=document.createElement("select"); ["header","query"].forEach(x=>{const o=document.createElement("option");o.value=x;o.textContent=x;if(auth.in===x)o.selected=true;s2.appendChild(o);}); s2.onchange=()=>auth.in=s2.value; pane.appendChild(s2);
+    }
+  };
+  rerender();
+}
+
+function extractEditor(pane, req) {
+  const rerender = () => {
+    pane.innerHTML = "";
+    const p = document.createElement("div"); p.className="hint"; p.textContent = "Extract a value from the response into an env variable, then reuse it as {{var}} in later requests."; pane.appendChild(p);
+    (req.extract||[]).forEach((rule, i) => {
+      const row = document.createElement("div"); row.className="kv"; row.style.gridTemplateColumns="90px 1fr 1fr 28px";
+      const from = document.createElement("select"); ["body","header","status"].forEach(x=>{const o=document.createElement("option");o.value=x;o.textContent=x;if(rule.from===x)o.selected=true;from.appendChild(o);}); from.onchange=()=>{rule.from=from.value; persistOpState(req);};
+      const jp = document.createElement("input"); jp.className="mono"; jp.value=rule.jsonPath||""; jp.placeholder="$.id"; jp.oninput=()=>{rule.jsonPath=jp.value; persistOpState(req);};
+      const sv = document.createElement("input"); sv.className="mono"; sv.value=rule.setVar||""; sv.placeholder="var name"; sv.oninput=()=>{rule.setVar=sv.value; persistOpState(req);};
+      const del = document.createElement("button"); del.textContent="×"; del.onclick=()=>{ req.extract.splice(i,1); persistOpState(req); rerender(); };
+      row.append(from, jp, sv, del); pane.appendChild(row);
+    });
+    const add = document.createElement("button"); add.textContent="+ Add rule"; add.onclick=()=>{ (req.extract=req.extract||[]).push({from:"body",jsonPath:"$.id",setVar:"id"}); persistOpState(req); rerender(); };
+    pane.appendChild(add);
+  };
+  rerender();
+}
+
+function testsEditor(pane, req) {
+  const rerender = () => {
+    pane.innerHTML = "";
+    (req.tests||[]).forEach((t, i) => {
+      const row = document.createElement("div"); row.className="kv"; row.style.gridTemplateColumns="120px 1fr 1fr 28px";
+      const kind = document.createElement("select"); ["status","jsonExists","jsonEquals","headerEquals"].forEach(x=>{const o=document.createElement("option");o.value=x;o.textContent=x;if(t.kind===x)o.selected=true;kind.appendChild(o);}); kind.onchange=()=>{t.kind=kind.value; persistOpState(req);};
+      const tgt = document.createElement("input"); tgt.className="mono"; tgt.value=t.target||""; tgt.placeholder="$.id / header"; tgt.oninput=()=>{t.target=tgt.value; persistOpState(req);};
+      const exp = document.createElement("input"); exp.className="mono"; exp.value=t.expected||""; exp.placeholder="expected"; exp.oninput=()=>{t.expected=exp.value; persistOpState(req);};
+      const del = document.createElement("button"); del.textContent="×"; del.onclick=()=>{ req.tests.splice(i,1); persistOpState(req); rerender(); };
+      row.append(kind, tgt, exp, del); pane.appendChild(row);
+    });
+    const add = document.createElement("button"); add.textContent="+ Add test"; add.onclick=()=>{ (req.tests=req.tests||[]).push({kind:"status",target:"",expected:"200"}); persistOpState(req); rerender(); };
+    pane.appendChild(add);
+  };
+  rerender();
+}
+
+function requestEditor(spec, req, op) {
+  const wrap = document.createElement("div");
+  const tabs = [];
+  if (op) {
+    if (Object.keys(req.pathParams).length) tabs.push({ label:"Path", build:p=>kvEditor(p, req.pathParams, true) });
+    tabs.push({ label:"Query", build:p=>kvEditor(p, req.queryParams, false) });
+    tabs.push({ label:"Headers", build:p=>kvEditor(p, req.headers, false) });
+    const rb = op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
+    if (rb) tabs.push({ label:"Body", build:p=>{ const ta=document.createElement("textarea"); ta.value=req.body; ta.oninput=()=>req.body=ta.value; p.appendChild(ta); const s=document.createElement("pre"); s.textContent=schemaText(spec,rb.schema); s.style.marginTop="8px"; p.appendChild(s); } });
+  } else {
+    tabs.push({ label:"Query", build:p=>kvEditor(p, req.queryParams, false) });
+    tabs.push({ label:"Headers", build:p=>kvEditor(p, req.headers, false) });
+    tabs.push({ label:"Body", build:p=>{ const ta=document.createElement("textarea"); ta.value=req.body; ta.oninput=()=>req.body=ta.value; p.appendChild(ta); } });
+  }
+  tabs.push({ label:"Auth", build:p=>authEditor(p, req.auth) });
+  tabs.push({ label:"Chaining", build:p=>extractEditor(p, req) });
+  tabs.push({ label:"Tests", build:p=>testsEditor(p, req) });
+  subtabs(wrap, tabs);
+  return wrap;
+}
+
+// resolveParams follows $refs into components. Shared headers are defined once
+// and referenced, so a console that read only inline entries would show no
+// inputs for precisely the guarded routes that require them.
+function resolveParams(spec, params) {
+  return (params || []).map(p => {
+    if (!p || !p.$ref) return p;
+    const key = p.$ref.replace("#/components/parameters/", "");
+    const def = spec && spec.components && spec.components.parameters && spec.components.parameters[key];
+    return def || p;
+  }).filter(p => p && p.name);
+}
+
+function opCard(spec, path, method, op) {
+  const el = document.createElement("div");
+  el.className = "op";
+  el.dataset.key = (method+" "+path+" "+(op.summary||op.operationId||"")).toLowerCase();
+  el.id = opAnchor(path, method);
+  const head = document.createElement("div"); head.className = "op-head";
+  const rtKind = op["x-specter-realtime"];
+  head.innerHTML = `<span class="method m-${method}">${method}</span><span class="path">${path}</span>`
+    + (rtKind ? `<span class="rtbadge ${rtKind}">${rtKind}</span>` : "")
+    + (op.summary||op.operationId ? `<span class="summary">${op.summary||op.operationId}</span>`:"");
+  head.onclick = () => {
+    const opened = el.classList.toggle("open");
+    // Only cards with a stable id can be linked to; the rest just toggle.
+    if (el.id) setRoute(mode, opened ? el.id : "", currentFilter());
+  };
+  el.appendChild(head);
+
+  const body = document.createElement("div"); body.className = "op-body";
+
+  // Said before anything else in the body: the response section below is
+  // meaningless for a connection that upgrades or streams, and a reader who
+  // takes it at face value will write a client that never works.
+  if (rtKind) {
+    const note = document.createElement("div");
+    note.className = "rtnote";
+    note.textContent = rtKind === "websocket"
+      ? "Upgrades the connection to a WebSocket. The response body below does not apply — open it in the Realtime tab."
+      : "Streams server-sent events and holds the connection open. The response body below does not apply — open it in the Realtime tab.";
+    body.appendChild(note);
+  }
+
+  const mws = op["x-specter-middleware"];
+  if (mws && mws.length) {
+    const lbl = document.createElement("label"); lbl.textContent = "Runs before the handler"; body.appendChild(lbl);
+    body.appendChild(middlewareView(mws));
+  }
+
+  const tips = op["x-specter-advice"];
+  if (tips && tips.length) {
+    const lbl = document.createElement("label"); lbl.textContent = "Standards"; body.appendChild(lbl);
+    for (const a of tips) body.appendChild(adviceView(a));
+  }
+
+  const deps = op["x-specter-calls"];
+  if (deps && deps.length) {
+    const lbl = document.createElement("label"); lbl.textContent = "Reaches"; body.appendChild(lbl);
+    body.appendChild(depsView(deps));
+  }
+
+  const req = fromSpec(spec, path, method, op);
+  body.appendChild(requestEditor(spec, req, op));
+
+  const responses = op.responses || {};
+  if (Object.keys(responses).length) {
+    const lbl = document.createElement("label"); lbl.textContent = "Expected responses"; body.appendChild(lbl);
+    for (const code of Object.keys(responses).sort()) {
+      const r = responses[code]; const row = document.createElement("div"); row.className="expected";
+      const media = r.content && r.content["application/json"];
+      row.innerHTML = `<div class="ecode">${code}${r.description?" — "+r.description:""}</div>`;
+      if (media) { const pre=document.createElement("pre"); pre.textContent=JSON.stringify(sample(spec,media.schema),null,2); row.appendChild(pre); }
+      body.appendChild(row);
+    }
+  }
+
+  const row = document.createElement("div"); row.className = "btnrow";
+  const sendBtn = document.createElement("button"); sendBtn.className="primary"; sendBtn.textContent="Send";
+  const saveBtn = document.createElement("button"); saveBtn.textContent="Save";
+  const curlBtn = document.createElement("button"); curlBtn.textContent="Copy as cURL";
+  const out = document.createElement("div"); out.className="resp";
+  const curlBox = document.createElement("div");
+  sendBtn.onclick = () => send(req, out);
+  saveBtn.onclick = () => { const name = prompt("Save request as:", req.name); if (name===null) return; const copy = JSON.parse(JSON.stringify(req)); copy.id = uid(); copy.name = name; store.collections[0].requests.push(copy); saveStore(); renderCollections(); alert("Saved to Collections."); };
+  curlBtn.onclick = () => { const c = buildCurl(req, activeEnv()); curlBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; curlBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ curlBtn.textContent="Copied!"; setTimeout(()=>curlBtn.textContent="Copy as cURL",1200); }); };
+  row.append(sendBtn, saveBtn, curlBtn);
+
+  // Specter reads the AST, so it knows where this operation came from. Nothing
+  // annotation-based can offer this, and a hand-written spec loses it at once.
+  const srcBox = document.createElement("div");
+  if (op["x-specter-source"]) {
+    const srcBtn = document.createElement("button");
+    srcBtn.textContent = "View source";
+    srcBtn.onclick = () => toggleSource(srcBtn, srcBox, op["x-specter-source"]);
+    row.appendChild(srcBtn);
+  }
+
+  body.append(row, curlBox, srcBox, out);
+  el.appendChild(body);
+  return el;
+}
+
+// adviceView renders one recommendation. The standard it comes from is shown
+// alongside it, because "your errors should look like this" is worth nothing
+// without a reason a reader can go and check.
+function adviceView(a) {
+  const box = document.createElement("div");
+  box.className = "advice" + (a.severity === "consider" ? " consider" : "");
+
+  const msg = document.createElement("div"); msg.className = "msg";
+  const sev = document.createElement("span"); sev.className = "sev"; sev.textContent = a.severity;
+  const text = document.createElement("span"); text.textContent = a.message;
+  msg.append(sev, text);
+
+  const ref = document.createElement("div"); ref.className = "ref"; ref.textContent = a.reference;
+  box.append(msg, ref);
+  return box;
+}
+
+// middlewareView renders the chain in front of a handler, in order. The order
+// is the point: it is what decides whether a request reaches the handler at
+// all, and it is invisible in the handler's own code.
+function middlewareView(mws) {
+  const wrap = document.createElement("div");
+  const row = document.createElement("div"); row.className = "mws";
+
+  mws.forEach((m, i) => {
+    if (i > 0) {
+      const arrow = document.createElement("span");
+      arrow.className = "arrow"; arrow.textContent = "→";
+      row.appendChild(arrow);
+    }
+    const chip = document.createElement("span");
+    chip.className = "mw" + (m.kind === "auth" ? " auth" : "");
+    chip.textContent = m.name;
+
+    // What it demands is more useful than what it is called, so it goes in the
+    // tooltip where a reader looks when the name alone is not enough.
+    const parts = [];
+    if (m.kind) parts.push(m.kind);
+    if (m.headers && m.headers.length) parts.push("requires " + m.headers.join(", "));
+    if (m.statuses && m.statuses.length) parts.push("rejects with " + m.statuses.join(", "));
+    if (parts.length) chip.title = parts.join(" — ");
+
+    row.appendChild(chip);
+  });
+  wrap.appendChild(row);
+
+  const guards = mws.filter(m => (m.headers && m.headers.length) || (m.statuses && m.statuses.length));
+  if (guards.length) {
+    const note = document.createElement("div");
+    note.className = "mwnote";
+    note.textContent = "Required headers and rejection statuses from these are listed above as parameters and responses.";
+    wrap.appendChild(note);
+  }
+  return wrap;
+}
+
+// depsView renders what a handler reaches. Entries matched on a receiver's
+// name are drawn differently and footnoted: Specter reads syntax, not types, so
+// those are conventions rather than proof, and a dependency map that presents
+// guesses as facts is worse than none — it gets believed.
+function depsView(deps) {
+  const wrap = document.createElement("div");
+  const row = document.createElement("div"); row.className = "deps";
+
+  for (const d of deps) {
+    const chip = document.createElement("span");
+    chip.className = "dep k-" + d.kind + (d.confidence === "likely" ? " likely" : "");
+    chip.title = d.confidence === "likely"
+      ? "Inferred from the receiver's name — a convention, not a certainty"
+      : "Identified through an imported package";
+    const dot = document.createElement("span"); dot.className = "dot";
+    const text = document.createElement("span"); text.textContent = d.target;
+    chip.append(dot, text);
+    row.appendChild(chip);
+  }
+  wrap.appendChild(row);
+
+  if (deps.some(d => d.confidence === "likely")) {
+    const note = document.createElement("div");
+    note.className = "depnote";
+    note.textContent = "Dashed entries were inferred from variable names, not from imports.";
+    wrap.appendChild(note);
+  }
+  return wrap;
+}
+
+// toggleSource shows or hides the handler code for an operation. The snippet is
+// fetched on demand rather than embedded in the document: the spec is served to
+// every visitor and shipping every handler's body inside it would make it much
+// larger for a panel most readers never open.
+async function toggleSource(btn, box, src) {
+  if (box.firstChild) { box.innerHTML = ""; btn.textContent = "View source"; return; }
+
+  btn.disabled = true; btn.textContent = "Loading…";
+  try {
+    const res = await fetch("source?file=" + encodeURIComponent(src.file) + "&line=" + src.line);
+    if (!res.ok) throw new Error("not available");
+    box.appendChild(sourceView(await res.json()));
+    btn.textContent = "Hide source";
+  } catch (e) {
+    // The file may be missing on a server running a binary built elsewhere:
+    // the spec was generated from source that is not deployed alongside it.
+    const p = document.createElement("div");
+    p.className = "srcpath";
+    p.textContent = src.file + ":" + src.line + " — source not available on this server";
+    box.appendChild(p);
+    btn.textContent = "Hide source";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function sourceView(snip) {
+  const wrap = document.createElement("div"); wrap.className = "srcbox";
+  const path = document.createElement("div"); path.className = "srcpath";
+  path.textContent = snip.file + ":" + snip.line;
+  wrap.appendChild(path);
+
+  const code = document.createElement("div"); code.className = "srccode";
+  const nums = document.createElement("div"); nums.className = "srcnums";
+  const lines = document.createElement("div"); lines.className = "srclines";
+
+  snip.lines.forEach((text, i) => {
+    const n = snip.start + i;
+    const numEl = document.createElement("div");
+    const lineEl = document.createElement("div");
+    numEl.textContent = n;
+    // textContent, never innerHTML: this is code from the server, and one
+    // handler containing a <script> tag would otherwise execute here.
+    lineEl.textContent = text === "" ? " " : text;
+    if (n === snip.line) { numEl.className = "hit"; lineEl.className = "hit"; }
+    nums.appendChild(numEl); lines.appendChild(lineEl);
+  });
+
+  code.append(nums, lines); wrap.appendChild(code);
+  return wrap;
+}
+
+// ---- gRPC ----
+function grpcSpec() { return { components: { schemas: (GRPC && GRPC.messages) || {} } }; }
+function streamKind(m) {
+  if (m.clientStreaming && m.serverStreaming) return { cls:"b-bidi", label:"bidi stream" };
+  if (m.serverStreaming) return { cls:"b-server", label:"server stream" };
+  if (m.clientStreaming) return { cls:"b-client", label:"client stream" };
+  return { cls:"b-unary", label:"unary" };
+}
+function buildGrpcurl(svc, m, targetVal, dataVal) {
+  const env = activeEnv();
+  const host = interpolate(targetVal || env.vars.grpcHost || "localhost:50051", env);
+  const input = interpolate(dataVal != null ? dataVal : JSON.stringify(sample(grpcSpec(), { $ref:"#/components/schemas/"+m.inputType })), env);
+  const oneLine = input.replace(/\s+/g, " ").trim();
+  return `grpcurl -plaintext \\\n  -d '${oneLine.replace(/'/g,"'\\''")}' \\\n  ${host} ${svc.fullName}/${m.name}`;
+}
+
+function renderGrpc() {
+  if (GRPC && GRPC.services) seedGrpcHosts(GRPC.services);
+  const app = document.getElementById("app");
+  const gs = grpcSpec();
+  const services = (GRPC && GRPC.services) || [];
+  if (!services.length) { app.innerHTML = '<div class="empty">No gRPC services found.</div>'; return; }
+
+  const cats = [];
+  for (const svc of services) {
+    const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + svc.name;
+    const head = document.createElement("div"); head.className = "cat-head";
+    head.innerHTML = `<span class="caret">▼</span><span class="name">${svc.name}</span><span class="count">${svc.methods.length}</span>`;
+    head.onclick = () => cat.classList.toggle("collapsed");
+    cat.appendChild(head);
+    const ops = document.createElement("div"); ops.className = "cat-ops";
+    for (const m of svc.methods) ops.appendChild(methodCard(gs, svc, m));
+    cat.appendChild(ops); app.appendChild(cat);
+    cats.push({
+      tag: svc.name,
+      count: svc.methods.length,
+      ops: svc.methods.map(m => {
+        const sk = streamKind(m);
+        return {
+          badge: sk.label,
+          badgeClass: "badge " + sk.cls,
+          label: m.name,
+          title: svc.name + "/" + m.name,
+          anchor: "grpc-" + svc.name + "-" + m.name,
+        };
+      }),
+    });
+  }
+  renderCatNav(cats);
+  renderGrpcMessages(gs);
+}
+
+function methodCard(gs, svc, m) {
+  const el = document.createElement("div"); el.className = "op";
+  el.dataset.key = (svc.name + " " + m.name).toLowerCase();
+  el.id = "grpc-" + svc.name + "-" + m.name;
+  const sk = streamKind(m);
+  const head = document.createElement("div"); head.className = "op-head";
+  // The service name is the group heading directly above; repeating it on every
+  // row pushes the part that differs to the right and makes the list harder to
+  // scan. It stays in the tooltip and in the search key.
+  head.innerHTML = `<span class="badge ${sk.cls}">${sk.label}</span><span class="path">${m.name}</span><span class="summary">${m.inputType} → ${m.outputType}</span>`;
+  head.title = svc.name + "/" + m.name;
+  head.onclick = () => {
+    const opened = el.classList.toggle("open");
+    // Only cards with a stable id can be linked to; the rest just toggle.
+    if (el.id) setRoute(mode, opened ? el.id : "", currentFilter());
+  };
+  el.appendChild(head);
+
+  const body = document.createElement("div"); body.className = "op-body";
+
+  const tLbl = document.createElement("label"); tLbl.textContent = "Target (host:port)"; body.appendChild(tLbl);
+  const target = document.createElement("input");
+  target.className = "mono";
+  // The variable, not its value: what is shown is what is shared, so it is
+  // obvious that editing the environment moves every method of this service.
+  target.value = "{{" + grpcHostVar(svc.name) + "}}";
+  target.placeholder = "localhost:50051";
+  target.title = "Shared by every method of " + svc.name + " — set it in Env → Manage";
+  body.appendChild(target);
+
+  const rLbl = document.createElement("label"); rLbl.textContent = "Request — " + m.inputType + " (JSON, {{var}} ok)"; body.appendChild(rLbl);
+  const reqArea = document.createElement("textarea"); reqArea.value = JSON.stringify(sample(gs, { $ref:"#/components/schemas/"+m.inputType }), null, 2); body.appendChild(reqArea);
+
+  addMsgBlock(body, gs, "Response — " + m.outputType, m.outputType);
+
+  const streaming = m.clientStreaming || m.serverStreaming;
+  const row = document.createElement("div"); row.className = "btnrow";
+  const invBtn = document.createElement("button"); invBtn.className = "primary"; invBtn.textContent = "Invoke";
+  const gBtn = document.createElement("button"); gBtn.textContent = "Copy as grpcurl";
+  const out = document.createElement("div"); out.className = "resp";
+  const gBox = document.createElement("div");
+  invBtn.onclick = () => invokeGrpc(svc, m, reqArea, target, out);
+  gBtn.onclick = () => { const c = buildGrpcurl(svc, m, target.value, reqArea.value); gBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; gBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ gBtn.textContent="Copied!"; setTimeout(()=>gBtn.textContent="Copy as grpcurl",1200); }); };
+  row.appendChild(invBtn); row.appendChild(gBtn);
+  body.appendChild(row);
+  if (streaming) { const h = document.createElement("div"); h.className="hint"; h.textContent = "Note: streaming method — Invoke shows collected messages (bidi/client-stream sends this single request)."; body.appendChild(h); }
+  body.appendChild(gBox); body.appendChild(out);
+  el.appendChild(body);
+  return el;
+}
+
+async function invokeGrpc(svc, m, reqArea, targetInput, out) {
+  const env = activeEnv();
+  const target = interpolate(targetInput.value || env.vars.grpcHost || "localhost:50051", env);
+  const data = interpolate(reqArea.value, env);
+  out.innerHTML = '<div class="status">…</div>';
+  const t0 = performance.now();
+  try {
+    const res = await fetch("grpc/invoke", {
+      method: "POST", headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ target, symbol: svc.fullName + "/" + m.name, data }),
+    });
+    const text = await res.text();
+    const ms = Math.round(performance.now() - t0);
+    let json = null, pretty = text;
+    try { json = JSON.parse(text); pretty = JSON.stringify(json, null, 2); } catch (e) {}
+    out.innerHTML = "";
+    const ok = res.ok && !(json && json.error);
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="status ${ok?"s-ok":"s-err"}">${ok?"OK":"ERROR"} ${res.status}</span><span class="meta">${ms} ms</span>`;
+    out.appendChild(line);
+    if (json && json.error) { addLabeled(out, "Error", json.error + (json.response?"\n\n"+json.response:"")); }
+    else { addLabeled(out, "Response", pretty); addSaveVar(out, json); }
+  } catch (e) {
+    out.innerHTML = `<div class="status s-err">Error</div><pre></pre>`;
+    out.querySelector("pre").textContent = String(e);
+  }
+}
+
+function addMsgBlock(body, gs, label, typeName) {
+  const lbl = document.createElement("label"); lbl.textContent = label; body.appendChild(lbl);
+  const schema = { $ref:"#/components/schemas/"+typeName };
+  const tgl = document.createElement("div"); tgl.className="toggle";
+  const bEx=document.createElement("button"); bEx.textContent="Example"; bEx.className="on";
+  const bSc=document.createElement("button"); bSc.textContent="Schema";
+  tgl.append(bEx,bSc); body.appendChild(tgl);
+  const pre=document.createElement("pre");
+  const ex = JSON.stringify(sample(gs, schema), null, 2);
+  const sc = schemaText(gs, schema);
+  pre.textContent = ex; body.appendChild(pre);
+  bEx.onclick=()=>{bEx.className="on";bSc.className="";pre.textContent=ex;};
+  bSc.onclick=()=>{bSc.className="on";bEx.className="";pre.textContent=sc;};
+}
+
+function renderGrpcMessages(gs) {
+  const app = document.getElementById("app");
+  const schemas = gs.components.schemas;
+  const names = Object.keys(schemas).sort();
+  if (!names.length) return;
+  const h = document.createElement("h2"); h.className="section"; h.textContent="Messages"; app.appendChild(h);
+  for (const name of names) {
+    const schema = schemas[name];
+    const card = document.createElement("div"); card.className="model"; card.id="model-"+name;
+    const head = document.createElement("div"); head.className="model-head"; head.textContent=name; card.appendChild(head);
+    card.appendChild(modelBody(gs, schema, schemas));
+    app.appendChild(card);
+  }
+}
+
+// ---- graphql ----
+function graphqlSpec() {
+  const schemas = Object.assign({}, (GRAPHQL && GRAPHQL.types) || {}, (GRAPHQL && GRAPHQL.enums) || {});
+  return { components: { schemas } };
+}
+
+function renderGraphql() {
+  const app = document.getElementById("app");
+  const gs = graphqlSpec();
+  const groups = [
+    { name: "Query", fields: (GRAPHQL && GRAPHQL.queries) || [] },
+    { name: "Mutation", fields: (GRAPHQL && GRAPHQL.mutations) || [] },
+    { name: "Subscription", fields: (GRAPHQL && GRAPHQL.subscriptions) || [] },
+  ].filter(g => g.fields.length);
+  if (!groups.length) { app.innerHTML = '<div class="empty">No GraphQL schema found.</div>'; return; }
+
+  const cats = [];
+  for (const g of groups) {
+    const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + g.name;
+    const head = document.createElement("div"); head.className = "cat-head";
+    head.innerHTML = `<span class="caret">▼</span><span class="name">${g.name}</span><span class="count">${g.fields.length}</span>`;
+    head.onclick = () => cat.classList.toggle("collapsed");
+    cat.appendChild(head);
+    const ops = document.createElement("div"); ops.className = "cat-ops";
+    for (const f of g.fields) ops.appendChild(graphqlFieldCard(gs, g.name, f));
+    cat.appendChild(ops); app.appendChild(cat);
+    cats.push({
+      tag: g.name,
+      count: g.fields.length,
+      ops: g.fields.map(f => ({
+        badge: g.name,
+        badgeClass: "badge",
+        label: f.name,
+        title: g.name + " " + f.name,
+        anchor: "gql-" + g.name + "-" + f.name,
+      })),
+    });
+  }
+  renderCatNav(cats);
+  renderGraphqlTypes(gs);
+}
+
+function renderGraphqlTypes(gs) {
+  const app = document.getElementById("app");
+  const schemas = gs.components.schemas;
+  const names = Object.keys(schemas).sort();
+  if (!names.length) return;
+  const h = document.createElement("h2"); h.className="section"; h.textContent="Types"; app.appendChild(h);
+  for (const name of names) {
+    const schema = schemas[name];
+    const card = document.createElement("div"); card.className="model"; card.id="model-"+name;
+    const head = document.createElement("div"); head.className="model-head"; head.textContent=name; card.appendChild(head);
+    card.appendChild(modelBody(gs, schema, schemas));
+    app.appendChild(card);
+  }
+}
+
+function graphqlFieldCard(gs, group, f) {
+  const el = document.createElement("div"); el.className = "op";
+  el.dataset.key = (group + " " + f.name).toLowerCase();
+  el.id = "gql-" + group + "-" + f.name;
+  const args = (f.args || []).map(a => a.name + ": " + a.type).join(", ");
+  const sig = f.name + (args ? "(" + args + ")" : "");
+  const head = document.createElement("div"); head.className = "op-head";
+  head.innerHTML = `<span class="badge">${group}</span><span class="path">${sig}</span><span class="summary">${f.returnType || ""}</span>`;
+  head.onclick = () => {
+    const opened = el.classList.toggle("open");
+    // Only cards with a stable id can be linked to; the rest just toggle.
+    if (el.id) setRoute(mode, opened ? el.id : "", currentFilter());
+  };
+  el.appendChild(head);
+
+  const body = document.createElement("div"); body.className = "op-body";
+  if (f.description) { const d = document.createElement("p"); d.className = "hint"; d.textContent = f.description; body.appendChild(d); }
+  if (f.args && f.args.length) {
+    const lbl = document.createElement("label"); lbl.textContent = "Arguments"; body.appendChild(lbl);
+    const pre = document.createElement("pre");
+    pre.textContent = f.args.map(a => a.name + ": " + a.type).join("\n");
+    body.appendChild(pre);
+  }
+  const baseType = (f.returnType || "").replace(/[\[\]!]/g, "");
+  if (baseType && gs.components.schemas[baseType]) {
+    addMsgBlock(body, gs, "Return — " + f.returnType, baseType);
+  }
+
+  // Unlike gRPC, GraphQL is a plain HTTP POST, so the browser can call the
+  // endpoint directly — no server-side proxy needed.
+  const eLbl = document.createElement("label"); eLbl.textContent = "Endpoint ({{var}} ok)"; body.appendChild(eLbl);
+  const endpoint = document.createElement("input");
+  endpoint.className = "mono";
+  endpoint.value = activeEnv().vars.graphqlUrl || location.origin + "/graphql";
+  body.appendChild(endpoint);
+
+  const qLbl = document.createElement("label"); qLbl.textContent = "Operation"; body.appendChild(qLbl);
+  const queryArea = document.createElement("textarea");
+  queryArea.className = "mono";
+  queryArea.value = buildGraphqlOperation(gs, group, f);
+  body.appendChild(queryArea);
+
+  const vLbl = document.createElement("label"); vLbl.textContent = "Variables (JSON, {{var}} ok)"; body.appendChild(vLbl);
+  const varsArea = document.createElement("textarea");
+  varsArea.className = "mono";
+  varsArea.value = JSON.stringify(graphqlVarSample(gs, f), null, 2);
+  body.appendChild(varsArea);
+
+  const row = document.createElement("div"); row.className = "btnrow";
+  const runBtn = document.createElement("button"); runBtn.className = "primary"; runBtn.textContent = "Execute";
+  const cpBtn = document.createElement("button"); cpBtn.textContent = "Copy as curl";
+  const out = document.createElement("div"); out.className = "resp";
+  runBtn.onclick = () => executeGraphql(endpoint, queryArea, varsArea, out);
+  cpBtn.onclick = () => {
+    const c = buildGraphqlCurl(endpoint.value, queryArea.value, varsArea.value);
+    navigator.clipboard && navigator.clipboard.writeText(c).then(() => {
+      cpBtn.textContent = "Copied!";
+      setTimeout(() => cpBtn.textContent = "Copy as curl", 1200);
+    });
+  };
+  row.appendChild(runBtn); row.appendChild(cpBtn);
+  body.appendChild(row);
+  body.appendChild(out);
+
+  el.appendChild(body);
+  return el;
+}
+
+// A GraphQL object type cannot be requested bare — it needs a selection set.
+// Nesting is capped because the schema graph may contain cycles.
+function graphqlSelection(gs, typeName, depth) {
+  depth = depth || 0;
+  const schema = gs.components.schemas[typeName];
+  if (!schema || !schema.properties) return "";
+  const fields = [];
+  for (const name of Object.keys(schema.properties)) {
+    const ref = graphqlRefName(schema.properties[name]);
+    // Enums resolve to a $ref too, but they are leaves: asking for a selection
+    // set on one is a syntax error, so they belong in the list unqualified.
+    if (!ref || graphqlIsLeaf(gs, ref)) { fields.push(name); continue; }
+    if (depth >= 2) continue;
+    const sub = graphqlSelection(gs, ref, depth + 1);
+    if (sub) fields.push(name + " " + sub);
+  }
+  return fields.length ? "{ " + fields.join(" ") + " }" : "";
+}
+
+function graphqlIsLeaf(gs, typeName) {
+  const s = gs.components.schemas[typeName];
+  return !s || !s.properties || !Object.keys(s.properties).length;
+}
+
+function graphqlRefName(prop) {
+  if (!prop) return null;
+  if (prop.$ref) return prop.$ref.split("/").pop();
+  if (prop.type === "array") return graphqlRefName(prop.items);
+  return null;
+}
+
+function buildGraphqlOperation(gs, group, f) {
+  const opType = String(group).toLowerCase() === "mutation" ? "mutation" : "query";
+  const args = f.args || [];
+  const varDefs = args.map(a => "$" + a.name + ": " + a.type).join(", ");
+  const argList = args.map(a => a.name + ": $" + a.name).join(", ");
+  const base = (f.returnType || "").replace(/[\[\]!]/g, "");
+  const sel = graphqlSelection(gs, base);
+  const header = opType + " " + f.name + (varDefs ? "(" + varDefs + ")" : "");
+  const call = f.name + (argList ? "(" + argList + ")" : "");
+  return header + " {\n  " + call + (sel ? " " + sel : "") + "\n}\n";
+}
+
+function graphqlVarSample(gs, f) {
+  const out = {};
+  for (const a of f.args || []) out[a.name] = graphqlArgSample(gs, a.type);
+  return out;
+}
+
+function graphqlArgSample(gs, type) {
+  const t = String(type).replace(/!/g, "").trim();
+  if (t.startsWith("[")) {
+    const inner = graphqlArgSample(gs, t.slice(1, -1));
+    return [inner];
+  }
+  if (t === "Int" || t === "Float") return 0;
+  if (t === "Boolean") return false;
+  if (t === "ID" || t === "String") return "";
+  if (gs.components.schemas[t]) return sample(gs, { $ref: "#/components/schemas/" + t });
+  return null;
+}
+
+function buildGraphqlCurl(url, query, vars) {
+  const env = activeEnv();
+  let variables = {};
+  try { variables = JSON.parse(interpolate(vars, env) || "{}"); } catch (e) {}
+  const body = JSON.stringify({ query: interpolate(query, env), variables });
+  return "curl -X POST " + JSON.stringify(interpolate(url, env)) +
+    " \\\n  -H 'Content-Type: application/json' \\\n  -d " + JSON.stringify(body);
+}
+
+async function executeGraphql(endpointInput, queryArea, varsArea, out) {
+  const env = activeEnv();
+  const url = interpolate(endpointInput.value, env);
+  const query = interpolate(queryArea.value, env);
+
+  let variables;
+  try {
+    variables = JSON.parse(interpolate(varsArea.value, env) || "{}");
+  } catch (e) {
+    out.innerHTML = '<div class="status s-err">Variables are not valid JSON</div><pre></pre>';
+    out.querySelector("pre").textContent = String(e);
+    return;
+  }
+
+  out.innerHTML = '<div class="status">…</div>';
+  const t0 = performance.now();
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (env.vars.token) headers["Authorization"] = "Bearer " + env.vars.token;
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ query, variables }) });
+    const text = await res.text();
+    const ms = Math.round(performance.now() - t0);
+
+    let json = null, pretty = text;
+    try { json = JSON.parse(text); pretty = JSON.stringify(json, null, 2); } catch (e) {}
+
+    // GraphQL reports failures in an `errors` array with HTTP 200, so the
+    // status code alone is not enough to call this a success.
+    const gqlErrors = json && Array.isArray(json.errors) && json.errors.length ? json.errors : null;
+    const ok = res.ok && !gqlErrors;
+
+    out.innerHTML = "";
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="status ${ok?"s-ok":"s-err"}">${ok?"OK":"ERROR"} ${res.status}</span><span class="meta">${ms} ms</span>`;
+    out.appendChild(line);
+    if (gqlErrors) addLabeled(out, "Errors", JSON.stringify(gqlErrors, null, 2));
+    addLabeled(out, "Response", pretty);
+    addSaveVar(out, json);
+  } catch (e) {
+    out.innerHTML = `<div class="status s-err">Error</div><pre></pre>`;
+    out.querySelector("pre").textContent = String(e);
+  }
+}
+
+// ---- models ----
+// ---- realtime (WebSocket / SSE / MQTT) ----
+// Live connections opened by the panes below. Tracked so switching tabs or
+// reconnecting never leaves an orphaned socket streaming into a detached log.
+let RT_CONNS = [];
+
+function closeRealtime() {
+  for (const c of RT_CONNS) { try { c.close(); } catch (e) {} }
+  RT_CONNS = [];
+}
+
+function wsOrigin() { return location.origin.replace(/^http/, "ws"); }
+
+function rtLog(box, kind, text) {
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+  const ln = document.createElement("div"); ln.className = "ln " + kind;
+  const ts = document.createElement("span"); ts.className = "ts";
+  ts.textContent = new Date().toLocaleTimeString("en-GB");
+  const tx = document.createElement("span"); tx.className = "txt";
+  // Pretty-print JSON payloads; anything else is shown verbatim.
+  let out = text;
+  try { const j = JSON.parse(text); if (j && typeof j === "object") out = JSON.stringify(j, null, 2); } catch (e) {}
+  tx.textContent = out;
+  ln.appendChild(ts); ln.appendChild(tx); box.appendChild(ln);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+// rtPane builds the shell every protocol shares: a status dot, a URL field,
+// Connect/Disconnect, a log with Clear, and a send row when the protocol
+// supports sending. `build` wires the protocol-specific bits.
+function rtPane(opts) {
+  const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + opts.tag;
+  const head = document.createElement("div"); head.className = "cat-head";
+  head.innerHTML = `<span class="caret">▼</span><span class="name">${opts.tag}</span><span class="count">${opts.proto}</span>`;
+  head.onclick = () => cat.classList.toggle("collapsed");
+  cat.appendChild(head);
+
+  const body = document.createElement("div"); body.className = "cat-ops";
+  const card = document.createElement("div"); card.className = "op open";
+  const inner = document.createElement("div"); inner.className = "op-body"; inner.style.borderTop = "0";
+
+  const urlLbl = document.createElement("label"); urlLbl.textContent = "URL ({{var}} ok)"; inner.appendChild(urlLbl);
+  const url = document.createElement("input"); url.className = "mono"; url.value = opts.url; inner.appendChild(url);
+
+  const extras = document.createElement("div"); inner.appendChild(extras);
+
+  const row = document.createElement("div"); row.className = "btnrow";
+  const dot = document.createElement("span"); dot.className = "dot"; dot.style.alignSelf = "center";
+  const conn = document.createElement("button"); conn.className = "primary"; conn.textContent = "Connect";
+  const disc = document.createElement("button"); disc.textContent = "Disconnect"; disc.disabled = true;
+  const clear = document.createElement("button"); clear.textContent = "Clear";
+  row.appendChild(dot); row.appendChild(conn); row.appendChild(disc); row.appendChild(clear);
+  inner.appendChild(row);
+
+  const log = document.createElement("div"); log.className = "log"; inner.appendChild(log);
+  clear.onclick = () => log.innerHTML = "";
+
+  const ctx = {
+    log, extras, inner,
+    url: () => interpolate(url.value, activeEnv()),
+    say: (kind, text) => rtLog(log, kind, text),
+    // Called by the protocol handler once the transport is actually open.
+    opened: () => { dot.className = "dot live"; conn.disabled = true; disc.disabled = false; },
+    closed: () => { dot.className = "dot dead"; conn.disabled = false; disc.disabled = true; },
+  };
+  const handler = opts.build(ctx);
+
+  conn.onclick = () => { dot.className = "dot"; handler.connect(); };
+  disc.onclick = () => handler.disconnect();
+
+  if (opts.hint) { const h = document.createElement("div"); h.className = "hint"; h.textContent = opts.hint; inner.appendChild(h); }
+  card.appendChild(inner); body.appendChild(card); cat.appendChild(body);
+  return cat;
+}
+
+// sendRow appends a payload field plus a Send button, disabled until connected.
+function sendRow(ctx, label, onSend) {
+  const lbl = document.createElement("label"); lbl.textContent = label; ctx.inner.appendChild(lbl);
+  const ta = document.createElement("textarea"); ta.style.minHeight = "70px"; ta.placeholder = '{"hello":"world"}';
+  ctx.inner.appendChild(ta);
+  const row = document.createElement("div"); row.className = "btnrow";
+  const btn = document.createElement("button"); btn.textContent = "Send"; btn.disabled = true;
+  row.appendChild(btn); ctx.inner.appendChild(row);
+  btn.onclick = () => { const v = interpolate(ta.value, activeEnv()); if (onSend(v) !== false) ctx.say("out", "→ " + v); };
+  // Enter sends; Shift+Enter keeps the newline for multi-line JSON.
+  ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !btn.disabled) { e.preventDefault(); btn.onclick(); } };
+  return btn;
+}
+
+// discoveredRealtime returns the realtime endpoints found in the code, so the
+// Realtime tab stops being a blank client the reader has to type URLs into.
+function discoveredRealtime() {
+  const out = [];
+  if (!SPEC || !SPEC.paths) return out;
+  for (const [path, methods] of Object.entries(SPEC.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      const kind = op["x-specter-realtime"];
+      if (kind) out.push({ kind, method: method.toUpperCase(), path, id: op.operationId });
+    }
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+// foundPanel offers each discovered endpoint as a button that fills the URL in,
+// rather than printing a list the reader has to retype.
+function foundPanel(found, kind, input, origin) {
+  const mine = found.filter(f => f.kind === kind);
+  if (!mine.length) return null;
+  const box = document.createElement("div"); box.className = "found";
+  const h = document.createElement("h4"); h.textContent = "Found in your code"; box.appendChild(h);
+  for (const f of mine) {
+    const b = document.createElement("button");
+    b.textContent = f.path;
+    b.title = f.id ? `${f.method} ${f.path} — ${f.id}` : `${f.method} ${f.path}`;
+    b.onclick = () => { input().value = origin + f.path; };
+    box.appendChild(b);
+  }
+  return box;
+}
+
+function renderRealtime() {
+  const app = document.getElementById("app");
+  const env = activeEnv();
+  const found = discoveredRealtime();
+  const wsFirst = found.find(f => f.kind === "websocket");
+  const wsPane = rtPane({
+    tag: "WebSocket", proto: "ws",
+    url: env.vars.wsUrl || wsOrigin() + (wsFirst ? wsFirst.path : "/ws"),
+    build: buildWs,
+  });
+  const wsFound = foundPanel(found, "websocket",
+    () => wsPane.querySelector("input"), wsOrigin());
+  if (wsFound) wsPane.querySelector(".op-body").prepend(wsFound);
+  app.appendChild(wsPane);
+  const sseFirst = found.find(f => f.kind === "sse");
+  const ssePane = rtPane({
+    tag: "SSE", proto: "text/event-stream",
+    url: env.vars.sseUrl || location.origin + (sseFirst ? sseFirst.path : "/events"),
+    hint: "EventSource is GET-only and cannot carry custom headers — put auth in a query param.",
+    build: buildSse,
+  });
+  const sseFound = foundPanel(found, "sse",
+    () => ssePane.querySelector("input"), location.origin);
+  if (sseFound) ssePane.querySelector(".op-body").prepend(sseFound);
+  app.appendChild(ssePane);
+  app.appendChild(rtPane({
+    tag: "MQTT", proto: "mqtt over ws",
+    url: env.vars.mqttUrl || "ws://localhost:9001",
+    hint: "Browsers cannot open raw TCP, so the broker needs a WebSocket listener (Mosquitto: listener 9001 + protocol websockets).",
+    build: buildMqtt,
+  }));
+  renderCatNav([{ tag:"WebSocket", count:"ws" }, { tag:"SSE", count:"sse" }, { tag:"MQTT", count:"mqtt" }]);
+}
+
+function buildWs(ctx) {
+  let sock = null;
+  const send = sendRow(ctx, "Message", v => {
+    if (!sock || sock.readyState !== 1) { ctx.say("err", "not connected"); return false; }
+    sock.send(v);
+  });
+  return {
+    connect() {
+      const u = ctx.url();
+      ctx.say("sys", "connecting " + u);
+      try { sock = new WebSocket(u); } catch (e) { ctx.say("err", String(e)); ctx.closed(); return; }
+      RT_CONNS.push(sock);
+      sock.onopen = () => { ctx.opened(); send.disabled = false; ctx.say("sys", "open"); };
+      sock.onmessage = e => {
+        if (typeof e.data === "string") return ctx.say("in", "← " + e.data);
+        // Binary frames arrive as Blob; decode as UTF-8 for display.
+        e.data.text ? e.data.text().then(t => ctx.say("in", "← " + t)) : ctx.say("in", "← <binary>");
+      };
+      sock.onerror = () => ctx.say("err", "socket error (see devtools for detail)");
+      sock.onclose = e => { ctx.closed(); send.disabled = true; ctx.say("sys", `closed (code ${e.code}${e.reason ? " " + e.reason : ""})`); };
+    },
+    disconnect() { if (sock) sock.close(); },
+  };
+}
+
+function buildSse(ctx) {
+  let src = null;
+  const lbl = document.createElement("label"); lbl.textContent = "Named events (comma separated, optional)"; ctx.extras.appendChild(lbl);
+  const names = document.createElement("input"); names.className = "mono"; names.placeholder = "tick, update"; ctx.extras.appendChild(names);
+  return {
+    connect() {
+      const u = ctx.url();
+      ctx.say("sys", "connecting " + u);
+      try { src = new EventSource(u); } catch (e) { ctx.say("err", String(e)); ctx.closed(); return; }
+      RT_CONNS.push(src);
+      src.onopen = () => { ctx.opened(); ctx.say("sys", "open"); };
+      src.onmessage = e => ctx.say("in", "← " + e.data);
+      // EventSource only surfaces named events to matching listeners, so
+      // unnamed `onmessage` never sees them — subscribe explicitly.
+      for (const n of names.value.split(",").map(s => s.trim()).filter(Boolean)) {
+        src.addEventListener(n, e => ctx.say("in", `← [${n}] ${e.data}`));
+      }
+      // EventSource auto-reconnects; an error here means the current attempt
+      // failed, not that the stream is finished.
+      src.onerror = () => ctx.say("err", src.readyState === 2 ? "closed" : "connection lost — retrying");
+    },
+    disconnect() { if (src) { src.close(); ctx.closed(); ctx.say("sys", "closed"); } },
+  };
+}
+
+// --- minimal MQTT 3.1.1 codec ---
+// Specter ships as a single embedded page with no external assets, so a CDN
+// MQTT client is not an option. Only the packets a tester needs are
+// implemented: CONNECT, SUBSCRIBE, PUBLISH (QoS 0) and PINGREQ.
+const MQ_ENC = new TextEncoder(), MQ_DEC = new TextDecoder();
+
+function mqLen(n) { // remaining-length varint
+  const out = [];
+  do { let b = n % 128; n = Math.floor(n / 128); if (n > 0) b |= 128; out.push(b); } while (n > 0);
+  return out;
+}
+function mqStr(s) { const b = MQ_ENC.encode(s); return [b.length >> 8, b.length & 255, ...b]; }
+function mqPacket(type, flags, body) { return new Uint8Array([(type << 4) | flags, ...mqLen(body.length), ...body]); }
+
+function mqConnect(clientId, user, pass) {
+  let flags = 0x02; // clean session
+  if (user) flags |= 0x80;
+  if (pass) flags |= 0x40;
+  const body = [...mqStr("MQTT"), 4, flags, 0, 60, ...mqStr(clientId)];
+  if (user) body.push(...mqStr(user));
+  if (pass) body.push(...mqStr(pass));
+  return mqPacket(1, 0, body);
+}
+function mqSubscribe(id, topic) { return mqPacket(8, 2, [id >> 8, id & 255, ...mqStr(topic), 0]); }
+function mqPublish(topic, payload) { return mqPacket(3, 0, [...mqStr(topic), ...MQ_ENC.encode(payload)]); }
+
+// mqReader accumulates WebSocket frames, which do not align with MQTT packet
+// boundaries, and emits whole packets as {type, body}.
+function mqReader(onPacket) {
+  let buf = new Uint8Array(0);
+  return chunk => {
+    const next = new Uint8Array(buf.length + chunk.length);
+    next.set(buf); next.set(chunk, buf.length); buf = next;
+    for (;;) {
+      if (buf.length < 2) return;
+      let len = 0, mult = 1, i = 1;
+      for (;;) {
+        if (i >= buf.length) return; // length varint not fully arrived
+        const b = buf[i++];
+        len += (b & 127) * mult; mult *= 128;
+        if (!(b & 128)) break;
+        if (mult > 128 ** 3) { buf = new Uint8Array(0); return; } // malformed
+      }
+      if (buf.length < i + len) return;
+      onPacket(buf[0] >> 4, buf[0] & 15, buf.subarray(i, i + len));
+      buf = buf.subarray(i + len);
+    }
+  };
+}
+
+const MQ_CONNACK = ["accepted", "unacceptable protocol version", "client id rejected",
+  "server unavailable", "bad username or password", "not authorised"];
+
+function buildMqtt(ctx) {
+  let sock = null, ping = null, pktId = 1;
+
+  const field = (label, ph, val) => {
+    const l = document.createElement("label"); l.textContent = label; ctx.extras.appendChild(l);
+    const i = document.createElement("input"); i.className = "mono"; i.placeholder = ph || ""; if (val) i.value = val;
+    ctx.extras.appendChild(i); return i;
+  };
+  const topicSub = field("Subscribe topic", "sensors/#", "#");
+  const grid = document.createElement("div"); grid.className = "kv"; ctx.extras.appendChild(grid);
+  const user = document.createElement("input"); user.className = "mono"; user.placeholder = "username (optional)";
+  const pass = document.createElement("input"); pass.className = "mono"; pass.type = "password"; pass.placeholder = "password (optional)";
+  grid.appendChild(user); grid.appendChild(pass);
+  const topicPub = field("Publish topic", "sensors/room1/temp", "test/specter");
+
+  const send = sendRow(ctx, "Payload", v => {
+    if (!sock || sock.readyState !== 1) { ctx.say("err", "not connected"); return false; }
+    sock.send(mqPublish(interpolate(topicPub.value, activeEnv()), v));
+    ctx.say("out", `→ [${topicPub.value}] ${v}`);
+    return false; // already logged with the topic
+  });
+
+  const stopPing = () => { if (ping) { clearInterval(ping); ping = null; } };
+
+  const onPacket = (type, flags, body) => {
+    if (type === 2) { // CONNACK
+      const code = body[1];
+      if (code !== 0) { ctx.say("err", "connect refused: " + (MQ_CONNACK[code] || code)); sock.close(); return; }
+      ctx.opened(); send.disabled = false;
+      ctx.say("sys", "connected");
+      const topic = interpolate(topicSub.value, activeEnv());
+      if (topic) { sock.send(mqSubscribe(pktId++, topic)); ctx.say("sys", "subscribing " + topic); }
+      ping = setInterval(() => sock.readyState === 1 && sock.send(mqPacket(12, 0, [])), 30000);
+    } else if (type === 9) { // SUBACK
+      ctx.say(body[2] === 0x80 ? "err" : "sys", body[2] === 0x80 ? "subscribe rejected" : "subscribed");
+    } else if (type === 3) { // PUBLISH
+      const tlen = (body[0] << 8) | body[1];
+      const topic = MQ_DEC.decode(body.subarray(2, 2 + tlen));
+      // QoS > 0 inserts a packet identifier between topic and payload.
+      const qos = (flags >> 1) & 3;
+      const payload = MQ_DEC.decode(body.subarray(2 + tlen + (qos > 0 ? 2 : 0)));
+      ctx.say("in", `← [${topic}] ${payload}`);
+    }
+  };
+
+  return {
+    connect() {
+      const u = ctx.url();
+      ctx.say("sys", "connecting " + u);
+      try { sock = new WebSocket(u, "mqtt"); } catch (e) { ctx.say("err", String(e)); ctx.closed(); return; }
+      sock.binaryType = "arraybuffer";
+      RT_CONNS.push(sock);
+      const read = mqReader(onPacket);
+      sock.onopen = () => {
+        const env = activeEnv();
+        sock.send(mqConnect("specter-" + uid(), interpolate(user.value, env), interpolate(pass.value, env)));
+      };
+      sock.onmessage = e => read(new Uint8Array(e.data));
+      sock.onerror = () => ctx.say("err", "socket error — is the broker's websocket listener up?");
+      sock.onclose = e => { stopPing(); ctx.closed(); send.disabled = true; ctx.say("sys", `closed (code ${e.code})`); };
+    },
+    disconnect() { stopPing(); if (sock) { try { sock.send(mqPacket(14, 0, [])); } catch (e) {} sock.close(); } },
+  };
+}
+
+function renderModels(spec) {
+  const app = document.getElementById("app");
+  const schemas = (spec.components && spec.components.schemas) || {};
+  const names = Object.keys(schemas).sort();
+  if (!names.length) return;
+  const h = document.createElement("h2"); h.className="section"; h.textContent="Models"; app.appendChild(h);
+  for (const name of names) {
+    const schema = schemas[name];
+    const card = document.createElement("div"); card.className="model"; card.id="model-"+name;
+    const head = document.createElement("div"); head.className="model-head"; head.textContent=name; card.appendChild(head);
+    card.appendChild(modelBody(spec, schema, schemas));
+    app.appendChild(card);
+  }
+}
+
+// ---- side panels ----
+function renderSide() { renderCollections(); renderHistory(); }
+function renderCollections() {
+  const pane = document.getElementById("collPane");
+  pane.innerHTML = "";
+  const reqs = store.collections[0].requests;
+  if (!reqs.length) { pane.innerHTML = '<div class="hint">No saved requests. Open an endpoint and press Save.</div>'; return; }
+  reqs.forEach((req, i) => {
+    const it = document.createElement("div"); it.className="item";
+    it.innerHTML = `<div><span class="m m-${req.method}" style="color:var(--accent)">${req.method.toUpperCase()}</span><span class="p">${req.name}</span></div><div class="sub">${req.path}</div>`;
+    it.onclick = () => openSaved(req);
+    const del = document.createElement("button"); del.textContent="×"; del.style.float="right"; del.style.padding="0 6px"; del.onclick=(e)=>{ e.stopPropagation(); reqs.splice(i,1); saveStore(); renderCollections(); };
+    it.querySelector("div").appendChild(del);
+    pane.appendChild(it);
+  });
+}
+function renderHistory() {
+  const pane = document.getElementById("histPane");
+  pane.innerHTML = "";
+  if (!store.history.length) { pane.innerHTML = '<div class="hint">No history yet.</div>'; return; }
+  store.history.forEach(h => {
+    const it = document.createElement("div"); it.className="item";
+    const cls = h.status < 400 ? "var(--green)" : "var(--red)";
+    it.innerHTML = `<div><span class="m" style="color:${cls}">${h.method.toUpperCase()} ${h.status}</span></div><div class="sub">${h.url}</div>`;
+    it.onclick = () => openSaved(h.snapshot);
+    pane.appendChild(it);
+  });
+}
+function openSaved(req) {
+  const clone = JSON.parse(JSON.stringify(req)); clone.id = uid();
+  const app = document.getElementById("app");
+  let panel = document.getElementById("savedPanel");
+  if (!panel) { panel = document.createElement("div"); panel.id="savedPanel"; app.prepend(panel); }
+  panel.innerHTML = "";
+  const card = document.createElement("div"); card.className="op open";
+  const head = document.createElement("div"); head.className="op-head";
+  head.innerHTML = `<span class="method m-${clone.method}">${clone.method}</span><span class="path">${clone.name}</span><span class="summary">saved request</span>`;
+  card.appendChild(head);
+  const bodyEl = document.createElement("div"); bodyEl.className="op-body"; bodyEl.style.display="block";
+  bodyEl.appendChild(requestEditor(SPEC, clone, findOp(clone)));
+  const row = document.createElement("div"); row.className="btnrow";
+  const sendBtn = document.createElement("button"); sendBtn.className="primary"; sendBtn.textContent="Send";
+  const curlBtn = document.createElement("button"); curlBtn.textContent="Copy as cURL";
+  const close = document.createElement("button"); close.textContent="Close";
+  const out = document.createElement("div"); out.className="resp"; const curlBox=document.createElement("div");
+  sendBtn.onclick=()=>send(clone,out);
+  curlBtn.onclick=()=>{ const c=buildCurl(clone,activeEnv()); curlBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; curlBox.appendChild(pre); navigator.clipboard&&navigator.clipboard.writeText(c); };
+  close.onclick=()=>panel.remove();
+  row.append(sendBtn, curlBtn, close);
+  bodyEl.append(row, curlBox, out);
+  card.appendChild(bodyEl); panel.appendChild(card);
+  window.scrollTo({ top:0, behavior:"smooth" });
+}
+function findOp(req) {
+  const ms = (SPEC.paths||{})[req.path]; return ms ? ms[req.method] : null;
+}
+
+// The header is sticky; the sidebar sticks directly beneath it. Its height is
+// not fixed (the toolbar wraps on narrow viewports), so publish the measured
+// height as --header-h and keep it in sync.
+function syncHeaderHeight() {
+  const h = document.querySelector("header");
+  if (h) document.documentElement.style.setProperty("--header-h", h.offsetHeight + "px");
+}
+syncHeaderHeight();
+window.addEventListener("resize", syncHeaderHeight);
+if (window.ResizeObserver) {
+  const hdr = document.querySelector("header");
+  if (hdr) new ResizeObserver(syncHeaderHeight).observe(hdr);
+}
+
+load();
+</script>
+</body>
+</html>

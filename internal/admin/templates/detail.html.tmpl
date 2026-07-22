@@ -1,0 +1,34 @@
+{{define "content"}}
+{{$r := .Resource}}
+<div class="crumb"><a href="{{.Prefix}}/{{$r.Name}}">{{$r.Label}}</a> / {{.ID}}</div>
+<header>
+  <h2>{{$r.Singular}}</h2>
+  <span class="spacer"></span>
+  {{/* Detail is read-only. Changing a record happens on the edit screen, and
+       only when the API has an endpoint for it. */}}
+  {{if $r.Update}}<a class="btn" href="{{.Prefix}}/{{$r.Name}}/{{.ID}}/edit">{{$r.Update.Label}}</a>{{end}}
+  {{if $r.Delete}}
+  <form method="post" action="{{.Prefix}}/{{$r.Name}}/{{.ID}}/delete" onsubmit="return confirm('{{$r.Delete.Label}}? This cannot be undone.')">
+    <button type="submit" class="btn danger">{{$r.Delete.Label}}</button>
+  </form>
+  {{end}}
+</header>
+
+{{if not .Item}}
+  <div class="empty">Not found.</div>
+{{else}}
+<dl>
+  {{range $k, $v := .Item}}
+    {{$f := field $r $k}}
+    <dt>{{label $k}}</dt>
+    <dd>
+      {{if and $f.Image (scalar $v)}}{{with cellv $v}}<img class="photo" src="{{.}}" alt="">
+        <div class="hint"><a href="{{.}}">{{.}}</a></div>{{end}}
+      {{else if and $f.Ref (scalar $v)}}{{with cellv $v}}<a href="{{$.Prefix}}/{{$f.Ref}}/{{.}}">{{.}}</a>{{end}}
+      {{else if scalar $v}}{{cellv $v}}
+      {{else}}{{template "nested" $v}}{{end}}
+    </dd>
+  {{end}}
+</dl>
+{{end}}
+{{end}}

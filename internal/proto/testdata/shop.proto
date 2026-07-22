@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package shop.v1;
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc ListUsers(ListUsersRequest) returns (stream User);
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message ListUsersRequest {
+  int32 limit = 1;
+}
+
+message User {
+  string id = 1;
+  string name = 2;
+  Status status = 3;
+  repeated string roles = 4;
+  map<string, string> metadata = 5;
+}
+
+enum Status {
+  STATUS_UNKNOWN = 0;
+  STATUS_ACTIVE = 1;
+  STATUS_SUSPENDED = 2;
+}

@@ -1,0 +1,143 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} — Admin</title>
+<style>
+:root{--bg:#fff;--fg:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--panel:#f9fafb;--danger:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e5e7eb;--muted:#9ca3af;--line:#232733;--accent:#60a5fa;--panel:#161a22;--danger:#f87171}}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--fg);background:var(--bg)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{display:flex;min-height:100vh}
+nav{width:220px;flex:0 0 220px;border-right:1px solid var(--line);background:var(--panel);padding:16px 0;overflow-y:auto}
+nav h1{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 16px 12px}
+nav a{display:block;padding:7px 16px;color:var(--fg)}
+nav a:hover{background:var(--bg);text-decoration:none}
+nav a.on{background:var(--bg);border-left:2px solid var(--accent);padding-left:14px;font-weight:600}
+main{flex:1;padding:24px 28px;min-width:0}
+header{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+h2{margin:0;font-size:20px}
+.count{color:var(--muted);font-size:13px}
+.spacer{flex:1}
+.btn{display:inline-block;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer;font:inherit}
+.btn:hover{border-color:var(--accent);text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--danger)}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:var(--panel);color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--panel)}
+td.actions{width:1%;text-align:right;position:relative}
+.dots{border:0;background:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;border-radius:4px}
+.dots:hover{background:var(--line);color:var(--fg)}
+/* Fixed rather than absolute: the table scrolls inside an overflow container,
+   which clips any dropdown positioned within it. Fixed escapes the clip, and
+   JS places it against the button. */
+.menu{position:fixed;z-index:50;min-width:150px;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;display:none}
+.menu.open{display:block}
+.menu a,.menu button{display:block;width:100%;text-align:left;padding:7px 10px;border:0;background:none;color:var(--fg);font:inherit;cursor:pointer;border-radius:5px}
+.menu a:hover,.menu button:hover{background:var(--panel);text-decoration:none}
+dl{display:grid;grid-template-columns:200px 1fr;gap:0;margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+dt{padding:9px 12px;background:var(--panel);color:var(--muted);border-bottom:1px solid var(--line);font-size:13px}
+dd{padding:9px 12px;margin:0;border-bottom:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+dl>:nth-last-child(-n+2){border-bottom:0}
+pre{margin:0;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
+table.kv{border-collapse:collapse;width:100%;font-size:13px}
+table.kv th{background:none;text-transform:none;letter-spacing:0;font-weight:600;color:var(--muted);width:150px;vertical-align:top;padding:4px 10px 4px 0;border:0}
+table.kv td{padding:4px 0;border:0;white-space:normal}
+table.kv table.kv{margin:2px 0}
+.li{padding:2px 0}
+.li-obj{border-left:2px solid var(--line);padding:4px 0 4px 10px;margin:4px 0}
+.li-obj .idx{display:block;color:var(--muted);font-size:11px;margin-bottom:2px}
+.muted{color:var(--muted)}
+form.stack{max-width:560px;display:grid;gap:14px}
+label{display:block;font-weight:600;margin-bottom:4px;font-size:13px}
+label .req{color:var(--danger)}
+input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+.hint{color:var(--muted);font-size:12px;margin-top:3px}
+.thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block;background:var(--panel)}
+.photo{max-width:260px;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:var(--panel);display:block;margin-bottom:6px}
+td:has(.thumb){padding:5px 12px}
+.empty{padding:40px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:8px}
+.err{border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:10px 12px;margin-bottom:16px}
+.crumb{color:var(--muted);font-size:13px;margin-bottom:6px}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border:1px solid var(--line);border-radius:99px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <h1>{{.Title}}</h1>
+  {{range .Resources}}<a href="{{$.Prefix}}/{{.Name}}"{{if eq .Name $.Active}} class="on"{{end}}>{{.Label}}</a>{{end}}
+</nav>
+<main>
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+{{template "content" .}}
+</main>
+</div>
+<script>
+// One open menu at a time, closed by any outside click or Escape.
+function place(menu, button) {
+  var r = button.getBoundingClientRect();
+  menu.style.visibility = 'hidden';
+  menu.classList.add('open');
+  var h = menu.offsetHeight, w = menu.offsetWidth;
+  // Flip up or left when the menu would otherwise open past the viewport —
+  // a row near the bottom of a long table is the common case.
+  var top = r.bottom + 4;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
+  var left = r.right - w;
+  if (left < 8) left = 8;
+  menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+  menu.style.visibility = '';
+}
+document.addEventListener('click', function (e) {
+  var dots = e.target.closest('.dots');
+  document.querySelectorAll('.menu.open').forEach(function (m) {
+    if (!dots || m !== dots.nextElementSibling) m.classList.remove('open');
+  });
+  if (dots) {
+    var menu = dots.nextElementSibling;
+    if (menu.classList.contains('open')) menu.classList.remove('open');
+    else place(menu, dots);
+    e.stopPropagation();
+  }
+});
+// A fixed menu does not travel with its row, so it closes rather than detaching.
+window.addEventListener('scroll', closeMenus, true);
+window.addEventListener('resize', closeMenus);
+function closeMenus() {
+  document.querySelectorAll('.menu.open').forEach(function (m) { m.classList.remove('open'); });
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') document.querySelectorAll('.menu.open').forEach(function (m) { m.classList.remove('open'); });
+});
+</script>
+</body>
+</html>{{end}}
+
+{{/* nested renders a value as rows rather than as a wall of JSON: an object
+     becomes a label/value table, an array becomes numbered entries, and it
+     recurses so a nested address inside a nested order still reads as fields.
+     Scalars end the recursion. */}}
+{{define "nested"}}
+  {{if isMap .}}
+    <table class="kv">
+      {{range entries .}}
+        <tr><th>{{label .Key}}</th><td>{{template "nested" .Value}}</td></tr>
+      {{end}}
+    </table>
+  {{else if isList .}}
+    {{if not .}}<span class="muted">—</span>{{end}}
+    {{range $i, $v := items .}}
+      {{if scalar $v}}<div class="li">{{cellv $v}}</div>
+      {{else}}<div class="li-obj"><span class="idx">#{{inc $i}}</span>{{template "nested" $v}}</div>{{end}}
+    {{end}}
+  {{else}}{{cellv .}}{{end}}
+{{end}}

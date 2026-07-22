@@ -1,0 +1,40 @@
+# Node. No trailing slash: during local development node_modules may be a
+# symlink, which a directory-only pattern would miss.
+node_modules
+npm-debug.log*
+
+# Browser suite: the server it builds, plus Playwright leftovers. Downloads
+# go to a temp dir, not here.
+e2e/.shop-server
+e2e/.deps-server
+test-results/
+playwright-report/
+
+# Go build output. The example binaries land here when built without -o.
+/shop
+/specter
+/ginapp
+*.exe
+*.test
+
+# Coverage
+coverage.out
+*.cover
+
+# SQLite databases created by the shop example at runtime
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Uploaded images the admin panel stores at runtime
+uploads/
+
+# Generated specs written next to the source they describe
+openapi.json
+grpc.json
+graphql.json
+
+# Editors / OS
+.DS_Store
+*.swp

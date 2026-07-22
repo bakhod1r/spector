@@ -1,0 +1,26 @@
+enum Status {
+  STATUS_UNKNOWN
+  STATUS_ACTIVE
+  STATUS_SUSPENDED
+}
+
+type User {
+  id: ID!
+  name: String!
+  status: Status!
+  roles: [String!]!
+}
+
+input NewUser {
+  name: String!
+}
+
+type Query {
+  "Fetch a single user by id"
+  user(id: ID!): User
+  users: [User!]!
+}
+
+type Mutation {
+  createUser(input: NewUser!): User!
+}
