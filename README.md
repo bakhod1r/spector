@@ -47,6 +47,12 @@ specter -graphql -dir ./graph -o graphql.json
 | `-contract-format` | Comma-separated: `http`, `go`, `curl` (default: all three) |
 | `-contract-api` | Base URL the artefacts call (default: the document's first server) |
 | `-contract-package` | Package name for the generated Go tests (default: the directory name) |
+| `-evolve`     | Report how the API changed against a baseline, classified breaking/compatible/addition |
+| `-since`      | Compare against a git revision, e.g. `HEAD~1` or `v1.0.0` |
+| `-baseline-dir` | Compare against another source directory |
+| `-baseline`   | Compare against an existing openapi.json |
+| `-evolve-format` | `text` (default), `json`, or `markdown` |
+| `-fail-on-breaking` | Exit non-zero if any breaking change is found (for CI) |
 | `-proxy`      | Run a verifying proxy on an address, e.g. `:8080`, forwarding to `-proxy-target` |
 | `-proxy-target` | The real API the proxy forwards to, e.g. `http://localhost:3000` |
 | `-proxy-report` | Write a JSON drift report to this file on exit |
@@ -407,6 +413,47 @@ package (default: the directory name).
 
 The output is source, like the admin panel — the first version is free and every
 version after it is yours.
+
+## API evolution
+
+A version number is meant to encode one thing — is this safe to upgrade to? — and
+almost never actually does. Specter answers it from the two documents rather than
+from a changelog someone remembered to write:
+
+```sh
+specter -dir ./api -evolve -since HEAD~1
+```
+
+Every difference is classified by what it does to a client already using the API,
+which is the only classification that matters at a release boundary:
+
+- **breaking** — an existing, working client stops working: an endpoint or status
+  removed, a response field gone or no longer guaranteed, a newly required
+  parameter or request field, a narrowed type or enum.
+- **compatible** — safe to adopt but worth recording: a new optional parameter, a
+  relaxed requirement, a newly documented status, an added response field.
+- **addition** — pure new surface; nothing existing is touched.
+
+Request and response are judged in opposite directions, because they are: a client
+*sends* requests and *receives* responses, so tightening a request (a new required
+field) and tightening a response (a removed field) are both breaking while looking
+like opposite edits.
+
+The baseline comes from a git revision (`-since HEAD~1`, `-since v1.0.0`), another
+directory (`-baseline-dir`), or an existing document (`-baseline old.json`). A
+revision is exported with `git archive` into a temp directory and scanned — the
+working tree, the index, and any uncommitted work are never touched. Both sides go
+through the same scanner, so a change in how Specter reads code never masquerades
+as an API change.
+
+```sh
+specter -dir ./api -evolve -since v1.0.0 -evolve-format markdown  # a changelog section
+specter -dir ./api -evolve -since HEAD~1 -fail-on-breaking        # a CI gate
+```
+
+`-evolve-format json` emits a stable-ordered, machine-readable diff; `-fail-on-breaking`
+turns any breaking change into a non-zero exit, so a pipeline stops before a
+breaking change ships.
 
 ## Verifying proxy
 
@@ -826,6 +873,7 @@ internal/contract     document -> .http, Go contract tests, smoke.sh
 internal/conform      shared response-vs-schema checker (contract + proxy)
 internal/route        request -> documented operation matcher (mock + proxy)
 internal/proxy        verifying reverse proxy: drift, record, learn
+internal/evolve       two documents -> breaking/compatible/addition changes
 internal/ui           embedded HTML console (single file, no assets)
 mount                 gin/echo/chi/stdlib/fiber/gorillamux mount helpers
 ```

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -28,6 +30,7 @@ import (
 	"github.com/user/specter/internal/advice"
 	"github.com/user/specter/internal/contract"
 	"github.com/user/specter/internal/core"
+	"github.com/user/specter/internal/evolve"
 	"github.com/user/specter/internal/gen"
 	"github.com/user/specter/internal/gqlgenx"
 	"github.com/user/specter/internal/graphqlsdl"
@@ -283,6 +286,130 @@ type Proxy = proxy.Proxy
 // API being observed.
 func NewProxy(doc *Document, opts ProxyOptions) (*Proxy, error) {
 	return proxy.New(doc, opts)
+}
+
+// EvolveChange is one difference between two versions of a document, classified
+// by its effect on an existing client.
+type EvolveChange = evolve.Change
+
+// EvolveOptions selects what the current document is compared against. Exactly
+// one source is set.
+type EvolveOptions struct {
+	// SinceRev compares against a git revision (HEAD~1, v1.0.0, main): the
+	// revision is exported to a temp directory and scanned, so the working tree
+	// is never touched.
+	SinceRev string
+	// BaselineDir compares against another source directory.
+	BaselineDir string
+	// BaselineJSON compares against an existing openapi.json.
+	BaselineJSON string
+}
+
+// Evolve compares the current document against a baseline and reports what
+// changed, classified as breaking, compatible, or an addition.
+//
+// The question it answers is the one a version bump is meant to encode and
+// rarely does: is this safe to ship? Breaking means an existing, working client
+// stops working — not merely that the document differs. The baseline is scanned
+// exactly as the current document is, so a change in how Specter reads code
+// affects both sides equally and does not masquerade as an API change.
+func Evolve(cfg Config, opts EvolveOptions) ([]EvolveChange, error) {
+	newDoc, err := Generate(cfg)
+	if err != nil {
+		return nil, err
+	}
+	oldDoc, err := baselineDoc(cfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	return evolve.Compare(oldDoc, newDoc), nil
+}
+
+// baselineDoc produces the document to compare against, from whichever of the
+// three sources is set.
+func baselineDoc(cfg Config, opts EvolveOptions) (*Document, error) {
+	set := 0
+	for _, s := range []string{opts.SinceRev, opts.BaselineDir, opts.BaselineJSON} {
+		if s != "" {
+			set++
+		}
+	}
+	if set == 0 {
+		return nil, fmt.Errorf("no baseline: set one of a git revision (-since), a directory (-baseline-dir), or a document (-baseline)")
+	}
+	if set > 1 {
+		return nil, fmt.Errorf("more than one baseline given: choose one of -since, -baseline-dir, or -baseline")
+	}
+
+	switch {
+	case opts.BaselineJSON != "":
+		data, err := os.ReadFile(opts.BaselineJSON)
+		if err != nil {
+			return nil, err
+		}
+		var doc core.Document
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return nil, fmt.Errorf("%s: %w", opts.BaselineJSON, err)
+		}
+		return &doc, nil
+	case opts.BaselineDir != "":
+		baseCfg := cfg
+		baseCfg.Dir = opts.BaselineDir
+		return Generate(baseCfg)
+	default:
+		return revisionDoc(cfg, opts.SinceRev)
+	}
+}
+
+// revisionDoc scans the directory as it was at a git revision.
+//
+// The revision is exported with `git archive` into a temp directory rather than
+// checked out, so the working tree, the index, and any uncommitted work are
+// untouched — the comparison has no side effects on the repository it reads.
+func revisionDoc(cfg Config, rev string) (*Document, error) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, fmt.Errorf("git is required to compare against a revision, and it was not found on PATH")
+	}
+
+	tmp, err := os.MkdirTemp("", "specter-since-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+
+	// The archive is scoped to the scanned directory and streamed through tar,
+	// so only the sources that matter are written out.
+	dir := cfg.Dir
+	if dir == "" {
+		dir = "."
+	}
+	archive := exec.Command("git", "archive", rev, "--", dir)
+	extract := exec.Command("tar", "-x", "-C", tmp)
+
+	pipe, err := archive.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	extract.Stdin = pipe
+	var archiveErr strings.Builder
+	archive.Stderr = &archiveErr
+
+	if err := extract.Start(); err != nil {
+		return nil, err
+	}
+	if err := archive.Start(); err != nil {
+		return nil, err
+	}
+	if err := archive.Wait(); err != nil {
+		return nil, fmt.Errorf("git archive %s: %w: %s", rev, err, strings.TrimSpace(archiveErr.String()))
+	}
+	if err := extract.Wait(); err != nil {
+		return nil, fmt.Errorf("extracting %s: %w", rev, err)
+	}
+
+	baseCfg := cfg
+	baseCfg.Dir = filepath.Join(tmp, dir)
+	return Generate(baseCfg)
 }
 
 // AdminOptions configures the generated admin panel.

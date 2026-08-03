@@ -52,6 +52,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	contractFormat := fs.String("contract-format", "", "comma-separated: http, go, curl (default: all three)")
 	contractAPI := fs.String("contract-api", "", "base URL the artefacts call (default: the document's first server)")
 	contractPkg := fs.String("contract-package", "", "package name for the generated Go tests (default: the directory name)")
+	evolveMode := fs.Bool("evolve", false, "report how the API changed against a baseline, classified breaking/compatible/addition")
+	evolveSince := fs.String("since", "", "compare against a git revision, e.g. HEAD~1 or v1.0.0")
+	evolveBaselineDir := fs.String("baseline-dir", "", "compare against another source directory")
+	evolveBaseline := fs.String("baseline", "", "compare against an existing openapi.json")
+	evolveFormat := fs.String("evolve-format", "text", "evolution report format: text, json, or markdown")
+	failOnBreaking := fs.Bool("fail-on-breaking", false, "exit non-zero if any breaking change is found (for CI)")
 	proxyAddr := fs.String("proxy", "", "run a verifying proxy on this address (e.g. :8080), forwarding to -proxy-target")
 	proxyTarget := fs.String("proxy-target", "", "the real API the proxy forwards to (e.g. http://localhost:3000)")
 	proxyReport := fs.String("proxy-report", "", "write a JSON drift report to this file on exit")
@@ -376,6 +382,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 			"  SPECTER_BASE_URL=http://localhost:8080 go test -tags contract %s\n"+
 			"  SPECTER_BASE_URL=http://localhost:8080 sh %s/smoke.sh\n", dir, dir)
 		return 0
+	}
+
+	// -evolve compares the current API against a baseline and classifies what
+	// changed. Like -lint its exit code is the result, so CI can gate on it.
+	if *evolveMode {
+		return runEvolve(cfg, evolveConfig{
+			since:          *evolveSince,
+			baselineDir:    *evolveBaselineDir,
+			baselineJSON:   *evolveBaseline,
+			format:         *evolveFormat,
+			failOnBreaking: *failOnBreaking,
+		}, stdout, stderr)
 	}
 
 	// -proxy sits in front of a real API and reports where the traffic
