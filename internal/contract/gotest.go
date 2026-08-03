@@ -3,7 +3,9 @@ package contract
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 
+	"github.com/user/specter/internal/conform"
 	"github.com/user/specter/internal/core"
 )
 
@@ -31,11 +33,53 @@ func renderCheck(opts Options, a *auth) ([]byte, error) {
 		"Package": opts.Package,
 		"BaseURL": opts.BaseURL,
 		"Auth":    a,
+		"Conform": conformBody(),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return gofmt("check.go", src)
+}
+
+// conformBody returns Specter's own shape checker, ready to be pasted into the
+// generated package.
+//
+// The alternative — writing the checks a second time in a template — would let
+// the two drift, and then the same response could pass a project's contract
+// tests and fail the traffic proxy, with neither result meaning anything. So
+// the text is carried instead of the logic being restated, and a test compares
+// what comes out with the package it came from.
+//
+// The package clause and the import block are dropped: the generated file
+// supplies its own, and it needs more imports than the checker alone.
+func conformBody() string {
+	src := conform.Source()
+
+	if i := strings.Index(src, "\npackage conform\n"); i >= 0 {
+		src = src[i+len("\npackage conform\n"):]
+	}
+	// The import block is the first parenthesised group; it ends at the first
+	// line that is exactly ")".
+	if i := strings.Index(src, "\nimport ("); i >= 0 {
+		if j := strings.Index(src[i:], "\n)\n"); j >= 0 {
+			src = src[:i] + src[i+j+len("\n)\n"):]
+		}
+	}
+	// The embed of its own source has no meaning outside the package it was
+	// written in, and would not compile without the file beside it.
+	src = stripEmbed(src)
+	return strings.TrimSpace(src)
+}
+
+// stripEmbed removes the //go:embed declaration and the Source accessor, which
+// exist only so this text can be carried here in the first place.
+func stripEmbed(src string) string {
+	start := strings.Index(src, "// source is this file's own text.")
+	end := strings.Index(src, "func Source() string { return source }")
+	if start < 0 || end < 0 {
+		return src
+	}
+	return src[:start] + src[end+len("func Source() string { return source }"):]
 }
 
 // goRequest is one request as the template needs it: every value already

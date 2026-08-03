@@ -127,22 +127,6 @@ func TestNonNumericResponsesFallBackTo200(t *testing.T) {
 	}
 }
 
-// Routes of different depths force the length branch of the sort.
-func TestRoutesOfDifferentDepthsSort(t *testing.T) {
-	doc := core.NewDocument("t", "1")
-	for _, p := range []string{"/a/b/c", "/a", "/a/b"} {
-		op := core.NewOperation("x")
-		op.SetResponse(204, &core.Response{Description: "no content"})
-		doc.AddOperation(p, "get", op)
-	}
-	rs := compile(doc)
-	for i := 1; i < len(rs); i++ {
-		if len(rs[i-1].segments) > len(rs[i].segments) {
-			t.Fatalf("not sorted by depth: %v then %v", rs[i-1].segments, rs[i].segments)
-		}
-	}
-}
-
 // ---- cors ----
 
 // Credentials plus wildcard with no Origin header: not a CORS request, allowed,

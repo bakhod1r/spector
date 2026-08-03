@@ -37,6 +37,7 @@ import (
 	"github.com/user/specter/internal/mock"
 	"github.com/user/specter/internal/pbgo"
 	"github.com/user/specter/internal/proto"
+	"github.com/user/specter/internal/proxy"
 	"github.com/user/specter/internal/sdk"
 	"github.com/user/specter/internal/source"
 	"github.com/user/specter/internal/ui"
@@ -264,6 +265,24 @@ func MockHandler(doc *Document, opts MockOptions) http.Handler {
 // ServeMock runs the mock on addr until the process stops.
 func ServeMock(addr string, doc *Document, opts MockOptions) error {
 	return http.ListenAndServe(addr, MockHandler(doc, opts))
+}
+
+// ProxyOptions configures the traffic-verifying proxy.
+type ProxyOptions = proxy.Options
+
+// Proxy is a running comparison between a document and live traffic.
+type Proxy = proxy.Proxy
+
+// NewProxy builds a reverse proxy that forwards to opts.Target and reports
+// where the traffic passing through it disagrees with doc.
+//
+// The contract artefacts check a document with requests Specter invented; this
+// checks it with the requests real clients actually make — the empty lists, the
+// error paths, and the endpoints the scanner never saw. It forwards everything
+// untouched: it is a watcher, not a gate, and no finding is worth degrading the
+// API being observed.
+func NewProxy(doc *Document, opts ProxyOptions) (*Proxy, error) {
+	return proxy.New(doc, opts)
 }
 
 // AdminOptions configures the generated admin panel.

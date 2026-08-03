@@ -52,6 +52,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	contractFormat := fs.String("contract-format", "", "comma-separated: http, go, curl (default: all three)")
 	contractAPI := fs.String("contract-api", "", "base URL the artefacts call (default: the document's first server)")
 	contractPkg := fs.String("contract-package", "", "package name for the generated Go tests (default: the directory name)")
+	proxyAddr := fs.String("proxy", "", "run a verifying proxy on this address (e.g. :8080), forwarding to -proxy-target")
+	proxyTarget := fs.String("proxy-target", "", "the real API the proxy forwards to (e.g. http://localhost:3000)")
+	proxyReport := fs.String("proxy-report", "", "write a JSON drift report to this file on exit")
+	proxyRecord := fs.String("proxy-record", "", "record traffic to this file as JSONL; credentials are redacted (see -proxy-record-raw)")
+	proxyRecordRaw := fs.Bool("proxy-record-raw", false, "record traffic WITHOUT redacting credentials or masking sensitive fields; the file will contain secrets — never commit it")
+	proxyLearn := fs.String("proxy-learn", "", "write an OpenAPI fragment for endpoints seen in traffic but missing from the document")
+	proxyStrict := fs.Bool("proxy-strict", false, "exit non-zero if any drift was found (for CI)")
 	mockAddr := fs.String("mock", "", "serve the document as a mock API on this address (e.g. :8080)")
 	mockOrigins := fs.String("mock-origin", "", "comma-separated origins allowed to call the mock (default any)")
 	mockCreds := fs.Bool("mock-credentials", false, "allow cookies and Authorization headers on mock requests")
@@ -369,6 +376,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 			"  SPECTER_BASE_URL=http://localhost:8080 go test -tags contract %s\n"+
 			"  SPECTER_BASE_URL=http://localhost:8080 sh %s/smoke.sh\n", dir, dir)
 		return 0
+	}
+
+	// -proxy sits in front of a real API and reports where the traffic
+	// disagrees with the document. Like -mock it runs until interrupted.
+	if *proxyAddr != "" {
+		doc, derr := specter.Generate(cfg)
+		if derr != nil {
+			return fail(derr)
+		}
+		return runProxy(doc, proxyConfig{
+			addr:      *proxyAddr,
+			target:    *proxyTarget,
+			report:    *proxyReport,
+			record:    *proxyRecord,
+			recordRaw: *proxyRecordRaw,
+			learn:     *proxyLearn,
+			strict:    *proxyStrict,
+			title:     cfg.Title,
+			version:   cfg.Version,
+		}, stdout, stderr)
 	}
 
 	// -mock serves rather than emits, so it does not return while it runs.

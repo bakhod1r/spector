@@ -485,3 +485,40 @@ func TestConstrainedPathParametersKeepTheirDocumentedValue(t *testing.T) {
 		t.Errorf("path = %q, want the first documented enum value", r.Path)
 	}
 }
+
+// The generated tests and the traffic proxy have to judge a response the same
+// way. If they did not, the same body could pass one and fail the other, and
+// neither result would mean anything.
+//
+// They agree because the checker is carried, not restated: this test is what
+// stops someone editing one copy and leaving the other behind.
+func TestGeneratedCheckerIsSpecterOwn(t *testing.T) {
+	_, check := goFiles(t)
+
+	// Every function the shared checker defines has to arrive intact.
+	for _, decl := range []string{
+		"func Check(components map[string]*Schema, s *Schema, value any, path string) []string",
+		"func Undocumented(components map[string]*Schema, s *Schema, value any, path string) []string",
+		"func Deref(components map[string]*Schema, s *Schema) *Schema",
+		"func KindOf(value any) string",
+		"type Schema struct {",
+	} {
+		if !strings.Contains(check, decl) {
+			t.Errorf("the generated checker is missing %q", decl)
+		}
+	}
+
+	// And it has to be the same text, not a lookalike. Comparing the bodies
+	// catches an edit to either side.
+	body := conformBody()
+	if !strings.Contains(check, body) {
+		t.Error("the generated checker is not the conform package's own source")
+	}
+
+	// What only makes sense inside the conform package must not travel.
+	for _, unwanted := range []string{"package conform", "go:embed", "func Source()"} {
+		if strings.Contains(check, unwanted) {
+			t.Errorf("the generated file carries %q, which does not belong in it", unwanted)
+		}
+	}
+}

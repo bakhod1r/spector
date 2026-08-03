@@ -47,6 +47,13 @@ specter -graphql -dir ./graph -o graphql.json
 | `-contract-format` | Comma-separated: `http`, `go`, `curl` (default: all three) |
 | `-contract-api` | Base URL the artefacts call (default: the document's first server) |
 | `-contract-package` | Package name for the generated Go tests (default: the directory name) |
+| `-proxy`      | Run a verifying proxy on an address, e.g. `:8080`, forwarding to `-proxy-target` |
+| `-proxy-target` | The real API the proxy forwards to, e.g. `http://localhost:3000` |
+| `-proxy-report` | Write a JSON drift report to this file on exit |
+| `-proxy-record` | Record traffic to this file as JSONL; credentials redacted by default |
+| `-proxy-record-raw` | Record **without** redacting — the file will contain secrets |
+| `-proxy-learn` | Write an OpenAPI fragment for endpoints seen in traffic but not documented |
+| `-proxy-strict` | Exit non-zero if any drift was found (for CI) |
 | `-mock`       | Serve the document as a mock API on an address, e.g. `:8080` |
 | `-mock-origin` | Comma-separated origins allowed to call the mock (default any) |
 | `-mock-credentials` | Allow cookies and `Authorization` headers on mock requests |
@@ -401,6 +408,69 @@ package (default: the directory name).
 The output is source, like the admin panel — the first version is free and every
 version after it is yours.
 
+## Verifying proxy
+
+The contract artefacts check the document with requests Specter invented: one
+sample body, one path value, the happy path. Real traffic is not like that. It
+has empty lists, error cases, clients sending fields nobody documented, and
+endpoints the scanner never saw because they are registered somewhere it does
+not read. Those are exactly the places a document goes stale.
+
+The proxy sits in front of the real API, forwards everything untouched, and
+reports where the traffic disagrees with the document:
+
+```sh
+specter -dir ./api -proxy :8080 -proxy-target http://localhost:3000
+```
+
+Point your clients (or your test suite) at `:8080` instead of the API, and every
+request is checked as it passes through. It is a watcher, not a gate — a finding
+never costs a request its response, and analysis happens after the client
+already has its answer.
+
+What it reports, each aggregated with a count so a busy endpoint is one line and
+not a thousand:
+
+- **undocumented-endpoint** — traffic to an operation the document does not have.
+- **undocumented-status** — a documented endpoint answering with a code its
+  document does not list; the one code a generated client will not handle.
+- **content-type** — a body arriving as something other than the promised media type.
+- **shape** — a response contradicting its schema (missing required field, wrong
+  type, out-of-range enum). This is the *same check* the generated contract tests
+  run, from one shared source, so the two can never disagree about a response.
+- **undocumented-field** — a property the response carries and the document does
+  not. Reported, never fatal: the API grew, nothing broke.
+
+`-proxy-report drift.json` writes a stable-ordered report for CI to diff, and
+`-proxy-strict` makes any drift a non-zero exit.
+
+### Learning what the scanner missed
+
+Static analysis cannot see a route registered through a table or served by a
+library, but those endpoints walk past the proxy every day. `-proxy-learn
+observed.json` writes an OpenAPI fragment for the traffic that matched no
+documented endpoint — with identifier segments collapsed (`/users/42` →
+`/users/{id}`) and response schemas inferred from the bodies seen. It is
+evidence, not a specification, and is marked for review rather than blind merge.
+
+### ⚠️ Recording traffic
+
+`-proxy-record traffic.jsonl` writes every exchange to a file. **A recording
+proxy captures whatever passes through it** — on a real API that means bearer
+tokens, session cookies, API keys, passwords in login bodies, and personal data.
+A recording is a credential store and a PII store.
+
+So the safe behaviour is the default: credential headers (`Authorization`,
+`Cookie`, `Set-Cookie`, and any header named like a key/token/secret) are
+redacted, body fields with sensitive-looking names (`password`, `apiKey`,
+`secret`, …) are masked, and the file is written `0600`. Field-name masking is
+not a guarantee — a field called `ssn` is personal data no name list catches.
+
+**Do not point the recorder at production traffic containing real user data
+unless you intend to handle the output as sensitive data**, and do not commit a
+recording. `-proxy-record-raw` disables all redaction; it exists for debugging a
+local API and its help text says what it does.
+
 ## Mock server
 
 A frontend does not have to wait for the backend:
@@ -753,6 +823,9 @@ internal/graphqlsdl   .graphql -> GraphQL document
 internal/gqlgenx      gqlgen Go code -> GraphQL document
 internal/grpcx        gRPC invoke proxy (grpcurl)
 internal/contract     document -> .http, Go contract tests, smoke.sh
+internal/conform      shared response-vs-schema checker (contract + proxy)
+internal/route        request -> documented operation matcher (mock + proxy)
+internal/proxy        verifying reverse proxy: drift, record, learn
 internal/ui           embedded HTML console (single file, no assets)
 mount                 gin/echo/chi/stdlib/fiber/gorillamux mount helpers
 ```

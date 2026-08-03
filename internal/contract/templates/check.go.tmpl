@@ -109,18 +109,7 @@ func expectJSON(t *testing.T, what string, res response) bool {
 
 // ---- shape ----
 
-// schema is the part of JSON Schema worth checking against a live response.
-type schema struct {
-	Ref        string             `json:"$ref"`
-	Type       string             `json:"type"`
-	Items      *schema            `json:"items"`
-	Properties map[string]*schema `json:"properties"`
-	Required   []string           `json:"required"`
-	Enum       []any              `json:"enum"`
-	AllOf      []*schema          `json:"allOf"`
-}
-
-var components map[string]*schema
+var components map[string]*Schema
 
 func init() {
 	if err := json.Unmarshal([]byte(componentsJSON), &components); err != nil {
@@ -146,7 +135,7 @@ func expectShape(t *testing.T, what string, res response, schemaJSON string) {
 		return
 	}
 
-	var s schema
+	var s Schema
 	if err := json.Unmarshal([]byte(schemaJSON), &s); err != nil {
 		t.Fatalf("%s: the generated schema does not parse: %v", what, err)
 	}
@@ -156,157 +145,18 @@ func expectShape(t *testing.T, what string, res response, schemaJSON string) {
 		return
 	}
 
-	for _, problem := range check(&s, value, "response") {
+	for _, problem := range Check(components, &s, value, "response") {
 		t.Errorf("%s: %s", what, problem)
 	}
-	for _, extra := range undocumented(&s, value, "response") {
+	for _, extra := range Undocumented(components, &s, value, "response") {
 		t.Logf("%s: %s (the API may have grown past its document)", what, extra)
 	}
 }
 
-func check(s *schema, value any, path string) []string {
-	s = deref(s)
-	if s == nil || value == nil {
-		// A null where a value was documented is worth reporting, but only
-		// when the document actually said something about the shape.
-		return nil
-	}
-
-	if len(s.Enum) > 0 {
-		found := false
-		for _, allowed := range s.Enum {
-			if fmt.Sprint(allowed) == fmt.Sprint(value) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return []string{fmt.Sprintf("%s: %v is not one of the documented values %v", path, value, s.Enum)}
-		}
-	}
-
-	switch s.Type {
-	case "array":
-		items, ok := value.([]any)
-		if !ok {
-			return []string{fmt.Sprintf("%s: documented as an array, got %s", path, kindOf(value))}
-		}
-		var out []string
-		for i, item := range items {
-			out = append(out, check(s.Items, item, fmt.Sprintf("%s[%d]", path, i))...)
-		}
-		return out
-	case "object", "":
-		obj, ok := value.(map[string]any)
-		if !ok {
-			if s.Type == "" {
-				return nil // nothing was documented, so nothing is violated
-			}
-			return []string{fmt.Sprintf("%s: documented as an object, got %s", path, kindOf(value))}
-		}
-		var out []string
-		for _, name := range s.Required {
-			if _, present := obj[name]; !present {
-				out = append(out, fmt.Sprintf("%s.%s: documented as required, missing from the response", path, name))
-			}
-		}
-		for name, prop := range s.Properties {
-			if v, present := obj[name]; present {
-				out = append(out, check(prop, v, path+"."+name)...)
-			}
-		}
-		for _, part := range s.AllOf {
-			out = append(out, check(part, value, path)...)
-		}
-		return out
-	case "string":
-		if _, ok := value.(string); !ok {
-			return []string{fmt.Sprintf("%s: documented as a string, got %s", path, kindOf(value))}
-		}
-	case "integer", "number":
-		if _, ok := value.(float64); !ok {
-			return []string{fmt.Sprintf("%s: documented as a %s, got %s", path, s.Type, kindOf(value))}
-		}
-	case "boolean":
-		if _, ok := value.(bool); !ok {
-			return []string{fmt.Sprintf("%s: documented as a boolean, got %s", path, kindOf(value))}
-		}
-	}
-	return nil
-}
-
-// undocumented lists response properties the document does not mention. They
-// are reported rather than failed: the document trailing the API is a real
-// finding, but it is not a broken contract.
-func undocumented(s *schema, value any, path string) []string {
-	s = deref(s)
-	if s == nil {
-		return nil
-	}
-	switch v := value.(type) {
-	case []any:
-		if len(v) == 0 {
-			return nil
-		}
-		// One element is enough: a list is homogeneous, and reporting the same
-		// extra field a hundred times helps nobody.
-		return undocumented(s.Items, v[0], path+"[0]")
-	case map[string]any:
-		if len(s.Properties) == 0 && len(s.AllOf) == 0 {
-			return nil // nothing was documented, so nothing is missing from it
-		}
-		known := documentedProperties(s)
-		var out []string
-		for name := range v {
-			if known[name] == nil {
-				out = append(out, fmt.Sprintf("%s.%s is in the response but not in the document", path, name))
-				continue
-			}
-			out = append(out, undocumented(known[name], v[name], path+"."+name)...)
-		}
-		return out
-	}
-	return nil
-}
-
-func documentedProperties(s *schema) map[string]*schema {
-	out := map[string]*schema{}
-	for name, prop := range s.Properties {
-		out[name] = prop
-	}
-	for _, part := range s.AllOf {
-		for name, prop := range documentedProperties(deref(part)) {
-			out[name] = prop
-		}
-	}
-	return out
-}
-
-// deref follows a $ref into the component schemas.
-func deref(s *schema) *schema {
-	for i := 0; s != nil && s.Ref != "" && i < 10; i++ {
-		s = components[strings.TrimPrefix(s.Ref, "#/components/schemas/")]
-	}
-	return s
-}
-
-func kindOf(value any) string {
-	switch value.(type) {
-	case nil:
-		return "null"
-	case bool:
-		return "a boolean"
-	case float64:
-		return "a number"
-	case string:
-		return "a string"
-	case []any:
-		return "an array"
-	case map[string]any:
-		return "an object"
-	}
-	return "something else"
-}
+// The checker below is Specter's own, copied in verbatim so these tests and the
+// traffic proxy judge a response the same way. Editing it here only changes
+// this copy.
+{{.Conform}}
 
 // excerpt keeps a failure message readable when the response is a megabyte of
 // JSON.
