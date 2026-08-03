@@ -1452,7 +1452,10 @@ function buildGrpcurl(svc, m, targetVal, dataVal) {
   const host = interpolate(targetVal || env.vars.grpcHost || "localhost:50051", env);
   const input = interpolate(dataVal != null ? dataVal : JSON.stringify(sample(grpcSpec(), { $ref:"#/components/schemas/"+m.inputType })), env);
   const oneLine = input.replace(/\s+/g, " ").trim();
-  return `grpcurl -plaintext \\\n  -d '${oneLine.replace(/'/g,"'\\''")}' \\\n  ${host} ${svc.fullName}/${m.name}`;
+  const tls = env.vars.grpcTLS === "true";
+  const insecure = env.vars.grpcInsecure === "true";
+  const flag = tls ? (insecure ? "-insecure " : "") : "-plaintext ";
+  return `grpcurl ${flag}\\\n  -d '${oneLine.replace(/'/g,"'\\''")}' \\\n  ${host} ${svc.fullName}/${m.name}`;
 }
 
 function renderGrpc() {
@@ -1521,6 +1524,21 @@ function methodCard(gs, svc, m) {
   target.title = "Shared by every method of " + svc.name + " — set it in Env → Manage";
   body.appendChild(target);
 
+  const tlsRow = document.createElement("div"); tlsRow.className = "btnrow";
+  const tlsLbl = document.createElement("label");
+  const tlsChk = document.createElement("input"); tlsChk.type = "checkbox";
+  tlsChk.checked = activeEnv().vars.grpcTLS === "true";
+  tlsLbl.appendChild(tlsChk); tlsLbl.appendChild(document.createTextNode(" TLS"));
+  const insecureLbl = document.createElement("label");
+  const insecureChk = document.createElement("input"); insecureChk.type = "checkbox";
+  insecureChk.checked = activeEnv().vars.grpcInsecure === "true";
+  insecureLbl.appendChild(insecureChk); insecureLbl.appendChild(document.createTextNode(" Insecure (skip verify)"));
+  tlsChk.onchange = () => { activeEnv().vars.grpcTLS = tlsChk.checked ? "true" : "false"; saveStore(); };
+  insecureChk.onchange = () => { activeEnv().vars.grpcInsecure = insecureChk.checked ? "true" : "false"; saveStore(); };
+  tlsRow.title = "Shared across environments — set it in Env → Manage";
+  tlsRow.appendChild(tlsLbl); tlsRow.appendChild(insecureLbl);
+  body.appendChild(tlsRow);
+
   const rLbl = document.createElement("label"); rLbl.textContent = "Request — " + m.inputType + " (JSON, {{var}} ok)"; body.appendChild(rLbl);
   const msgsWrap = document.createElement("div"); msgsWrap.className = "grpc-msgs"; body.appendChild(msgsWrap);
   const reqArea = document.createElement("textarea"); reqArea.className = "grpc-msg"; reqArea.value = JSON.stringify(sample(gs, { $ref:"#/components/schemas/"+m.inputType }), null, 2); msgsWrap.appendChild(reqArea);
@@ -1566,12 +1584,15 @@ async function invokeGrpc(svc, m, msgsWrap, targetInput, out) {
   // the backend (grpcurl's request parser) reads one message per object.
   const msgs = msgsWrap.querySelectorAll(".grpc-msg");
   const data = Array.from(msgs).map(t => interpolate(t.value, env)).join("\n");
+  const tls = env.vars.grpcTLS === "true";
+  const insecure = env.vars.grpcInsecure === "true";
+  const timeoutSec = parseInt(env.vars.grpcTimeoutSec, 10) || 0;
   out.innerHTML = '<div class="status">…</div>';
   const t0 = performance.now();
   try {
     const res = await fetch("grpc/invoke", {
       method: "POST", headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ target, symbol: svc.fullName + "/" + m.name, data }),
+      body: JSON.stringify({ target, symbol: svc.fullName + "/" + m.name, data, tls, insecure, timeoutSec }),
     });
     const text = await res.text();
     const ms = Math.round(performance.now() - t0);
