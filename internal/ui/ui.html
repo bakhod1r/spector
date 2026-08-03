@@ -1552,7 +1552,7 @@ function methodCard(gs, svc, m) {
   gBtn.onclick = () => { const c = buildGrpcurl(svc, m, target.value, reqArea.value); gBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; gBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ gBtn.textContent="Copied!"; setTimeout(()=>gBtn.textContent="Copy as grpcurl",1200); }); };
   row.appendChild(invBtn); row.appendChild(gBtn);
   body.appendChild(row);
-  if (streaming) { const h = document.createElement("div"); h.className="hint"; h.textContent = "Note: streaming method — Invoke shows collected messages (bidi/client-stream sends this single request)."; body.appendChild(h); }
+  if (streaming) { const h = document.createElement("div"); h.className="hint"; h.textContent = "Note: streaming method — Invoke shows collected messages (client-stream/bidi sends every message added via \"＋ Add message\")."; body.appendChild(h); }
   body.appendChild(gBox); body.appendChild(out);
   el.appendChild(body);
   return el;
