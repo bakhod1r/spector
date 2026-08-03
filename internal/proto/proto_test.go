@@ -1,8 +1,10 @@
 package proto
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/emicklei/proto"
 	"github.com/user/specter/internal/core"
 )
 
@@ -52,5 +54,42 @@ func TestScan(t *testing.T) {
 	}
 	if md := user.Properties["metadata"]; md == nil || md.AdditionalProperties == nil {
 		t.Errorf("metadata = %+v", md)
+	}
+}
+
+// A oneof's variants become sibling properties on the schema, plus an
+// x-oneof group listing which property names are mutually exclusive.
+func TestMessageToSchemaOneof(t *testing.T) {
+	src := `
+	message Notification {
+		string id = 1;
+		oneof payload {
+			string text = 2;
+			int32 code = 3;
+		}
+	}
+	`
+	def, err := proto.NewParser(strings.NewReader(src)).Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var schema *core.Schema
+	proto.Walk(def, proto.WithMessage(func(m *proto.Message) {
+		schema = messageToSchema(m)
+	}))
+	if schema == nil {
+		t.Fatal("Notification message not parsed")
+	}
+
+	if schema.Properties["text"] == nil || schema.Properties["code"] == nil {
+		t.Fatalf("oneof variants missing, properties = %+v", schema.Properties)
+	}
+	if len(schema.XOneof) != 1 {
+		t.Fatalf("XOneof groups = %+v, want 1 group", schema.XOneof)
+	}
+	group := schema.XOneof[0]
+	if len(group) != 2 || group[0] != "text" || group[1] != "code" {
+		t.Errorf("XOneof group = %v, want [text code]", group)
 	}
 }

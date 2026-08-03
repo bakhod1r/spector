@@ -106,6 +106,17 @@ func messageToSchema(m *proto.Message) *core.Schema {
 				Type:                 "object",
 				AdditionalProperties: fieldSchema(f.Type, false),
 			}
+		case *proto.Oneof:
+			group := []string{}
+			for _, oe := range f.Elements {
+				if of, ok := oe.(*proto.OneOfField); ok {
+					schema.Properties[of.Name] = fieldSchema(of.Type, false)
+					group = append(group, of.Name)
+				}
+			}
+			if len(group) > 0 {
+				schema.XOneof = append(schema.XOneof, group)
+			}
 		}
 	}
 	return schema
@@ -144,6 +155,24 @@ func scalarSchema(t string) *core.Schema {
 	case "int32", "int64", "uint32", "uint64", "sint32", "sint64",
 		"fixed32", "fixed64", "sfixed32", "sfixed64":
 		return &core.Schema{Type: "integer"}
+	case "google.protobuf.Timestamp":
+		return &core.Schema{Type: "string", Format: "date-time"}
+	case "google.protobuf.Duration":
+		return &core.Schema{Type: "string", Format: "duration"}
+	case "google.protobuf.Struct", "google.protobuf.Value":
+		return &core.Schema{Type: "object"}
+	case "google.protobuf.Empty":
+		return &core.Schema{Type: "object"}
+	case "google.protobuf.Any":
+		return &core.Schema{Type: "object", Properties: map[string]*core.Schema{"@type": {Type: "string"}}}
+	case "google.protobuf.StringValue":
+		return &core.Schema{Type: "string"}
+	case "google.protobuf.Int32Value", "google.protobuf.Int64Value":
+		return &core.Schema{Type: "integer"}
+	case "google.protobuf.BoolValue":
+		return &core.Schema{Type: "boolean"}
+	case "google.protobuf.DoubleValue", "google.protobuf.FloatValue":
+		return &core.Schema{Type: "number"}
 	default:
 		return &core.Schema{Ref: "#/components/schemas/" + t}
 	}
