@@ -3,6 +3,7 @@ package grpcx
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,25 +13,43 @@ import (
 	"github.com/fullstorydev/grpcurl"
 	"github.com/jhump/protoreflect/grpcreflect"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	reflectpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 )
 
 type Request struct {
-	Target  string            `json:"target"`
-	Symbol  string            `json:"symbol"` // package.Service/Method or package.Service.Method
-	Data    string            `json:"data"`   // request body as JSON
-	Headers map[string]string `json:"headers,omitempty"`
+	Target     string            `json:"target"`
+	Symbol     string            `json:"symbol"` // package.Service/Method or package.Service.Method
+	Data       string            `json:"data"`   // request body as JSON
+	Headers    map[string]string `json:"headers,omitempty"`
+	TLS        bool              `json:"tls,omitempty"`
+	Insecure   bool              `json:"insecure,omitempty"`   // TLS but skip cert verify
+	TimeoutSec int               `json:"timeoutSec,omitempty"` // 0 -> 15s
+}
+
+func dialCreds(req Request) credentials.TransportCredentials {
+	if req.TLS {
+		return credentials.NewTLS(&tls.Config{InsecureSkipVerify: req.Insecure})
+	}
+	return insecure.NewCredentials()
+}
+
+func timeoutOf(req Request) time.Duration {
+	if req.TimeoutSec > 0 {
+		return time.Duration(req.TimeoutSec) * time.Second
+	}
+	return 15 * time.Second
 }
 
 func Invoke(protoDir string, req Request) (string, error) {
 	if req.Target == "" {
 		return "", fmt.Errorf("target is required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutOf(req))
 	defer cancel()
 
-	cc, err := grpc.NewClient(req.Target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cc, err := grpc.NewClient(req.Target, grpc.WithTransportCredentials(dialCreds(req)))
 	if err != nil {
 		return "", fmt.Errorf("dial %s: %w", req.Target, err)
 	}

@@ -3,7 +3,26 @@ package grpcx
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestDialCredsSelectsTLS(t *testing.T) {
+	if got := dialCreds(Request{}); got.Info().SecurityProtocol != "insecure" {
+		t.Fatalf("default should be insecure, got %q", got.Info().SecurityProtocol)
+	}
+	if got := dialCreds(Request{TLS: true}); got.Info().SecurityProtocol == "insecure" {
+		t.Fatalf("TLS:true should not be insecure")
+	}
+}
+
+func TestTimeoutDefault(t *testing.T) {
+	if d := timeoutOf(Request{}); d != 15*time.Second {
+		t.Fatalf("default timeout = %v", d)
+	}
+	if d := timeoutOf(Request{TimeoutSec: 5}); d != 5*time.Second {
+		t.Fatalf("custom timeout = %v", d)
+	}
+}
 
 func TestInvokeRequiresTarget(t *testing.T) {
 	if _, err := Invoke("", Request{Symbol: "pkg.Svc/M"}); err == nil {
