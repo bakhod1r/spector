@@ -35,3 +35,21 @@ func TestSymbolNormalization(t *testing.T) {
 		t.Errorf("symbol = %q", got)
 	}
 }
+
+// Client-streaming Execute must send every newline-separated JSON object in
+// req.Data as its own message on the stream, not just the first.
+func TestInvokeClientStreamSendsAllMessages(t *testing.T) {
+	target := startServer(t, false)
+	req := Request{
+		Target: target,
+		Symbol: "shop.v1.UserService/CountUsers",
+		Data:   "{\"id\":1}\n{\"id\":2}\n{\"id\":3}",
+	}
+	out, err := Invoke(protoDir, req)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if !strings.Contains(out, "\"count\": 3") && !strings.Contains(out, "\"count\":3") {
+		t.Fatalf("expected count 3, got: %s", out)
+	}
+}

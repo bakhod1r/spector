@@ -44,12 +44,17 @@ message DeleteUserRequest {
 
 message Empty {}
 
+message CountUsersResponse {
+  int32 count = 1;
+}
+
 service UserService {
   rpc GetUser(GetUserRequest) returns (User);
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
   rpc CreateUser(CreateUserRequest) returns (User);
   rpc DeleteUser(DeleteUserRequest) returns (Empty);
   rpc StreamUsers(ListUsersRequest) returns (stream User);
+  rpc CountUsers(stream GetUserRequest) returns (CountUsersResponse);
 }
 
 message Product {
