@@ -2741,15 +2741,41 @@ async function runAll() {
   document.getElementById("runSummary").textContent = "";
 }
 
+// Methods that change server state. Run all fires real requests against the
+// configured baseUrl, so a run that includes these could create, overwrite or
+// delete data on whatever the environment points at — including production.
+const WRITE_METHODS = new Set(["post", "put", "patch", "delete"]);
+
+// guardWrites asks before sending state-changing requests. It returns the list
+// to actually run: everything if the user confirms, only the safe (read-only)
+// entries if they decline, or null if there is nothing safe to fall back to and
+// they declined. `isWrite` classifies one entry; `dest` names the target.
+function guardWrites(list, isWrite, dest) {
+  const writes = list.filter(isWrite);
+  if (!writes.length) return list;
+  const ok = confirm(
+    "Run all will send " + writes.length + " state-changing request(s) " +
+    "(" + [...new Set(writes.map(w => w.kind))].join(", ") + ") to:\n\n" + dest +
+    "\n\nThese can create, modify or DELETE data there. Make sure this is not " +
+    "a production target.\n\nOK = run everything.\nCancel = run only read-only requests."
+  );
+  if (ok) return list;
+  const safe = list.filter(x => !isWrite(x));
+  return safe.length ? safe : null;
+}
+
 async function runAllRest() {
-  const spec = SPEC, paths = spec.paths || {}, list = [];
+  const spec = SPEC, paths = spec.paths || {}, all = [];
   for (const path of Object.keys(paths).sort())
     for (const m of methodOrder) {
       const op = paths[path][m];
       if (!op || op["x-specter-realtime"]) continue; // realtime upgrades never "respond"
-      list.push({ path, m, op });
+      all.push({ path, m, op, kind: m.toUpperCase() });
     }
-  const tb = openRunModal("Run all · REST (" + list.length + ")");
+  const dest = ((activeEnv().vars.baseUrl || "") || location.origin) + " (env: " + activeEnv().name + ")";
+  const list = guardWrites(all, x => WRITE_METHODS.has(x.m), dest);
+  if (list === null) return;
+  const tb = openRunModal("Run all · REST (" + list.length + (list.length < all.length ? " read-only" : "") + ")");
   let pass = 0, done = 0;
   for (const { path, m, op } of list) {
     let r;
@@ -2763,8 +2789,13 @@ async function runAllRest() {
 
 async function runAllGrpc() {
   const gs = grpcSpec(), services = (GRPC && GRPC.services) || [];
-  const list = [];
-  for (const svc of services) for (const m of svc.methods) list.push({ svc, m });
+  const all = [];
+  for (const svc of services) for (const m of svc.methods) all.push({ svc, m, kind: "gRPC invoke" });
+  // gRPC has no read/write distinction in the protocol, so any method may
+  // mutate — every run is guarded, and declining aborts (nothing is "safe").
+  const dest = "the configured gRPC target(s)";
+  const list = all.length ? guardWrites(all, () => true, dest) : all;
+  if (list === null) return;
   const tb = openRunModal("Run all · gRPC (" + list.length + ")");
   let pass = 0, done = 0;
   const env = activeEnv();
@@ -2803,10 +2834,12 @@ async function runAllGraphql() {
     { name: "Query", fields: (GRAPHQL && GRAPHQL.queries) || [] },
     { name: "Mutation", fields: (GRAPHQL && GRAPHQL.mutations) || [] },
   ]; // subscriptions stream — not a one-shot request
-  const list = [];
-  for (const g of groups) for (const f of g.fields) list.push({ g: g.name, f });
-  const tb = openRunModal("Run all · GraphQL (" + list.length + ")");
+  const all = [];
+  for (const g of groups) for (const f of g.fields) all.push({ g: g.name, f, kind: g.name });
   const url = interpolate(env.vars.graphqlUrl || location.origin + "/graphql", env);
+  const list = guardWrites(all, x => x.g === "Mutation", url + " (env: " + env.name + ")");
+  if (list === null) return;
+  const tb = openRunModal("Run all · GraphQL (" + list.length + (list.length < all.length ? " query-only" : "") + ")");
   let pass = 0, done = 0;
   for (const { g, f } of list) {
     const label = g + " " + f.name;
