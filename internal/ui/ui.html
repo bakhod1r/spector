@@ -916,7 +916,7 @@ function persistOpState(req) {
   saveStore();
 }
 
-// ---- pre-request script (constrained sandbox) ----
+// ---- pre-request script (NOT a sandbox) ----
 // Only the user's own req.preRequestScript runs here. Imported Postman scripts
 // (stored in req.notes by the Postman importer) are never wired into execution —
 // running foreign script content automatically would be an in-origin code-exec hole.
@@ -929,7 +929,12 @@ function pmApi(env) {
 function runPreRequest(req, env) {
   if (!req.preRequestScript) return;
   const fn = new Function("pm", '"use strict";\n' + req.preRequestScript);
-  fn(pmApi(env)); // only pm is in scope; no window/fetch/document passed
+  // Only `pm` is passed as an argument, but this is NOT a true sandbox: the
+  // script still runs in-origin via new Function, so window/fetch/document
+  // remain reachable as free variables. This is safe only because the script
+  // being run is the user's own (imported Postman scripts are deliberately
+  // never executed, see comment above).
+  fn(pmApi(env));
 }
 
 // ---- build + send ----
@@ -1320,7 +1325,7 @@ function testsEditor(pane, req) {
 }
 
 function preRequestScriptEditor(pane, req) {
-  const p = document.createElement("div"); p.className="hint"; p.textContent = "Runs before the request is sent, in a constrained sandbox. Only `pm.environment`/`pm.variables` get/set are exposed — no window, fetch, or document."; pane.appendChild(p);
+  const p = document.createElement("div"); p.className="hint"; p.textContent = "Runs your own JS before send with a `pm` helper (pm.environment/variables). Runs in-page — only paste code you trust."; pane.appendChild(p);
   const ta = document.createElement("textarea"); ta.className = "mono"; ta.placeholder = "pm.environment.set('token', 'abc');";
   ta.value = req.preRequestScript || "";
   ta.oninput = () => { req.preRequestScript = ta.value; persistOpState(req); };
