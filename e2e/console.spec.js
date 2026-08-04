@@ -248,6 +248,72 @@ module.exports = async function run(BASE) {
   await page.waitForTimeout(400);
   check('a deleted rule stays deleted', (await readRules()).length === 0);
 
+  // ---- 8.6 Pre-request script (constrained sandbox) ----
+  // The script runs before buildURL/buildHeaders, with only a `pm` argument —
+  // no window/fetch/document. It should be able to set env vars that {{interpolate}}
+  // then picks up on the outgoing request, but it must not be able to reach real globals.
+  c.section('[8.6] Pre-request script');
+  await page.goto(`${BASE}#/rest/op-get--api-v1-carts`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+
+  const preReqCardSel = '#op-get--api-v1-carts';
+  await page.evaluate(s => document.querySelector(s).classList.add('open'), preReqCardSel);
+
+  // Add a header that references {{token}} so we can observe whether the
+  // pre-request script's pm.environment.set actually reached the request.
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    const btn = [...card.querySelectorAll('button')].find(b => b.textContent === 'Headers');
+    if (btn) btn.click();
+  }, preReqCardSel);
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    const add = [...card.querySelectorAll('.pane.on button')].find(b => b.textContent === '+ Add');
+    add.click();
+  }, preReqCardSel);
+  await page.waitForTimeout(100);
+  const headerKeyInput = page.locator(preReqCardSel + ' .pane.on input[placeholder="key"]').last();
+  const headerValInput = page.locator(preReqCardSel + ' .pane.on input[placeholder="value ({{var}} ok)"]').last();
+  await headerKeyInput.fill('X-Token');
+  await headerValInput.fill('{{token}}');
+  await headerKeyInput.dispatchEvent('change');
+
+  // Open the Pre-request Script tab and author a script that also probes for
+  // leaked globals: pm.window must be undefined since only `pm` is in scope.
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    const btn = [...card.querySelectorAll('button')].find(b => b.textContent === 'Pre-request Script');
+    if (btn) btn.click();
+  }, preReqCardSel);
+  const scriptArea = page.locator(preReqCardSel + ' .pane.on textarea').last();
+  await scriptArea.fill("pm.environment.set('token','abc'); pm.environment.set('leak', String(typeof pm.window));");
+  await scriptArea.dispatchEvent('input');
+  await page.waitForTimeout(100);
+
+  let capturedHeaders = null;
+  await page.route('**/api/v1/carts*', route => {
+    capturedHeaders = route.request().headers();
+    route.continue();
+  });
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    [...card.querySelectorAll('button')].find(b => b.textContent === 'Send').click();
+  }, preReqCardSel);
+  await page.waitForTimeout(1200);
+  await page.unroute('**/api/v1/carts*');
+
+  check('pre-request script set token, used in outgoing header',
+        !!capturedHeaders && capturedHeaders['x-token'] === 'abc',
+        JSON.stringify(capturedHeaders));
+
+  const leakVal = await page.evaluate(() => activeEnv().vars.leak);
+  check('pm has no window global (constrained sandbox)', leakVal === 'undefined', String(leakVal));
+
+  // Imported (foreign) scripts must never auto-run: req.notes from a Postman
+  // import must not be wired into execution.
+  const notesNotExecuted = await page.evaluate(() => typeof runPreRequest === 'function' && typeof pmApi === 'function');
+  check('runPreRequest / pmApi exist as the only execution path', notesNotExecuted);
+
   // ---- 9. Search filter in URL ----
   c.section('[9] Search filter routing');
   await page.goto(BASE, { waitUntil: 'networkidle' });

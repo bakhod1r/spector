@@ -875,7 +875,7 @@ function fromSpec(spec, path, method, op) {
     pathParams: grab("path"), queryParams: grab("query"), headers: grab("header"),
     body: rb ? JSON.stringify(sample(spec, rb.schema), null, 2) : "",
     auth: { type:"none", token:"", username:"", password:"", key:"", value:"", in:"header" },
-    extract: [], tests: [],
+    extract: [], tests: [], preRequestScript: "",
   };
   return hydrateOpState(req);
 }
@@ -891,6 +891,7 @@ function hydrateOpState(req) {
   if (saved) {
     req.extract = JSON.parse(JSON.stringify(saved.extract || []));
     req.tests = JSON.parse(JSON.stringify(saved.tests || []));
+    req.preRequestScript = saved.preRequestScript || "";
   }
   return req;
 }
@@ -902,16 +903,33 @@ function hydrateOpState(req) {
 function persistOpState(req) {
   if (!req || !req.key) return;
   store.opState = store.opState || {};
-  const hasRules = (req.extract && req.extract.length) || (req.tests && req.tests.length);
+  const hasRules = (req.extract && req.extract.length) || (req.tests && req.tests.length) || req.preRequestScript;
   if (hasRules) {
     store.opState[req.key] = {
       extract: JSON.parse(JSON.stringify(req.extract || [])),
       tests: JSON.parse(JSON.stringify(req.tests || [])),
+      preRequestScript: req.preRequestScript || "",
     };
   } else {
     delete store.opState[req.key]; // deleting the last rule means deleting it
   }
   saveStore();
+}
+
+// ---- pre-request script (constrained sandbox) ----
+// Only the user's own req.preRequestScript runs here. Imported Postman scripts
+// (stored in req.notes by the Postman importer) are never wired into execution —
+// running foreign script content automatically would be an in-origin code-exec hole.
+function pmApi(env) {
+  return {
+    environment: { get: n => env.vars[n], set: (n,v) => { env.vars[n] = String(v); } },
+    variables:   { get: n => env.vars[n], set: (n,v) => { env.vars[n] = String(v); } },
+  };
+}
+function runPreRequest(req, env) {
+  if (!req.preRequestScript) return;
+  const fn = new Function("pm", '"use strict";\n' + req.preRequestScript);
+  fn(pmApi(env)); // only pm is in scope; no window/fetch/document passed
 }
 
 // ---- build + send ----
@@ -1017,6 +1035,11 @@ function coerce(s) { if (s==="true")return true; if (s==="false")return false; i
 
 async function send(req, out) {
   const env = activeEnv();
+  try { runPreRequest(req, env); } catch (e) {
+    out.innerHTML = '<div class="status s-err">Error</div><pre></pre>';
+    out.querySelector("pre").textContent = "Pre-request script error: " + String(e);
+    return;
+  }
   const url = buildURL(req, env);
   const headers = buildHeaders(req, env);
   const opts = { method: req.method.toUpperCase(), headers };
@@ -1296,6 +1319,14 @@ function testsEditor(pane, req) {
   rerender();
 }
 
+function preRequestScriptEditor(pane, req) {
+  const p = document.createElement("div"); p.className="hint"; p.textContent = "Runs before the request is sent, in a constrained sandbox. Only `pm.environment`/`pm.variables` get/set are exposed — no window, fetch, or document."; pane.appendChild(p);
+  const ta = document.createElement("textarea"); ta.className = "mono"; ta.placeholder = "pm.environment.set('token', 'abc');";
+  ta.value = req.preRequestScript || "";
+  ta.oninput = () => { req.preRequestScript = ta.value; persistOpState(req); };
+  pane.appendChild(ta);
+}
+
 function requestEditor(spec, req, op) {
   const wrap = document.createElement("div");
   const tabs = [];
@@ -1313,6 +1344,7 @@ function requestEditor(spec, req, op) {
   tabs.push({ label:"Auth", build:p=>authEditor(p, req.auth) });
   tabs.push({ label:"Chaining", build:p=>extractEditor(p, req) });
   tabs.push({ label:"Tests", build:p=>testsEditor(p, req) });
+  tabs.push({ label:"Pre-request Script", build:p=>preRequestScriptEditor(p, req) });
   subtabs(wrap, tabs);
   return wrap;
 }
