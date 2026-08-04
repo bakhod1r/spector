@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bakhod1r/synth"
 	"github.com/user/specter/internal/coverage"
 	"github.com/user/specter/internal/export"
 	"github.com/user/specter/internal/testgen"
@@ -815,6 +816,36 @@ func Handler(cfg Config) http.Handler {
 		}
 		if err != nil {
 			http.Error(w, "specter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// synth/body generates a realistic request body for one operation from
+		// the document's own schema, using github.com/bakhod1r/synth. The
+		// console offers it behind a "Generate body" button so a caller can
+		// fill a request with plausible data instead of the bare sample.
+		if strings.HasSuffix(r.URL.Path, "synth/body") {
+			method, path := r.URL.Query().Get("method"), r.URL.Query().Get("path")
+			if method == "" || path == "" {
+				http.Error(w, "method and path are required", http.StatusBadRequest)
+				return
+			}
+			specBytes, merr := json.Marshal(doc)
+			if merr != nil {
+				writeJSON(w, map[string]string{"error": merr.Error()})
+				return
+			}
+			api, aerr := synth.OpenAPIBytes(specBytes)
+			if aerr != nil {
+				writeJSON(w, map[string]string{"error": aerr.Error()})
+				return
+			}
+			body, perr := api.PayloadJSON(method, path)
+			if perr != nil {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				writeJSON(w, map[string]string{"error": perr.Error()})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(body)
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "openapi.json") {
