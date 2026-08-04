@@ -370,10 +370,72 @@ function exportStore() {
   URL.revokeObjectURL(url);
 }
 
+// Postman v2.1 collections have no `format` marker of their own; detect them
+// by shape so they can be routed through the same merge/replace flow as a
+// native export instead of being rejected by parseImport.
+function isPostmanV21(j) {
+  return !!(j && j.info && Array.isArray(j.item) &&
+    !j.format && (String(j.info.schema || "").includes("v2.1.0") || j.info._postman_id));
+}
+
+function postmanToStore(j) {
+  const requests = [];
+  (function walk(items) {
+    for (const it of (items || [])) {
+      if (it.item) { walk(it.item); continue; } // folder
+      const r = it.request || {};
+      const url = r.url || {};
+      requests.push({
+        id: uid(),
+        name: it.name || "request",
+        method: (r.method || "GET").toLowerCase(),
+        path: "/" + (Array.isArray(url.path) ? url.path.join("/") : ""),
+        pathParams: {},
+        queryParams: Object.fromEntries((url.query || []).map(q => [q.key, q.value || ""])),
+        headers: Object.fromEntries((r.header || []).map(h => [h.key, h.value || ""])),
+        body: r.body && r.body.mode === "raw" ? (r.body.raw || "") : "",
+        auth: mapPostmanAuth(r.auth),
+        extract: [], tests: [],
+        notes: (it.event || []).map(e => `${e.listen}: ${((e.script && e.script.exec) || []).join("\n")}`).join("\n\n") || "",
+      });
+    }
+  })(j.item);
+  return {
+    activeEnvId: undefined,
+    environments: [],
+    collections: [{ id: uid(), name: j.info.name || "Imported", requests }],
+    history: [],
+  };
+}
+
+// Matches the flat auth shape already used elsewhere in the console
+// ({type, token, username, password, key, value, in}) rather than the
+// brief's illustrative `value`-for-bearer shape.
+function mapPostmanAuth(a) {
+  if (!a) return { type: "none", token: "", username: "", password: "", key: "", value: "", in: "header" };
+  if (a.type === "bearer") return { type: "bearer", token: kv(a.bearer, "token"), username: "", password: "", key: "", value: "", in: "header" };
+  if (a.type === "basic") return { type: "basic", token: "", username: kv(a.basic, "username"), password: kv(a.basic, "password"), key: "", value: "", in: "header" };
+  if (a.type === "apikey") return { type: "apiKey", token: "", username: "", password: "", key: kv(a.apikey, "key"), value: kv(a.apikey, "value"), in: kv(a.apikey, "in") || "header" };
+  return { type: "none", token: "", username: "", password: "", key: "", value: "", in: "header" };
+}
+function kv(arr, name) { const f = (arr || []).find(x => x.key === name); return f ? f.value : ""; }
+
 function importStore(text) {
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch (e) { alert("Import failed. Not valid JSON: " + e.message); return; }
+
   let incoming;
-  try { incoming = parseImport(text); }
-  catch (e) { alert("Import failed. " + e.message); return; }
+  if (isPostmanV21(parsed)) {
+    incoming = postmanToStore(parsed);
+    // Postman collections carry no environments; keep the ones already
+    // configured so a "replace" choice doesn't wipe out baseUrl/token vars.
+    incoming.activeEnvId = store.activeEnvId;
+    incoming.environments = JSON.parse(JSON.stringify(store.environments));
+  } else {
+    try { incoming = parseImport(text); }
+    catch (e) { alert("Import failed. " + e.message); return; }
+  }
 
   const envCount = incoming.environments.length;
   const reqCount = incoming.collections.reduce((n, c) => n + (c.requests || []).length, 0);

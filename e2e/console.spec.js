@@ -94,6 +94,43 @@ module.exports = async function run(BASE) {
   check('alert shown', alertMsg !== null, String(alertMsg));
   check('alert explains why', /not a specter collection/i.test(alertMsg || ''), String(alertMsg));
 
+  // ---- 3b. Import: Postman v2.1 collection ----
+  c.section('[3b] Import (Postman v2.1)');
+  const postman = {
+    info: {
+      name: 'demo',
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+    },
+    item: [{
+      name: 'Get user',
+      request: {
+        method: 'GET',
+        header: [{ key: 'X-Trace', value: '{{traceId}}' }],
+        url: {
+          raw: '{{baseUrl}}/users/1',
+          path: ['users', '1'],
+          query: [{ key: 'q', value: 'ada' }],
+        },
+        auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{token}}' }] },
+      },
+    }],
+  };
+  const postmanFile = path.join(DL, 'postman.json');
+  fs.writeFileSync(postmanFile, JSON.stringify(postman));
+  page.once('dialog', d => d.accept());          // confirm() -> replace
+  await page.setInputFiles('#importFile', postmanFile);
+  await page.waitForTimeout(600);
+
+  const pmStore = await page.evaluate(() => JSON.parse(localStorage.getItem('specter.state') || '{}'));
+  const pmColl = (pmStore.collections || []).find(c => c.name === 'demo');
+  check('demo collection imported', !!pmColl, JSON.stringify(pmStore.collections));
+  const pmReq = pmColl && pmColl.requests[0];
+  check('request method GET', pmReq && pmReq.method.toLowerCase() === 'get', JSON.stringify(pmReq));
+  check('request path contains users', pmReq && /users/.test(pmReq.path), JSON.stringify(pmReq));
+  check('query q=ada', pmReq && pmReq.queryParams && pmReq.queryParams.q === 'ada', JSON.stringify(pmReq && pmReq.queryParams));
+  check('header X-Trace', pmReq && pmReq.headers && pmReq.headers['X-Trace'] === '{{traceId}}', JSON.stringify(pmReq && pmReq.headers));
+  check('auth type bearer', pmReq && pmReq.auth && pmReq.auth.type === 'bearer', JSON.stringify(pmReq && pmReq.auth));
+
   // ---- 4. GraphQL Execute ----
   c.section('[4] GraphQL Execute');
   await page.goto(BASE + '#/graphql/gql-Query-user', { waitUntil: 'networkidle' });
