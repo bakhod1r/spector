@@ -218,6 +218,36 @@ module.exports = async function run(BASE) {
   await page.waitForTimeout(500);
   check('filter in hash', /q=users/.test(page.url()), page.url());
 
+  // ---- 10. JSONPath pick()/pickOne() evaluator ----
+  c.section('[10] JSONPath pick/pickOne');
+  const jpResults = await page.evaluate(() => {
+    const fixture = {
+      id: 1,
+      users: [
+        { id: 2, name: 'ada', role: 'admin' },
+        { id: 3, name: 'bob', role: 'user' },
+      ],
+    };
+    return {
+      wildcardNames: pick(fixture, '$.users[*].name'),
+      dotWildcardNames: pick(fixture, '$.users.*.name'),
+      recursiveIds: pick(fixture, '$..id'),
+      filterEqAdminNames: pick(fixture, "$.users[?(@.role=='admin')].name"),
+      filterNeAdminNames: pick(fixture, "$.users[?(@.role!='admin')].name"),
+      filterExistsRole: pick(fixture, '$.users[?(@.role)].name'),
+      plainId: pickOne(fixture, '$.id'),
+      plainIdArr: pick(fixture, '$.id'),
+    };
+  });
+  check('wildcard [*] matches names', JSON.stringify(jpResults.wildcardNames) === JSON.stringify(['ada', 'bob']), JSON.stringify(jpResults.wildcardNames));
+  check('dot wildcard .* matches names', JSON.stringify(jpResults.dotWildcardNames) === JSON.stringify(['ada', 'bob']), JSON.stringify(jpResults.dotWildcardNames));
+  check('recursive descent ..id matches all ids', JSON.stringify(jpResults.recursiveIds) === JSON.stringify([1, 2, 3]), JSON.stringify(jpResults.recursiveIds));
+  check("filter [?(@.role=='admin')] matches ada", JSON.stringify(jpResults.filterEqAdminNames) === JSON.stringify(['ada']), JSON.stringify(jpResults.filterEqAdminNames));
+  check("filter [?(@.role!='admin')] matches bob", JSON.stringify(jpResults.filterNeAdminNames) === JSON.stringify(['bob']), JSON.stringify(jpResults.filterNeAdminNames));
+  check('filter [?(@.role)] existence matches both', JSON.stringify(jpResults.filterExistsRole) === JSON.stringify(['ada', 'bob']), JSON.stringify(jpResults.filterExistsRole));
+  check('plain $.id regression via pickOne', jpResults.plainId === 1, String(jpResults.plainId));
+  check('plain $.id regression via pick (array)', JSON.stringify(jpResults.plainIdArr) === JSON.stringify([1]), JSON.stringify(jpResults.plainIdArr));
+
   console.log('\n[JS errors]', jsErrors.length ? jsErrors : 'none');
   check('no uncaught JS errors', jsErrors.length === 0, jsErrors.join('; '));
 

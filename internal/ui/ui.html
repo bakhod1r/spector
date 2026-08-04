@@ -880,18 +880,74 @@ function buildCurl(req, env) {
   if (req.body && req.method !== "get") cmd += ` \\\n  -d '${interpolate(req.body,env).replace(/'/g,"'\\''")}'`;
   return cmd;
 }
-function pick(obj, path) {
-  if (!path || path === "$") return obj;
-  const parts = path.replace(/^\$\.?/, "").split(/[.\[\]]/).filter(Boolean);
-  let cur = obj;
-  for (const p of parts) { if (cur == null) return undefined; cur = cur[p]; }
-  return cur;
+function tokenizeJsonPath(path) {
+  const body = path.replace(/^\$/, "");
+  const toks = [];
+  const re = /\.\.([A-Za-z0-9_]+|\*)|\.(\*)|\.([A-Za-z0-9_]+)|\[\*\]|\[\?\(@\.([A-Za-z0-9_]+)\s*(==|!=)\s*'([^']*)'\)\]|\[\?\(@\.([A-Za-z0-9_]+)\)\]|\[(-?\d+)\]/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    if (m[1] !== undefined) toks.push({ type: "recurse", key: m[1] });
+    else if (m[2] !== undefined) toks.push({ type: "wild" });
+    else if (m[3] !== undefined) toks.push({ type: "key", key: m[3] });
+    else if (m[0] === "[*]") toks.push({ type: "wild" });
+    else if (m[4] !== undefined) toks.push({ type: "filter", key: m[4], op: m[5], val: m[6] });
+    else if (m[7] !== undefined) toks.push({ type: "filter", key: m[7], op: "exists" });
+    else if (m[8] !== undefined) toks.push({ type: "index", index: parseInt(m[8], 10) });
+  }
+  return toks;
 }
+function stepJsonPath(node, tok) {
+  if (node == null) return [];
+  if (tok.type === "key") return [node[tok.key]];
+  if (tok.type === "index") {
+    if (!Array.isArray(node)) return [];
+    const i = tok.index < 0 ? node.length + tok.index : tok.index;
+    return [node[i]];
+  }
+  if (tok.type === "wild") {
+    if (Array.isArray(node)) return node.slice();
+    if (typeof node === "object") return Object.values(node);
+    return [];
+  }
+  if (tok.type === "recurse") {
+    const out = [];
+    const walk = (n) => {
+      if (n == null || typeof n !== "object") return;
+      if (Array.isArray(n)) { for (const v of n) walk(v); return; }
+      for (const k in n) {
+        if (k === tok.key) out.push(n[k]);
+        walk(n[k]);
+      }
+    };
+    walk(node);
+    return out;
+  }
+  if (tok.type === "filter") {
+    const items = Array.isArray(node) ? node : (typeof node === "object" ? Object.values(node) : []);
+    return items.filter(it => {
+      if (it == null || typeof it !== "object") return false;
+      if (tok.op === "exists") return it[tok.key] !== undefined;
+      const v = it[tok.key];
+      if (tok.op === "==") return String(v) === tok.val;
+      if (tok.op === "!=") return String(v) !== tok.val;
+      return false;
+    });
+  }
+  return [];
+}
+function pick(obj, path) {
+  if (!path || path === "$") return [obj];
+  const toks = tokenizeJsonPath(path);
+  let nodes = [obj];
+  for (const t of toks) nodes = nodes.flatMap(n => stepJsonPath(n, t)).filter(v => v !== undefined);
+  return nodes;
+}
+function pickOne(obj, path) { const r = pick(obj, path); return r.length ? r[0] : undefined; }
 function runTest(t, res, bodyJson) {
   let ok = false, actual = "";
   if (t.kind === "status") { actual = String(res.status); ok = actual === String(t.expected); }
-  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = v !== undefined; }
-  else if (t.kind === "jsonEquals") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = actual === JSON.stringify(coerce(t.expected)); }
+  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = v.length > 0; }
+  else if (t.kind === "jsonEquals") { const v = pickOne(bodyJson, t.target); actual = JSON.stringify(v); ok = actual === JSON.stringify(coerce(t.expected)); }
   else if (t.kind === "headerEquals") { actual = res.headers.get(t.target) || ""; ok = actual === t.expected; }
   return { ok, label: `${t.kind} ${t.target||""} = ${t.expected}  (got ${actual})` };
 }
@@ -919,7 +975,7 @@ async function send(req, out) {
       let val;
       if (rule.from === "status") val = res.status;
       else if (rule.from === "header") val = res.headers.get(rule.jsonPath);
-      else val = pick(json, rule.jsonPath);
+      else val = pickOne(json, rule.jsonPath);
       if (val !== undefined && val !== null) { env.vars[rule.setVar] = String(val); extracted.push(`${rule.setVar} = ${val}`); }
     }
     // tests
