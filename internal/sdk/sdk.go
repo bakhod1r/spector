@@ -46,8 +46,24 @@ func Generate(doc *core.Document, opts Options) ([]File, error) {
 			opts.Package = "client"
 		}
 		return generateGo(doc, opts)
+	case "python", "py":
+		return generatePython(doc, opts)
+	case "js", "javascript":
+		return generateJS(doc, opts)
+	case "ruby", "rb":
+		return generateRuby(doc, opts)
+	case "php":
+		return generatePHP(doc, opts)
+	case "csharp", "cs", "c#":
+		return generateCSharp(doc, opts)
+	case "rust", "rs":
+		return generateRust(doc, opts)
+	case "kotlin", "kt":
+		return generateKotlin(doc, opts)
+	case "java":
+		return generateJava(doc, opts)
 	default:
-		return nil, fmt.Errorf("sdk: unknown language %q (want ts or go)", opts.Lang)
+		return nil, fmt.Errorf("sdk: unknown language %q (want go, ts, python, js, ruby, php, csharp, rust, kotlin, or java)", opts.Lang)
 	}
 }
 

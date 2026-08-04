@@ -74,7 +74,7 @@ func TestRunSDKGo(t *testing.T) {
 // An unknown language fails rather than writing something unusable.
 func TestRunSDKUnknownLanguage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-dir", exampleDir, "-sdk", "rust", "-sdk-out", t.TempDir()}, &stdout, &stderr)
+	code := run([]string{"-dir", exampleDir, "-sdk", "cobol", "-sdk-out", t.TempDir()}, &stdout, &stderr)
 	if code == 0 {
 		t.Error("expected a non-zero exit for an unknown language")
 	}
