@@ -946,7 +946,7 @@ function pickOne(obj, path) { const r = pick(obj, path); return r.length ? r[0] 
 function runTest(t, res, bodyJson) {
   let ok = false, actual = "";
   if (t.kind === "status") { actual = String(res.status); ok = actual === String(t.expected); }
-  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = v.length > 0; }
+  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v.length ? v[0] : undefined); ok = v.length > 0; }
   else if (t.kind === "jsonEquals") { const v = pickOne(bodyJson, t.target); actual = JSON.stringify(v); ok = actual === JSON.stringify(coerce(t.expected)); }
   else if (t.kind === "headerEquals") { actual = res.headers.get(t.target) || ""; ok = actual === t.expected; }
   return { ok, label: `${t.kind} ${t.target||""} = ${t.expected}  (got ${actual})` };
@@ -1024,10 +1024,10 @@ function addSaveVar(parent, json) {
   const name = document.createElement("input"); name.className = "mono"; name.placeholder = "variable name, e.g. token";
   const btn = document.createElement("button"); btn.textContent = "Save to {{var}}";
   const preview = document.createElement("div"); preview.className = "hint";
-  const refresh = () => { const v = pick(json, path.value); preview.textContent = v === undefined ? "path not found" : "value: " + JSON.stringify(v); };
+  const refresh = () => { const v = pickOne(json, path.value); preview.textContent = v === undefined ? "path not found" : "value: " + JSON.stringify(v); };
   path.oninput = refresh; refresh();
   btn.onclick = () => {
-    const v = pick(json, path.value);
+    const v = pickOne(json, path.value);
     if (v === undefined) { alert("Path not found: " + path.value); return; }
     if (!name.value.trim()) { alert("Enter a variable name"); return; }
     activeEnv().vars[name.value.trim()] = typeof v === "object" ? JSON.stringify(v) : String(v);
