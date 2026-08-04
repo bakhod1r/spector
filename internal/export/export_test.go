@@ -192,6 +192,140 @@ func TestWriteAuthSchemes(t *testing.T) {
 	}
 }
 
+// The collection carries a variable block so an importer has working defaults
+// without an environment: baseUrl seeded from the first server, and a
+// placeholder for whichever auth scheme the collection declares.
+func TestPostmanCollectionVariables(t *testing.T) {
+	data, err := Postman(sampleDoc())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var col pmCollection
+	if err := json.Unmarshal(data, &col); err != nil {
+		t.Fatal(err)
+	}
+	vars := map[string]string{}
+	for _, v := range col.Variable {
+		vars[v.Key] = v.Value
+	}
+	if vars["baseUrl"] != "https://api.example.com" {
+		t.Errorf("baseUrl = %q, want first server", vars["baseUrl"])
+	}
+	// bearer scheme means a bearerToken variable exists to fill.
+	if _, ok := vars["bearerToken"]; !ok {
+		t.Errorf("missing bearerToken variable: %+v", col.Variable)
+	}
+}
+
+// With no servers baseUrl still exists, just empty, so the variable is present
+// for the importer to fill rather than absent.
+func TestPostmanBaseURLDefaultsEmpty(t *testing.T) {
+	data, err := Postman(&core.Document{Paths: map[string]map[string]*core.Operation{
+		"/x": {"get": {}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var col pmCollection
+	if err := json.Unmarshal(data, &col); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, v := range col.Variable {
+		if v.Key == "baseUrl" {
+			found = true
+			if v.Value != "" {
+				t.Errorf("baseUrl = %q, want empty", v.Value)
+			}
+		}
+	}
+	if !found {
+		t.Error("baseUrl variable should always be present")
+	}
+}
+
+// The environment mirrors the collection's variables as a fillable Postman
+// environment file, named after the API, with secrets marked so Postman masks
+// them in the UI.
+func TestPostmanEnvironment(t *testing.T) {
+	data, err := PostmanEnvironment(sampleDoc())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env pmEnvironment
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Name != "Test API Environment" {
+		t.Errorf("name = %q", env.Name)
+	}
+	vals := map[string]pmEnvValue{}
+	for _, v := range env.Values {
+		vals[v.Key] = v
+	}
+	if vals["baseUrl"].Value != "https://api.example.com" || !vals["baseUrl"].Enabled {
+		t.Errorf("baseUrl = %+v", vals["baseUrl"])
+	}
+	// The token is a secret so Postman should mask it.
+	if tok, ok := vals["bearerToken"]; !ok || tok.Type != "secret" {
+		t.Errorf("bearerToken = %+v, want a secret", tok)
+	}
+}
+
+// Each request carries a test script asserting the response status is one the
+// document declares, and that a JSON body parses when the operation documents
+// one. An operation with no documented responses gets no script rather than an
+// empty assertion.
+func TestPostmanTestScripts(t *testing.T) {
+	item := operationItem(sampleDoc(), "{{baseUrl}}", "/users/{id}", "get",
+		sampleDoc().Paths["/users/{id}"]["get"])
+	if len(item.Event) == 0 {
+		t.Fatal("expected a test event")
+	}
+	script := strings.Join(item.Event[0].Script.Exec, "\n")
+	if item.Event[0].Listen != "test" {
+		t.Errorf("listen = %q, want test", item.Event[0].Listen)
+	}
+	// 200 and 404 are documented, so both are accepted status codes.
+	if !strings.Contains(script, "200") || !strings.Contains(script, "404") {
+		t.Errorf("script missing documented status codes:\n%s", script)
+	}
+	if !strings.Contains(script, "pm.test") {
+		t.Errorf("script missing pm.test:\n%s", script)
+	}
+	// The 200 documents a JSON body, so the script asserts it parses.
+	if !strings.Contains(script, "pm.response.json()") {
+		t.Errorf("script should assert JSON body:\n%s", script)
+	}
+
+	// No documented responses: no script.
+	bare := operationItem(&core.Document{}, "{{baseUrl}}", "/h", "get", &core.Operation{})
+	if len(bare.Event) != 0 {
+		t.Errorf("bare op should carry no script: %+v", bare.Event)
+	}
+}
+
+// A documented success response with a JSON body becomes a saved example on the
+// request, with a sampled body so the importer sees a realistic shape. A
+// response with no body (like 404) contributes no example.
+func TestPostmanResponseExamples(t *testing.T) {
+	item := operationItem(sampleDoc(), "{{baseUrl}}", "/users/{id}", "get",
+		sampleDoc().Paths["/users/{id}"]["get"])
+	if len(item.Response) != 1 {
+		t.Fatalf("examples = %d, want 1 (200 only; 404 has no body)", len(item.Response))
+	}
+	ex := item.Response[0]
+	if ex.Code != 200 || ex.Status != "OK" {
+		t.Errorf("example status = %d %q", ex.Code, ex.Status)
+	}
+	if !strings.Contains(ex.Body, "id") {
+		t.Errorf("example body missing sampled field: %q", ex.Body)
+	}
+	if ex.PreviewLanguage != "json" {
+		t.Errorf("preview language = %q", ex.PreviewLanguage)
+	}
+}
+
 func TestPostmanFullDocument(t *testing.T) {
 	data, err := Postman(sampleDoc())
 	if err != nil {

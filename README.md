@@ -33,7 +33,7 @@ specter -graphql -dir ./graph -o graphql.json
 | ------------- | ---------------------------------------------------------- |
 | `-dir`        | Directory to scan (default `.`)                            |
 | `-config`     | JSON config file (default: `specter.json` in `-dir`, if present) |
-| `-adapter`    | `gin`, `chi`, `echo`, `fiber`, `gorillamux`, or `stdlib`; autodetected when empty |
+| `-adapter`    | `gin`, `chi`, `echo`, `fiber`, `gorillamux`, `httprouter`, or `stdlib`; autodetected when empty |
 | `-title`      | API title (defaults to the directory name)                 |
 | `-version`    | API version (default `0.1.0`)                              |
 | `-grpc`       | Export the gRPC document instead of OpenAPI                |
@@ -69,6 +69,10 @@ specter -graphql -dir ./graph -o graphql.json
 | `-admin-prefix` | Path the panel is served under (default `/admin`)        |
 | `-admin-package` | Package name for the generated panel (default: the directory name) |
 | `-admin-import` | Import path of the generated package (derived from `go.mod`) |
+| `-postman`    | Export a Postman collection v2.1 (Insomnia imports it too) |
+| `-postman-env` | Export a Postman environment (`baseUrl` and auth placeholders) instead of the collection |
+| `-markdown`   | Export static Markdown API docs                            |
+| `-har`        | Export a HAR 1.2 archive of example calls (one entry per operation) |
 | `-sdk`        | Generate a typed client instead of a document: `go`, `ts`, `python`, `js`, `ruby`, `php`, `csharp`, `rust`, `kotlin`, `java` |
 | `-sdk-out`    | Directory the client is written into (default `./sdk`)     |
 | `-sdk-package` | Package name for the generated Go client (default `client`) |
@@ -630,6 +634,48 @@ change what a later GET returns. Making it stateful would mean guessing at
 semantics the document does not describe, and a mock that is subtly wrong about
 behaviour is worse than one that is obviously only about shape.
 
+## Postman and Insomnia
+
+Export the scanned API as a Postman collection v2.1 (Insomnia imports the same
+format):
+
+```sh
+specter -postman -dir . -o api.postman_collection.json
+specter -postman-env -dir . -o api.postman_environment.json
+```
+
+The collection imports ready to run:
+
+- **The base URL is a `{{baseUrl}}` variable**, seeded from the document's first
+  server and carried in the collection's own variable block, so it imports with
+  a working default and points elsewhere by editing one value.
+- **`-postman-env` writes a matching environment** — `baseUrl` plus a
+  placeholder per auth scheme, credentials typed `secret` so Postman masks them.
+  Import the collection once, then switch environments to hit dev, staging or
+  prod.
+- **Each request carries a test script** asserting the response status is one
+  the document declares, and that the body parses when the operation documents a
+  JSON response — so `newman run` is a live contract check, not just a smoke test.
+- **Documented responses become saved examples** with a body sampled from the
+  response schema, so every request ships with a realistic sample to read.
+- Path parameters render as editable `:id` variables, optional query parameters
+  import disabled, and one representable security scheme becomes collection-level
+  auth.
+
+### HAR archive
+
+Export the API as a [HAR 1.2](http://www.softwareishard.com/blog/har-12-spec/)
+archive — the log format browsers, proxies and load tools read:
+
+```sh
+specter -har -dir . -o api.har
+```
+
+Each operation becomes one entry with a request body sampled from its schema and
+a response seeded from the lowest documented status, so the archive replays as a
+realistic set of example calls. URLs are absolute against the first server, or
+relative when the document names none.
+
 ## Admin panel
 
 Generate a working admin panel from the scanned API:
@@ -737,6 +783,7 @@ that ambiguity is worth removing either way.
 | fiber          |   ✅   |     ✅      |  ✅   |   ✅   |  `app.Group(...)`   |      ✅      |     ✅     |
 | gorilla/mux    |   ✅   |     ✅      |  ✅   |   ✅   | `PathPrefix(...).Subrouter()` | ✅ |    ✅     |
 | net/http (1.22)|   ✅   |     ✅      |  ✅   |   ✅   | sub-mux + `StripPrefix` | ✅      |     ✅     |
+| httprouter     |   ✅   |     ✅      |  ✅   |   ✅   |        —            |      ✅      |     —      |
 
 What Specter infers from handlers:
 

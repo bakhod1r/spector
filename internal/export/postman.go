@@ -5,7 +5,9 @@ package export
 
 import (
 	"encoding/json"
+	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/user/specter/internal/core"
@@ -14,9 +16,16 @@ import (
 
 // postman collection v2.1 — the minimal subset every importer understands.
 type pmCollection struct {
-	Info pmInfo   `json:"info"`
-	Item []pmItem `json:"item"`
-	Auth *pmAuth  `json:"auth,omitempty"`
+	Info     pmInfo       `json:"info"`
+	Item     []pmItem     `json:"item"`
+	Auth     *pmAuth      `json:"auth,omitempty"`
+	Variable []pmVariable `json:"variable,omitempty"`
+}
+
+type pmVariable struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Type  string `json:"type,omitempty"`
 }
 
 type pmInfo struct {
@@ -25,10 +34,31 @@ type pmInfo struct {
 }
 
 type pmItem struct {
-	Name    string      `json:"name"`
-	Item    []pmItem    `json:"item,omitempty"`    // folder
-	Request *pmRequest  `json:"request,omitempty"` // leaf
-	Response []struct{} `json:"response,omitempty"`
+	Name     string     `json:"name"`
+	Item     []pmItem   `json:"item,omitempty"`    // folder
+	Request  *pmRequest `json:"request,omitempty"` // leaf
+	Response []pmResponse `json:"response,omitempty"`
+	Event    []pmEvent    `json:"event,omitempty"`
+}
+
+// pmResponse is a saved example response Postman shows alongside the request.
+type pmResponse struct {
+	Name            string     `json:"name"`
+	Status          string     `json:"status"` // reason phrase, e.g. "OK"
+	Code            int        `json:"code"`
+	Header          []pmHeader `json:"header,omitempty"`
+	Body            string     `json:"body"`
+	PreviewLanguage string     `json:"_postman_previewlanguage,omitempty"`
+}
+
+type pmEvent struct {
+	Listen string   `json:"listen"` // "test" | "prerequest"
+	Script pmScript `json:"script"`
+}
+
+type pmScript struct {
+	Type string   `json:"type"` // "text/javascript"
+	Exec []string `json:"exec"` // one line per element, the format Postman stores
 }
 
 type pmRequest struct {
@@ -86,7 +116,8 @@ func Postman(doc *core.Document) ([]byte, error) {
 			Name:   doc.Info.Title,
 			Schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		},
-		Auth: collectionAuth(doc),
+		Auth:     collectionAuth(doc),
+		Variable: collectionVariables(doc),
 	}
 
 	// Folders keyed by group name, filled in path order for reproducibility.
@@ -108,6 +139,70 @@ func Postman(doc *core.Document) ([]byte, error) {
 		col.Item = append(col.Item, pmItem{Name: name, Item: folders[name]})
 	}
 	return json.MarshalIndent(col, "", "  ")
+}
+
+// collectionVariables seeds the variables a collection references so it imports
+// with working defaults and no environment attached. baseUrl always exists —
+// empty when the document names no server, so the importer sees the field to
+// fill rather than a missing one — followed by a placeholder for the auth
+// scheme the collection declares, matching collectionAuth's choice.
+func collectionVariables(doc *core.Document) []pmVariable {
+	base := ""
+	if len(doc.Servers) > 0 {
+		base = doc.Servers[0].URL
+	}
+	vars := []pmVariable{{Key: "baseUrl", Value: base, Type: "string"}}
+	switch auth := collectionAuth(doc); {
+	case auth == nil:
+	case auth.Type == "bearer":
+		vars = append(vars, pmVariable{Key: "bearerToken", Value: "", Type: "string"})
+	case auth.Type == "basic":
+		vars = append(vars,
+			pmVariable{Key: "basicUsername", Value: "", Type: "string"},
+			pmVariable{Key: "basicPassword", Value: "", Type: "string"})
+	case auth.Type == "apikey":
+		vars = append(vars, pmVariable{Key: "apiKey", Value: "", Type: "string"})
+	}
+	return vars
+}
+
+// Postman environment format: a named bag of key/value pairs an importer picks
+// from a dropdown, kept separate from the collection so one collection runs
+// against dev, staging and prod.
+type pmEnvironment struct {
+	Name   string       `json:"name"`
+	Values []pmEnvValue `json:"values"`
+	Scope  string       `json:"_postman_variable_scope"`
+}
+
+type pmEnvValue struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Enabled bool   `json:"enabled"`
+	Type    string `json:"type,omitempty"` // "secret" masks the value in Postman
+}
+
+// PostmanEnvironment renders a fillable Postman environment carrying the same
+// variables the collection references: baseUrl seeded from the first server and
+// a placeholder per auth credential. Credentials are typed "secret" so Postman
+// masks them. It pairs with Postman: import the collection once, then switch
+// environments to point it at a different deployment.
+func PostmanEnvironment(doc *core.Document) ([]byte, error) {
+	name := doc.Info.Title
+	if name == "" {
+		name = "API"
+	}
+	env := pmEnvironment{Name: name + " Environment", Scope: "environment"}
+	for _, v := range collectionVariables(doc) {
+		typ := ""
+		if v.Key != "baseUrl" {
+			typ = "secret"
+		}
+		env.Values = append(env.Values, pmEnvValue{
+			Key: v.Key, Value: v.Value, Enabled: true, Type: typ,
+		})
+	}
+	return json.MarshalIndent(env, "", "  ")
 }
 
 func collectionAuth(doc *core.Document) *pmAuth {
@@ -201,7 +296,80 @@ func operationItem(doc *core.Document, base, path, method string, op *core.Opera
 		}
 	}
 
-	return pmItem{Name: name, Request: req}
+	return pmItem{Name: name, Request: req, Event: testEvent(op), Response: responseExamples(doc, op)}
+}
+
+// responseExamples turns each documented response carrying a JSON body into a
+// saved example with a sampled body, in status order. A response with no JSON
+// body (an error status, a 204) contributes nothing — there is no shape to show.
+func responseExamples(doc *core.Document, op *core.Operation) []pmResponse {
+	codes := make([]string, 0, len(op.Responses))
+	for code := range op.Responses {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+
+	var out []pmResponse
+	for _, code := range codes {
+		resp := op.Responses[code]
+		if resp == nil {
+			continue
+		}
+		media, ok := resp.Content["application/json"]
+		if !ok || media.Schema == nil {
+			continue
+		}
+		body, err := json.MarshalIndent(mock.Sample(doc, media.Schema, nil), "", "  ")
+		if err != nil {
+			continue
+		}
+		n, _ := strconv.Atoi(code)
+		out = append(out, pmResponse{
+			Name:            resp.Description,
+			Status:          http.StatusText(n),
+			Code:            n,
+			Header:          []pmHeader{{Key: "Content-Type", Value: "application/json"}},
+			Body:            string(body),
+			PreviewLanguage: "json",
+		})
+	}
+	return out
+}
+
+// testEvent builds a Postman test script that asserts the response status is
+// one the operation documents, and — when a success response documents a JSON
+// body — that the body parses. An operation with no documented responses gets
+// no script: there is nothing to assert against.
+func testEvent(op *core.Operation) []pmEvent {
+	codes := make([]string, 0, len(op.Responses))
+	jsonBody := false
+	for code, resp := range op.Responses {
+		codes = append(codes, code)
+		if strings.HasPrefix(code, "2") && resp != nil {
+			if media, ok := resp.Content["application/json"]; ok && media.Schema != nil {
+				jsonBody = true
+			}
+		}
+	}
+	if len(codes) == 0 {
+		return nil
+	}
+	sort.Strings(codes)
+
+	list, _ := json.Marshal(codes) // e.g. ["200","404"] — always marshals
+	exec := []string{
+		"pm.test(\"status is documented\", function () {",
+		"    pm.expect(" + string(list) + ").to.include(String(pm.response.code));",
+		"});",
+	}
+	if jsonBody {
+		exec = append(exec,
+			"pm.test(\"response is valid JSON\", function () {",
+			"    pm.response.json();",
+			"});",
+		)
+	}
+	return []pmEvent{{Listen: "test", Script: pmScript{Type: "text/javascript", Exec: exec}}}
 }
 
 // resolveParam follows a $ref into components/parameters; a dangling ref comes

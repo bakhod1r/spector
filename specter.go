@@ -27,6 +27,7 @@ import (
 	fiberadapter "github.com/user/specter/internal/adapter/fiber"
 	ginadapter "github.com/user/specter/internal/adapter/gin"
 	gorillamuxadapter "github.com/user/specter/internal/adapter/gorillamux"
+	httprouteradapter "github.com/user/specter/internal/adapter/httprouter"
 	stdlibadapter "github.com/user/specter/internal/adapter/stdlib"
 	"github.com/user/specter/internal/admin"
 	"github.com/user/specter/internal/advice"
@@ -194,6 +195,8 @@ func adapterFor(cfg Config) core.Adapter {
 		return &fiberadapter.Adapter{}
 	case "gorillamux", "mux", "gorilla":
 		return &gorillamuxadapter.Adapter{}
+	case "httprouter":
+		return &httprouteradapter.Adapter{}
 	case "stdlib":
 		return &stdlibadapter.Adapter{}
 	default:
@@ -222,6 +225,8 @@ func detect(dir string) string {
 					return "fiber"
 				case strings.Contains(p, "gorilla/mux"):
 					return "gorillamux"
+				case strings.Contains(p, "julienschmidt/httprouter"):
+					return "httprouter"
 				}
 			}
 		}
@@ -742,6 +747,20 @@ func GenerateGraphql(cfg Config) (*core.GraphqlDoc, error) {
 // imports the same format, so one export serves both clients.
 func ExportPostman(doc *Document) ([]byte, error) {
 	return export.Postman(doc)
+}
+
+// ExportPostmanEnvironment renders a fillable Postman environment carrying the
+// collection's variables (baseUrl and auth placeholders), so one collection can
+// be pointed at dev, staging or prod by switching environments.
+func ExportPostmanEnvironment(doc *Document) ([]byte, error) {
+	return export.PostmanEnvironment(doc)
+}
+
+// ExportHAR renders the document as a HAR 1.2 archive: one entry per operation
+// with a sampled request and response body, replayable by browsers, proxies and
+// load-testing tools.
+func ExportHAR(doc *Document) ([]byte, error) {
+	return export.HAR(doc)
 }
 
 // ExportMarkdown renders the document as a static Markdown API reference,
