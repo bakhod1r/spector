@@ -69,6 +69,9 @@ specter -graphql -dir ./graph -o graphql.json
 | `-admin-prefix` | Path the panel is served under (default `/admin`)        |
 | `-admin-package` | Package name for the generated panel (default: the directory name) |
 | `-admin-import` | Import path of the generated package (derived from `go.mod`) |
+| `-postman`    | Export a Postman collection v2.1 (Insomnia imports it too) |
+| `-postman-env` | Export a Postman environment (`baseUrl` and auth placeholders) instead of the collection |
+| `-markdown`   | Export static Markdown API docs                            |
 | `-sdk`        | Generate a typed client instead of a document: `go`, `ts`, `python`, `js`, `ruby`, `php`, `csharp`, `rust`, `kotlin`, `java` |
 | `-sdk-out`    | Directory the client is written into (default `./sdk`)     |
 | `-sdk-package` | Package name for the generated Go client (default `client`) |
@@ -629,6 +632,34 @@ specter.ServeMock(":8080", doc, specter.MockOptions{
 change what a later GET returns. Making it stateful would mean guessing at
 semantics the document does not describe, and a mock that is subtly wrong about
 behaviour is worse than one that is obviously only about shape.
+
+## Postman and Insomnia
+
+Export the scanned API as a Postman collection v2.1 (Insomnia imports the same
+format):
+
+```sh
+specter -postman -dir . -o api.postman_collection.json
+specter -postman-env -dir . -o api.postman_environment.json
+```
+
+The collection imports ready to run:
+
+- **The base URL is a `{{baseUrl}}` variable**, seeded from the document's first
+  server and carried in the collection's own variable block, so it imports with
+  a working default and points elsewhere by editing one value.
+- **`-postman-env` writes a matching environment** — `baseUrl` plus a
+  placeholder per auth scheme, credentials typed `secret` so Postman masks them.
+  Import the collection once, then switch environments to hit dev, staging or
+  prod.
+- **Each request carries a test script** asserting the response status is one
+  the document declares, and that the body parses when the operation documents a
+  JSON response — so `newman run` is a live contract check, not just a smoke test.
+- **Documented responses become saved examples** with a body sampled from the
+  response schema, so every request ships with a realistic sample to read.
+- Path parameters render as editable `:id` variables, optional query parameters
+  import disabled, and one representable security scheme becomes collection-level
+  auth.
 
 ## Admin panel
 

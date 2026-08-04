@@ -73,6 +73,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	mcpFlag := fs.Bool("mcp", false, "serve specter as an MCP server over stdio")
 	oasVersion := fs.String("openapi-version", "3.0", "OpenAPI version to emit: 3.0 or 3.1")
 	postman := fs.Bool("postman", false, "export a Postman collection v2.1 (Insomnia imports it too)")
+	postmanEnv := fs.Bool("postman-env", false, "export a Postman environment (baseUrl and auth placeholders) instead of the collection")
 	markdown := fs.Bool("markdown", false, "export static Markdown API docs")
 	mockAuth := fs.Bool("mock-auth", false, "mock enforces documented security: missing credentials get 401")
 	genTests := fs.String("gen-tests", "", "write a Go integration test file to this path (e.g. ./apitest/api_test.go)")
@@ -290,13 +291,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	// -postman and -markdown are exports of the same document the default mode
 	// emits, so they share its generation and only differ in rendering.
-	if *postman || *markdown {
+	if *postman || *postmanEnv || *markdown {
 		doc, derr := specter.Generate(cfg)
 		if derr != nil {
 			return fail(derr)
 		}
 		if len(doc.Paths) == 0 {
 			warnEmpty("routes", *dirFlag)
+		}
+		if *postmanEnv {
+			data, perr := specter.ExportPostmanEnvironment(doc)
+			if perr != nil {
+				return fail(perr)
+			}
+			return writeOut(data)
 		}
 		if *postman {
 			data, perr := specter.ExportPostman(doc)

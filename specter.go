@@ -744,6 +744,13 @@ func ExportPostman(doc *Document) ([]byte, error) {
 	return export.Postman(doc)
 }
 
+// ExportPostmanEnvironment renders a fillable Postman environment carrying the
+// collection's variables (baseUrl and auth placeholders), so one collection can
+// be pointed at dev, staging or prod by switching environments.
+func ExportPostmanEnvironment(doc *Document) ([]byte, error) {
+	return export.PostmanEnvironment(doc)
+}
+
 // ExportMarkdown renders the document as a static Markdown API reference,
 // suitable for a README or a docs site.
 func ExportMarkdown(doc *Document) []byte {
