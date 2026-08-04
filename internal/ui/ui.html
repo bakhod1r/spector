@@ -120,6 +120,13 @@
   .srcnums div, .srclines div { font-family:ui-monospace,monospace; font-size:12.5px; line-height:1.55; white-space:pre; }
   .srclines div.hit { background:rgba(91,140,255,.16); }
   .srcnums div.hit { color:var(--accent); font-weight:700; }
+  /* Go syntax theme */
+  .tok-kw { color:#ff7b72; } .tok-str { color:#a5d6ff; } .tok-com { color:#8b949e; font-style:italic; }
+  .tok-num { color:#79c0ff; } .tok-fn { color:#d2a8ff; } .tok-type { color:#7ee787; }
+  :root[data-theme="light"] .tok-kw { color:#cf222e; } :root[data-theme="light"] .tok-str { color:#0a3069; }
+  :root[data-theme="light"] .tok-com { color:#6e7781; } :root[data-theme="light"] .tok-num { color:#0550ae; }
+  :root[data-theme="light"] .tok-fn { color:#8250df; } :root[data-theme="light"] .tok-type { color:#116329; }
+  .jkey { font-weight:600; }
   .op-body { padding:16px; border-top:1px solid var(--border); display:none; }
   .op.open .op-body { display:block; }
   label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
@@ -156,7 +163,13 @@
   .badge { font-size:10px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:5px; color:#fff; letter-spacing:.03em; }
   .b-unary{background:#3b82f6}.b-server{background:#8b5cf6}.b-client{background:#f59e0b}.b-bidi{background:#ec4899}
   .model, .saved { border:1px solid var(--border); border-radius:8px; margin-bottom:10px; background:var(--panel); overflow:hidden; scroll-margin-top:16px; }
-  .model-head { padding:10px 14px; font-weight:700; font-family:ui-monospace,monospace; border-bottom:1px solid var(--border); }
+  .model-head { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; padding:10px 14px; font-weight:700; font-family:ui-monospace,monospace; border-bottom:1px solid var(--border); }
+  .model-head .caret { color:var(--muted); font-size:11px; width:10px; text-align:center; transition:transform .15s; }
+  .model.collapsed .model-head .caret { transform:rotate(-90deg); }
+  .model.collapsed .model-head { border-bottom:0; }
+  .model.collapsed > pre { display:none; }
+  .models-bar { display:flex; align-items:center; gap:12px; }
+  .models-bar button { border:1px solid var(--border); border-radius:6px; padding:4px 10px; font-size:12px; color:var(--muted); background:var(--panel); cursor:pointer; }
   a.typelink { color:var(--accent); cursor:pointer; }
   a.typelink:hover { text-decoration:underline; }
   pre.pseudo { margin:0; padding:12px 14px; background:var(--code-bg); font-family:ui-monospace,monospace; font-size:13px; line-height:1.7; white-space:pre; overflow-x:auto; }
@@ -201,6 +214,17 @@
   .vartable .del:hover { color:var(--red); border-color:var(--red); }
   .modal-foot { padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:8px; }
   .modal-foot .spacer { flex:1; }
+  #runOverlay .modal { max-width:760px; }
+  .run-sum { font-size:12px; color:var(--muted); margin-right:auto; }
+  .run-sum b.ok { color:#4ade80; } .run-sum b.bad { color:#f87171; }
+  .run-row { border:1px solid var(--border); border-left-width:4px; border-radius:8px; padding:8px 12px; margin-bottom:8px; }
+  .run-row.pass { border-left-color:#22c55e; } .run-row.fail { border-left-color:#ef4444; }
+  .run-line { display:flex; align-items:center; gap:10px; }
+  .run-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:5px; }
+  .run-badge.ok { background:#14361f; color:#4ade80; } .run-badge.bad { background:#3a1616; color:#f87171; }
+  .run-name { font-family:ui-monospace,monospace; font-size:13px; flex:1; }
+  .run-meta { color:var(--muted); font-size:12px; }
+  .run-reasons { margin-top:6px; font-size:12px; color:#f87171; font-family:ui-monospace,monospace; white-space:pre-wrap; }
 </style>
 </head>
 <body>
@@ -217,6 +241,7 @@
   <select id="envSel"></select>
   <button id="envManage">Manage</button>
   <input class="search" id="search" placeholder="Filter endpoints…">
+  <button id="runAllBtn" class="primary" title="Run every endpoint in this tab and check status + response schema">Run all</button>
   <a class="linkbtn" href="openapi.json" download="openapi.json"><button>Spec</button></a>
   <a class="linkbtn hidden" id="adminLink"><button>Admin panel</button></a>
   <button id="exportBtn" title="Export collections, environments and history">Export</button>
@@ -259,6 +284,12 @@
       <p class="hint">Reference anywhere with <code class="var">{{name}}</code> — in URL, params, headers, body, auth. Saved in this browser.</p>
     </div>
     <div class="modal-foot"><span class="spacer"></span><button class="primary" id="mSave">Save</button></div>
+  </div>
+</div>
+<div class="overlay" id="runOverlay">
+  <div class="modal">
+    <div class="modal-head"><h3 id="runTitle">Run all</h3><span id="runSummary" class="run-sum"></span><button id="runClose">Close</button></div>
+    <div class="modal-body"><div id="runBody"></div></div>
   </div>
 </div>
 <script>
@@ -619,6 +650,19 @@ function refName(schema) { if (!schema) return null; if (schema.$ref) return sch
 //
 // Enum schemas render as a value union, and map-only objects as map<k, v>.
 // Types that reference another model stay clickable.
+// modelCard wraps a rendered model body in a collapsible card. The head shows
+// a caret and toggles `.collapsed` on the card, hiding the body.
+function modelCard(name, bodyNode) {
+  const card = document.createElement("div"); card.className="model"; card.id="model-"+name;
+  const head = document.createElement("div"); head.className="model-head";
+  const caret = document.createElement("span"); caret.className="caret"; caret.textContent="▼";
+  const label = document.createElement("span"); label.textContent=name;
+  head.appendChild(caret); head.appendChild(label);
+  head.onclick = () => card.classList.toggle("collapsed");
+  card.appendChild(head); card.appendChild(bodyNode);
+  return card;
+}
+
 function modelBody(spec, schema, schemas) {
   const pre = document.createElement("pre");
   pre.className = "pseudo";
@@ -776,6 +820,9 @@ function wireToolbar() {
     const sect = document.getElementById(id);
     sect.querySelector(".sect-head").onclick = () => sect.classList.toggle("collapsed");
   }
+  document.getElementById("runAllBtn").onclick = runAll;
+  document.getElementById("runClose").onclick = () => document.getElementById("runOverlay").classList.remove("on");
+  document.getElementById("runOverlay").onclick = e => { if (e.target.id === "runOverlay") document.getElementById("runOverlay").classList.remove("on"); };
   document.getElementById("exportBtn").onclick = exportStore;
   const importFile = document.getElementById("importFile");
   document.getElementById("importBtn").onclick = () => importFile.click();
@@ -949,13 +996,52 @@ function renderResponse(out, res, ms, bytes, body, hdrs, extracted, results, jso
   if (extracted && extracted.length) {
     const e = document.createElement("div"); e.className = "hint"; e.textContent = "Extracted → " + extracted.join(", "); out.appendChild(e);
   }
-  addLabeled(out, "Response body", body);
+  addBody(out, "Response body", body, json);
   if (hdrs) addLabeled(out, "Response headers", hdrs);
   addSaveVar(out, json);
 }
 function addLabeled(parent, label, text) {
   const l = document.createElement("label"); l.textContent = label; parent.appendChild(l);
   const pre = document.createElement("pre"); pre.textContent = text; parent.appendChild(pre);
+}
+
+// keyColor maps a JSON key to a stable colour, so every key reads in its own
+// hue and the same key looks the same everywhere. Hue comes from a hash of the
+// name; saturation/lightness are fixed for legibility on the code background.
+function keyColor(k) {
+  let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
+  return "hsl(" + (h % 360) + " 65% 62%)";
+}
+
+// colorJson pretty-prints a parsed JSON value into `container`, colouring each
+// object key by keyColor. Values reuse the Go string/number token colours.
+function colorJson(container, val, indent) {
+  indent = indent || 0;
+  const pad = "  ".repeat(indent), pad2 = "  ".repeat(indent + 1);
+  const t = s => container.appendChild(document.createTextNode(s));
+  const span = (cls, s, color) => { const e = document.createElement("span"); if (cls) e.className = cls; if (color) e.style.color = color; e.textContent = s; container.appendChild(e); };
+  if (val === null) { span("tok-num", "null"); return; }
+  if (Array.isArray(val)) {
+    if (!val.length) { t("[]"); return; }
+    t("[\n"); val.forEach((v, i) => { t(pad2); colorJson(container, v, indent + 1); t(i < val.length - 1 ? ",\n" : "\n"); }); t(pad + "]"); return;
+  }
+  if (typeof val === "object") {
+    const ks = Object.keys(val);
+    if (!ks.length) { t("{}"); return; }
+    t("{\n"); ks.forEach((k, i) => { t(pad2); span("jkey", JSON.stringify(k), keyColor(k)); t(": "); colorJson(container, val[k], indent + 1); t(i < ks.length - 1 ? ",\n" : "\n"); }); t(pad + "}"); return;
+  }
+  if (typeof val === "string") { span("tok-str", JSON.stringify(val)); return; }
+  span("tok-num", String(val));
+}
+
+// addBody shows a response body: coloured per-key when it parsed as JSON,
+// plain text otherwise.
+function addBody(parent, label, text, json) {
+  const l = document.createElement("label"); l.textContent = label; parent.appendChild(l);
+  const pre = document.createElement("pre");
+  if (json !== null && json !== undefined) colorJson(pre, json, 0);
+  else pre.textContent = text;
+  parent.appendChild(pre);
 }
 
 function addSaveVar(parent, json) {
@@ -1176,6 +1262,50 @@ function testsEditor(pane, req) {
   rerender();
 }
 
+// isPlaceholder reports whether a value is a bare {{var}} reference the user
+// wired up — those are kept as-is when generating a body.
+function isPlaceholder(v) { return typeof v === "string" && /^\s*\{\{[^}]+\}\}\s*$/.test(v); }
+
+// mergeKeepPlaceholders overlays generated data onto the current body but never
+// overwrites a leaf the user set to a {{var}}: those are deliberate chaining
+// references, not sample data.
+function mergeKeepPlaceholders(cur, gen) {
+  if (isPlaceholder(cur)) return cur;
+  if (cur && typeof cur === "object" && !Array.isArray(cur) && gen && typeof gen === "object" && !Array.isArray(gen)) {
+    const out = Array.isArray(gen) ? [] : {};
+    for (const k in gen) out[k] = k in cur ? mergeKeepPlaceholders(cur[k], gen[k]) : gen[k];
+    for (const k in cur) if (!(k in out) && isPlaceholder(cur[k])) out[k] = cur[k];
+    return out;
+  }
+  return gen;
+}
+
+// addGenBodyBtn wires a "Generate body" button that asks the server to build a
+// realistic payload (via synth) for this operation and drops it into the body,
+// preserving any {{var}} the user already placed.
+function addGenBodyBtn(pane, req, ta) {
+  const btn = document.createElement("button"); btn.textContent = "Generate body";
+  btn.title = "Fill with realistic sample data — {{variables}} are kept";
+  btn.style.marginTop = "8px";
+  btn.onclick = async () => {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = "Generating…";
+    try {
+      const res = await fetch("synth/body?method=" + encodeURIComponent(req.method) + "&path=" + encodeURIComponent(req.path));
+      const text = await res.text();
+      if (!res.ok) { let msg = text; try { msg = JSON.parse(text).error || text; } catch (e) {} throw new Error(msg); }
+      const gen = JSON.parse(text);
+      let cur = null; try { cur = JSON.parse(ta.value); } catch (e) {}
+      const merged = cur !== null ? mergeKeepPlaceholders(cur, gen) : gen;
+      ta.value = JSON.stringify(merged, null, 2); req.body = ta.value;
+      btn.textContent = "Generated ✓"; setTimeout(() => btn.textContent = orig, 1400);
+    } catch (e) {
+      btn.textContent = "Failed"; btn.title = String(e.message || e);
+      setTimeout(() => { btn.textContent = orig; }, 1800);
+    } finally { btn.disabled = false; }
+  };
+  pane.appendChild(btn);
+}
+
 function requestEditor(spec, req, op) {
   const wrap = document.createElement("div");
   const tabs = [];
@@ -1184,7 +1314,7 @@ function requestEditor(spec, req, op) {
     tabs.push({ label:"Query", build:p=>kvEditor(p, req.queryParams, false) });
     tabs.push({ label:"Headers", build:p=>kvEditor(p, req.headers, false) });
     const rb = op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
-    if (rb) tabs.push({ label:"Body", build:p=>{ const ta=document.createElement("textarea"); ta.value=req.body; ta.oninput=()=>req.body=ta.value; p.appendChild(ta); const s=document.createElement("pre"); s.textContent=schemaText(spec,rb.schema); s.style.marginTop="8px"; p.appendChild(s); } });
+    if (rb) tabs.push({ label:"Body", build:p=>{ const ta=document.createElement("textarea"); ta.value=req.body; ta.oninput=()=>req.body=ta.value; p.appendChild(ta); addGenBodyBtn(p, req, ta); const s=document.createElement("pre"); s.textContent=schemaText(spec,rb.schema); s.style.marginTop="8px"; p.appendChild(s); } });
   } else {
     tabs.push({ label:"Query", build:p=>kvEditor(p, req.queryParams, false) });
     tabs.push({ label:"Headers", build:p=>kvEditor(p, req.headers, false) });
@@ -1268,7 +1398,7 @@ function opCard(spec, path, method, op) {
       const r = responses[code]; const row = document.createElement("div"); row.className="expected";
       const media = r.content && r.content["application/json"];
       row.innerHTML = `<div class="ecode">${code}${r.description?" — "+r.description:""}</div>`;
-      if (media) { const pre=document.createElement("pre"); pre.textContent=JSON.stringify(sample(spec,media.schema),null,2); row.appendChild(pre); }
+      if (media) { const pre=document.createElement("pre"); colorJson(pre, sample(spec,media.schema), 0); row.appendChild(pre); }
       body.appendChild(row);
     }
   }
@@ -1411,6 +1541,37 @@ async function toggleSource(btn, box, src) {
   }
 }
 
+const GO_KW = new Set("break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var nil true false iota".split(" "));
+const GO_TYPES = new Set("bool string int int8 int16 int32 int64 uint uint8 uint16 uint32 uint64 uintptr byte rune float32 float64 complex64 complex128 error any".split(" "));
+
+// highlightGo tokenises one line of Go and appends coloured spans. It is a
+// per-line lexer, so a string or comment that spans lines is only coloured on
+// its opening line — acceptable for a short snippet view.
+function highlightGo(lineEl, s) {
+  const ident = c => /[A-Za-z0-9_]/.test(c);
+  const put = (cls, text) => { const sp = document.createElement("span"); if (cls) sp.className = cls; sp.textContent = text; lineEl.appendChild(sp); };
+  let i = 0; const n = s.length;
+  while (i < n) {
+    const c = s[i];
+    if (c === "/" && s[i + 1] === "/") { put("tok-com", s.slice(i)); break; }
+    if (c === '"' || c === "`" || c === "'") {
+      let j = i + 1;
+      while (j < n) { if (s[j] === "\\" && c !== "`") { j += 2; continue; } if (s[j] === c) { j++; break; } j++; }
+      put("tok-str", s.slice(i, j)); i = j; continue;
+    }
+    if (c >= "0" && c <= "9") { let j = i + 1; while (j < n && /[0-9a-fA-FxX._]/.test(s[j])) j++; put("tok-num", s.slice(i, j)); i = j; continue; }
+    if (/[A-Za-z_]/.test(c)) {
+      let j = i + 1; while (j < n && ident(s[j])) j++;
+      const w = s.slice(i, j);
+      let k = j; while (k < n && s[k] === " ") k++;
+      let cls = GO_KW.has(w) ? "tok-kw" : GO_TYPES.has(w) ? "tok-type" : (s[k] === "(" ? "tok-fn" : "");
+      put(cls, w); i = j; continue;
+    }
+    let j = i + 1; while (j < n && !/[A-Za-z0-9_"'`\/]/.test(s[j])) j++;
+    put("", s.slice(i, j)); i = j;
+  }
+}
+
 function sourceView(snip) {
   const wrap = document.createElement("div"); wrap.className = "srcbox";
   const path = document.createElement("div"); path.className = "srcpath";
@@ -1426,9 +1587,9 @@ function sourceView(snip) {
     const numEl = document.createElement("div");
     const lineEl = document.createElement("div");
     numEl.textContent = n;
-    // textContent, never innerHTML: this is code from the server, and one
-    // handler containing a <script> tag would otherwise execute here.
-    lineEl.textContent = text === "" ? " " : text;
+    // Tokens are appended as spans built with textContent — never innerHTML —
+    // so a handler containing a <script> tag is coloured, not executed.
+    highlightGo(lineEl, text === "" ? " " : text);
     if (n === snip.line) { numEl.className = "hit"; lineEl.className = "hit"; }
     nums.appendChild(numEl); lines.appendChild(lineEl);
   });
@@ -1561,7 +1722,7 @@ async function invokeGrpc(svc, m, reqArea, targetInput, out) {
     line.innerHTML = `<span class="status ${ok?"s-ok":"s-err"}">${ok?"OK":"ERROR"} ${res.status}</span><span class="meta">${ms} ms</span>`;
     out.appendChild(line);
     if (json && json.error) { addLabeled(out, "Error", json.error + (json.response?"\n\n"+json.response:"")); }
-    else { addLabeled(out, "Response", pretty); addSaveVar(out, json); }
+    else { addBody(out, "Response", pretty, json); addSaveVar(out, json); }
   } catch (e) {
     out.innerHTML = `<div class="status s-err">Error</div><pre></pre>`;
     out.querySelector("pre").textContent = String(e);
@@ -1590,10 +1751,7 @@ function renderGrpcMessages(gs) {
   if (!names.length) return;
   const h = document.createElement("h2"); h.className="section"; h.textContent="Messages"; app.appendChild(h);
   for (const name of names) {
-    const schema = schemas[name];
-    const card = document.createElement("div"); card.className="model"; card.id="model-"+name;
-    const head = document.createElement("div"); head.className="model-head"; head.textContent=name; card.appendChild(head);
-    card.appendChild(modelBody(gs, schema, schemas));
+    const card = modelCard(name, modelBody(gs, schemas[name], schemas));
     app.appendChild(card);
   }
 }
@@ -1647,10 +1805,7 @@ function renderGraphqlTypes(gs) {
   if (!names.length) return;
   const h = document.createElement("h2"); h.className="section"; h.textContent="Types"; app.appendChild(h);
   for (const name of names) {
-    const schema = schemas[name];
-    const card = document.createElement("div"); card.className="model"; card.id="model-"+name;
-    const head = document.createElement("div"); head.className="model-head"; head.textContent=name; card.appendChild(head);
-    card.appendChild(modelBody(gs, schema, schemas));
+    const card = modelCard(name, modelBody(gs, schemas[name], schemas));
     app.appendChild(card);
   }
 }
@@ -1830,7 +1985,7 @@ async function executeGraphql(endpointInput, queryArea, varsArea, out) {
     line.innerHTML = `<span class="status ${ok?"s-ok":"s-err"}">${ok?"OK":"ERROR"} ${res.status}</span><span class="meta">${ms} ms</span>`;
     out.appendChild(line);
     if (gqlErrors) addLabeled(out, "Errors", JSON.stringify(gqlErrors, null, 2));
-    addLabeled(out, "Response", pretty);
+    addBody(out, "Response", pretty, json);
     addSaveVar(out, json);
   } catch (e) {
     out.innerHTML = `<div class="status s-err">Error</div><pre></pre>`;
@@ -2165,14 +2320,19 @@ function renderModels(spec) {
   const schemas = (spec.components && spec.components.schemas) || {};
   const names = Object.keys(schemas).sort();
   if (!names.length) return;
-  const h = document.createElement("h2"); h.className="section"; h.textContent="Models"; app.appendChild(h);
+  const h = document.createElement("h2"); h.className="section models-bar";
+  const title = document.createElement("span"); title.textContent="Models"; h.appendChild(title);
+  const cards = [];
+  const toggleAll = document.createElement("button");
+  const allCollapsed = () => cards.every(c => c.classList.contains("collapsed"));
+  const sync = () => toggleAll.textContent = allCollapsed() ? "Expand all" : "Collapse all";
+  toggleAll.onclick = () => { const c = !allCollapsed(); cards.forEach(x => x.classList.toggle("collapsed", c)); sync(); };
+  h.appendChild(toggleAll); app.appendChild(h);
   for (const name of names) {
-    const schema = schemas[name];
-    const card = document.createElement("div"); card.className="model"; card.id="model-"+name;
-    const head = document.createElement("div"); head.className="model-head"; head.textContent=name; card.appendChild(head);
-    card.appendChild(modelBody(spec, schema, schemas));
-    app.appendChild(card);
+    const card = modelCard(name, modelBody(spec, schemas[name], schemas));
+    cards.push(card); app.appendChild(card);
   }
+  sync();
 }
 
 // ---- side panels ----
@@ -2244,6 +2404,233 @@ window.addEventListener("resize", syncHeaderHeight);
 if (window.ResizeObserver) {
   const hdr = document.querySelector("header");
   if (hdr) new ResizeObserver(syncHeaderHeight).observe(hdr);
+}
+
+// ---- Run all (Postman-style collection runner) ----
+// Runs every operation in the active tab sequentially — sequential so chaining
+// (extract -> {{var}}) carries between requests. Pass = the response status is
+// one the spec documents AND, when that response declares a JSON schema, the
+// body validates against it.
+
+// matchResponse resolves an HTTP status to the response object the spec
+// documents for it: exact code first, then a 2XX/2xx range, then default.
+function matchResponse(op, status) {
+  const rs = op.responses || {}, s = String(status);
+  if (rs[s]) return { code: s, res: rs[s] };
+  const up = s[0] + "XX", lo = s[0] + "xx";
+  if (rs[up]) return { code: up, res: rs[up] };
+  if (rs[lo]) return { code: lo, res: rs[lo] };
+  if (rs.default) return { code: "default", res: rs.default };
+  return null;
+}
+
+// validateSchema returns a list of human-readable problems; empty means valid.
+// It is intentionally lenient: it checks structure it understands and ignores
+// keywords it does not, so it flags real mismatches without false alarms.
+function validateSchema(spec, schema, value, path) {
+  path = path || "$";
+  if (!schema) return [];
+  if (schema.$ref) return validateSchema(spec, resolveRef(spec, schema.$ref), value, path);
+  if (schema.allOf) { let e = []; for (const s of schema.allOf) e = e.concat(validateSchema(spec, s, value, path)); return e; }
+  const alts = schema.oneOf || schema.anyOf;
+  if (alts) return alts.some(s => validateSchema(spec, s, value, path).length === 0) ? [] : [path + ": matches no allowed variant"];
+  if (value === null) return schema.nullable || !schema.type ? [] : [path + ": null but expected " + schema.type];
+  if (schema.enum && !schema.enum.some(v => JSON.stringify(v) === JSON.stringify(value))) return [path + ": " + JSON.stringify(value) + " not in enum"];
+  const t = schema.type;
+  if (t === "array") {
+    if (!Array.isArray(value)) return [path + ": expected array"];
+    let e = []; if (schema.items) value.forEach((v, i) => e = e.concat(validateSchema(spec, schema.items, v, path + "[" + i + "]"))); return e;
+  }
+  if (t === "object" || schema.properties) {
+    if (typeof value !== "object" || Array.isArray(value)) return [path + ": expected object"];
+    let e = [];
+    for (const r of schema.required || []) if (!(r in value)) e.push(path + "." + r + ": required, missing");
+    for (const k in (schema.properties || {})) if (k in value) e = e.concat(validateSchema(spec, schema.properties[k], value[k], path + "." + k));
+    return e;
+  }
+  if (t === "string") return typeof value === "string" ? [] : [path + ": expected string"];
+  if (t === "integer" || t === "number") return typeof value === "number" ? [] : [path + ": expected number"];
+  if (t === "boolean") return typeof value === "boolean" ? [] : [path + ": expected boolean"];
+  return [];
+}
+
+// sampleParamValue gives a plausible default for a path/query parameter so a
+// generated URL is not left with an empty {id}. A user-set value or a saved
+// {{var}} still wins — this only fills the blanks.
+function sampleParamValue(schema) {
+  if (!schema) return "1";
+  if (schema.example !== undefined) return String(schema.example);
+  if (schema.enum && schema.enum.length) return String(schema.enum[0]);
+  if (schema.default !== undefined) return String(schema.default);
+  if (schema.type === "integer" || schema.type === "number") return "1";
+  if (schema.type === "boolean") return "true";
+  return "1";
+}
+
+function runnerReqRest(spec, path, method, op) {
+  const req = fromSpec(spec, path, method, op);
+  const params = resolveParams(spec, op.parameters);
+  for (const p of params) {
+    if (p.in === "path" && !req.pathParams[p.name]) req.pathParams[p.name] = sampleParamValue(p.schema);
+    if (p.in === "query" && p.required && !req.queryParams[p.name]) req.queryParams[p.name] = sampleParamValue(p.schema);
+  }
+  return req;
+}
+
+async function runOneRest(spec, req, op) {
+  const env = activeEnv();
+  const url = buildURL(req, env);
+  const opts = { method: req.method.toUpperCase(), headers: buildHeaders(req, env) };
+  if (req.body && req.method !== "get") opts.body = interpolate(req.body, env);
+  const t0 = performance.now();
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  const ms = Math.round(performance.now() - t0);
+  let json = null; try { json = JSON.parse(text); } catch (e) {}
+  // Chaining: feed extracted values back into the environment for later calls.
+  for (const rule of (req.extract || [])) {
+    let val;
+    if (rule.from === "status") val = res.status;
+    else if (rule.from === "header") val = res.headers.get(rule.jsonPath);
+    else val = pick(json, rule.jsonPath);
+    if (val !== undefined && val !== null) env.vars[rule.setVar] = String(val);
+  }
+  const reasons = []; let pass = true;
+  const matched = matchResponse(op, res.status);
+  if (!matched) { pass = false; reasons.push("status " + res.status + " is not documented"); }
+  else {
+    const media = matched.res.content && matched.res.content["application/json"];
+    if (media && media.schema) {
+      if (json === null) { pass = false; reasons.push("expected JSON body for " + matched.code + ", got non-JSON"); }
+      else {
+        const errs = validateSchema(spec, media.schema, json, "$");
+        if (errs.length) { pass = false; reasons.push.apply(reasons, errs.slice(0, 4)); }
+      }
+    }
+  }
+  return { label: req.method.toUpperCase() + " " + req.path, status: res.status, ms, pass, reasons };
+}
+
+function openRunModal(title) {
+  document.getElementById("runTitle").textContent = title;
+  document.getElementById("runBody").innerHTML = "";
+  document.getElementById("runSummary").textContent = "Running…";
+  document.getElementById("runOverlay").classList.add("on");
+  return document.getElementById("runBody");
+}
+function addRunRow(tb, r) {
+  const row = document.createElement("div"); row.className = "run-row " + (r.pass ? "pass" : "fail");
+  const line = document.createElement("div"); line.className = "run-line";
+  line.innerHTML = `<span class="run-badge ${r.pass ? "ok" : "bad"}">${r.pass ? "PASS" : "FAIL"}</span>`
+    + `<span class="run-name"></span>`
+    + `<span class="run-meta">${r.status != null ? r.status : ""}${r.ms != null ? " · " + r.ms + " ms" : ""}</span>`;
+  line.querySelector(".run-name").textContent = r.label;
+  row.appendChild(line);
+  if (r.reasons && r.reasons.length) { const p = document.createElement("div"); p.className = "run-reasons"; p.textContent = r.reasons.join("\n"); row.appendChild(p); }
+  tb.appendChild(row);
+}
+function setRunSummary(pass, total, done) {
+  const el = document.getElementById("runSummary");
+  el.innerHTML = `<b class="ok">${pass} passed</b> · <b class="bad">${done - pass} failed</b> · ${done}/${total}`;
+}
+
+async function runAll() {
+  if (mode === "rest") return runAllRest();
+  if (mode === "grpc") return runAllGrpc();
+  if (mode === "graphql") return runAllGraphql();
+  const tb = openRunModal("Run all");
+  tb.innerHTML = '<div class="hint">Run all is available on the REST, gRPC and GraphQL tabs.</div>';
+  document.getElementById("runSummary").textContent = "";
+}
+
+async function runAllRest() {
+  const spec = SPEC, paths = spec.paths || {}, list = [];
+  for (const path of Object.keys(paths).sort())
+    for (const m of methodOrder) {
+      const op = paths[path][m];
+      if (!op || op["x-specter-realtime"]) continue; // realtime upgrades never "respond"
+      list.push({ path, m, op });
+    }
+  const tb = openRunModal("Run all · REST (" + list.length + ")");
+  let pass = 0, done = 0;
+  for (const { path, m, op } of list) {
+    let r;
+    try { r = await runOneRest(spec, runnerReqRest(spec, path, m, op), op); }
+    catch (e) { r = { label: m.toUpperCase() + " " + path, status: null, ms: null, pass: false, reasons: [String(e)] }; }
+    if (r.pass) pass++; done++;
+    addRunRow(tb, r); setRunSummary(pass, list.length, done);
+  }
+  if (!list.length) tb.innerHTML = '<div class="hint">No REST endpoints to run.</div>';
+}
+
+async function runAllGrpc() {
+  const gs = grpcSpec(), services = (GRPC && GRPC.services) || [];
+  const list = [];
+  for (const svc of services) for (const m of svc.methods) list.push({ svc, m });
+  const tb = openRunModal("Run all · gRPC (" + list.length + ")");
+  let pass = 0, done = 0;
+  const env = activeEnv();
+  for (const { svc, m } of list) {
+    const label = svc.name + "/" + m.name;
+    const reasons = []; let ok = true, status = null, ms = null;
+    try {
+      const target = interpolate(env.vars[grpcHostVar(svc.name)] || env.vars.grpcHost || "localhost:50051", env);
+      const data = interpolate(JSON.stringify(sample(gs, { $ref: "#/components/schemas/" + m.inputType })), env);
+      const t0 = performance.now();
+      const res = await fetch("grpc/invoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, symbol: svc.fullName + "/" + m.name, data }) });
+      const text = await res.text(); ms = Math.round(performance.now() - t0); status = res.status;
+      let json = null; try { json = JSON.parse(text); } catch (e) {}
+      if (!res.ok) { ok = false; reasons.push("HTTP " + res.status); }
+      else if (json && json.error) { ok = false; reasons.push(json.error); }
+      else {
+        // Streaming methods answer with a collected list, not one message, so
+        // schema-check only unary responses against the output type.
+        const streaming = m.clientStreaming || m.serverStreaming;
+        const body = json && json.response !== undefined ? json.response : json;
+        if (!streaming && body && gs.components.schemas[m.outputType]) {
+          const errs = validateSchema(gs, { $ref: "#/components/schemas/" + m.outputType }, body, "$");
+          if (errs.length) { ok = false; reasons.push.apply(reasons, errs.slice(0, 4)); }
+        }
+      }
+    } catch (e) { ok = false; reasons.push(String(e)); }
+    if (ok) pass++; done++;
+    addRunRow(tb, { label, status, ms, pass: ok, reasons }); setRunSummary(pass, list.length, done);
+  }
+  if (!list.length) tb.innerHTML = '<div class="hint">No gRPC methods to run.</div>';
+}
+
+async function runAllGraphql() {
+  const gs = graphqlSpec(), env = activeEnv();
+  const groups = [
+    { name: "Query", fields: (GRAPHQL && GRAPHQL.queries) || [] },
+    { name: "Mutation", fields: (GRAPHQL && GRAPHQL.mutations) || [] },
+  ]; // subscriptions stream — not a one-shot request
+  const list = [];
+  for (const g of groups) for (const f of g.fields) list.push({ g: g.name, f });
+  const tb = openRunModal("Run all · GraphQL (" + list.length + ")");
+  const url = interpolate(env.vars.graphqlUrl || location.origin + "/graphql", env);
+  let pass = 0, done = 0;
+  for (const { g, f } of list) {
+    const label = g + " " + f.name;
+    const reasons = []; let ok = true, status = null, ms = null;
+    try {
+      const query = buildGraphqlOperation(gs, g, f);
+      const variables = graphqlVarSample(gs, f);
+      const headers = { "Content-Type": "application/json" };
+      if (env.vars.token) headers["Authorization"] = "Bearer " + env.vars.token;
+      const t0 = performance.now();
+      const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ query, variables }) });
+      const text = await res.text(); ms = Math.round(performance.now() - t0); status = res.status;
+      let json = null; try { json = JSON.parse(text); } catch (e) {}
+      // GraphQL returns 200 with an errors[] on failure, so status is not enough.
+      if (!res.ok) { ok = false; reasons.push("HTTP " + res.status); }
+      else if (json && Array.isArray(json.errors) && json.errors.length) { ok = false; reasons.push(json.errors.map(e => e.message || JSON.stringify(e)).slice(0, 3).join("; ")); }
+      else if (!json || !json.data || json.data[f.name] === undefined) { ok = false; reasons.push("no data." + f.name + " in response"); }
+    } catch (e) { ok = false; reasons.push(String(e)); }
+    if (ok) pass++; done++;
+    addRunRow(tb, { label, status, ms, pass: ok, reasons }); setRunSummary(pass, list.length, done);
+  }
+  if (!list.length) tb.innerHTML = '<div class="hint">No GraphQL operations to run.</div>';
 }
 
 load();
