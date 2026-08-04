@@ -65,10 +65,10 @@ service OddService {
 	if len(doc.Services) != 1 || len(doc.Services[0].Methods) != 1 {
 		t.Fatalf("services = %+v", doc.Services)
 	}
-	if doc.Messages["Outer"] == nil || doc.Messages["Inner"] == nil {
+	if doc.Messages["odd.v1.Outer"] == nil || doc.Messages["odd.v1.Inner"] == nil {
 		t.Errorf("messages = %+v, want Outer and its referenced Inner", doc.Messages)
 	}
-	if doc.Messages["Missing"] != nil {
+	if doc.Messages["odd.v1.Missing"] != nil {
 		t.Error("an undefined message must not appear")
 	}
 }

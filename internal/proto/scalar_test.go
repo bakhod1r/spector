@@ -27,12 +27,11 @@ func TestScalarSchema(t *testing.T) {
 		{proto: "sfixed32", typ: "integer"},
 		{proto: "sfixed64", typ: "integer"},
 		{proto: "User", ref: "#/components/schemas/User"},
-		{proto: "google.protobuf.Timestamp", ref: "#/components/schemas/google.protobuf.Timestamp"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.proto, func(t *testing.T) {
-			got := scalarSchema(tc.proto)
+			got := scalarSchema(tc.proto, "")
 			if got.Type != tc.typ {
 				t.Errorf("type = %q, want %q", got.Type, tc.typ)
 			}
@@ -43,5 +42,24 @@ func TestScalarSchema(t *testing.T) {
 				t.Errorf("ref = %q, want %q", got.Ref, tc.ref)
 			}
 		})
+	}
+}
+
+// Well-known protobuf types get first-class JSON Schema representations
+// instead of falling through to a message $ref.
+func TestWellKnownScalars(t *testing.T) {
+	cases := map[string]struct{ typ, format string }{
+		"google.protobuf.Timestamp": {"string", "date-time"},
+		"google.protobuf.Duration":  {"string", "duration"},
+		"google.protobuf.Empty":     {"object", ""},
+	}
+	for in, want := range cases {
+		s := scalarSchema(in, "")
+		if s.Type != want.typ || s.Format != want.format {
+			t.Errorf("%s -> {%s,%s}, want {%s,%s}", in, s.Type, s.Format, want.typ, want.format)
+		}
+	}
+	if a := scalarSchema("google.protobuf.Any", ""); a.Properties["@type"] == nil {
+		t.Errorf("Any should expose @type property")
 	}
 }

@@ -228,6 +228,11 @@ type Schema struct {
 	AdditionalProperties *Schema            `json:"additionalProperties,omitempty"`
 	Enum                 []any              `json:"enum,omitempty"`
 
+	// XOneof records groups of mutually-exclusive property names generated
+	// from proto `oneof` fields. Each inner slice is one oneof group's
+	// variant names.
+	XOneof [][]string `json:"x-oneof,omitempty"`
+
 	// Description and Example are pure documentation, read from `doc:` and
 	// `example:` tags. They constrain nothing, which is exactly why they are
 	// worth reading: there is no way for them to make a document wrong.

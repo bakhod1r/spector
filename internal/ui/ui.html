@@ -131,6 +131,8 @@
   .pane.on { display:block; }
   .kv { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px; }
   .btnrow { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .grpc-msgs .grpc-msg { margin-bottom:6px; }
+  .grpc-msgs .add-msg { font-size:11.5px; padding:4px 10px; }
   .toggle { display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; margin:6px 0; }
   .toggle button { border:0; border-radius:0; padding:4px 12px; font-size:12px; color:var(--muted); }
   .toggle button.on { background:var(--accent); color:#fff; }
@@ -368,10 +370,72 @@ function exportStore() {
   URL.revokeObjectURL(url);
 }
 
+// Postman v2.1 collections have no `format` marker of their own; detect them
+// by shape so they can be routed through the same merge/replace flow as a
+// native export instead of being rejected by parseImport.
+function isPostmanV21(j) {
+  return !!(j && j.info && Array.isArray(j.item) &&
+    !j.format && (String(j.info.schema || "").includes("v2.1.0") || j.info._postman_id));
+}
+
+function postmanToStore(j) {
+  const requests = [];
+  (function walk(items) {
+    for (const it of (items || [])) {
+      if (it.item) { walk(it.item); continue; } // folder
+      const r = it.request || {};
+      const url = r.url || {};
+      requests.push({
+        id: uid(),
+        name: it.name || "request",
+        method: (r.method || "GET").toLowerCase(),
+        path: "/" + (Array.isArray(url.path) ? url.path.join("/") : ""),
+        pathParams: {},
+        queryParams: Object.fromEntries((url.query || []).map(q => [q.key, q.value || ""])),
+        headers: Object.fromEntries((r.header || []).map(h => [h.key, h.value || ""])),
+        body: r.body && r.body.mode === "raw" ? (r.body.raw || "") : "",
+        auth: mapPostmanAuth(r.auth),
+        extract: [], tests: [],
+        notes: (it.event || []).map(e => `${e.listen}: ${((e.script && e.script.exec) || []).join("\n")}`).join("\n\n") || "",
+      });
+    }
+  })(j.item);
+  return {
+    activeEnvId: undefined,
+    environments: [],
+    collections: [{ id: uid(), name: j.info.name || "Imported", requests }],
+    history: [],
+  };
+}
+
+// Matches the flat auth shape already used elsewhere in the console
+// ({type, token, username, password, key, value, in}) rather than the
+// brief's illustrative `value`-for-bearer shape.
+function mapPostmanAuth(a) {
+  if (!a) return { type: "none", token: "", username: "", password: "", key: "", value: "", in: "header" };
+  if (a.type === "bearer") return { type: "bearer", token: kv(a.bearer, "token"), username: "", password: "", key: "", value: "", in: "header" };
+  if (a.type === "basic") return { type: "basic", token: "", username: kv(a.basic, "username"), password: kv(a.basic, "password"), key: "", value: "", in: "header" };
+  if (a.type === "apikey") return { type: "apiKey", token: "", username: "", password: "", key: kv(a.apikey, "key"), value: kv(a.apikey, "value"), in: kv(a.apikey, "in") || "header" };
+  return { type: "none", token: "", username: "", password: "", key: "", value: "", in: "header" };
+}
+function kv(arr, name) { const f = (arr || []).find(x => x.key === name); return f ? f.value : ""; }
+
 function importStore(text) {
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch (e) { alert("Import failed. Not valid JSON: " + e.message); return; }
+
   let incoming;
-  try { incoming = parseImport(text); }
-  catch (e) { alert("Import failed. " + e.message); return; }
+  if (isPostmanV21(parsed)) {
+    incoming = postmanToStore(parsed);
+    // Postman collections carry no environments; keep the ones already
+    // configured so a "replace" choice doesn't wipe out baseUrl/token vars.
+    incoming.activeEnvId = store.activeEnvId;
+    incoming.environments = JSON.parse(JSON.stringify(store.environments));
+  } else {
+    try { incoming = parseImport(text); }
+    catch (e) { alert("Import failed. " + e.message); return; }
+  }
 
   const envCount = incoming.environments.length;
   const reqCount = incoming.collections.reduce((n, c) => n + (c.requests || []).length, 0);
@@ -811,7 +875,7 @@ function fromSpec(spec, path, method, op) {
     pathParams: grab("path"), queryParams: grab("query"), headers: grab("header"),
     body: rb ? JSON.stringify(sample(spec, rb.schema), null, 2) : "",
     auth: { type:"none", token:"", username:"", password:"", key:"", value:"", in:"header" },
-    extract: [], tests: [],
+    extract: [], tests: [], preRequestScript: "",
   };
   return hydrateOpState(req);
 }
@@ -827,6 +891,7 @@ function hydrateOpState(req) {
   if (saved) {
     req.extract = JSON.parse(JSON.stringify(saved.extract || []));
     req.tests = JSON.parse(JSON.stringify(saved.tests || []));
+    req.preRequestScript = saved.preRequestScript || "";
   }
   return req;
 }
@@ -838,16 +903,38 @@ function hydrateOpState(req) {
 function persistOpState(req) {
   if (!req || !req.key) return;
   store.opState = store.opState || {};
-  const hasRules = (req.extract && req.extract.length) || (req.tests && req.tests.length);
+  const hasRules = (req.extract && req.extract.length) || (req.tests && req.tests.length) || req.preRequestScript;
   if (hasRules) {
     store.opState[req.key] = {
       extract: JSON.parse(JSON.stringify(req.extract || [])),
       tests: JSON.parse(JSON.stringify(req.tests || [])),
+      preRequestScript: req.preRequestScript || "",
     };
   } else {
     delete store.opState[req.key]; // deleting the last rule means deleting it
   }
   saveStore();
+}
+
+// ---- pre-request script (NOT a sandbox) ----
+// Only the user's own req.preRequestScript runs here. Imported Postman scripts
+// (stored in req.notes by the Postman importer) are never wired into execution —
+// running foreign script content automatically would be an in-origin code-exec hole.
+function pmApi(env) {
+  return {
+    environment: { get: n => env.vars[n], set: (n,v) => { env.vars[n] = String(v); } },
+    variables:   { get: n => env.vars[n], set: (n,v) => { env.vars[n] = String(v); } },
+  };
+}
+function runPreRequest(req, env) {
+  if (!req.preRequestScript) return;
+  const fn = new Function("pm", '"use strict";\n' + req.preRequestScript);
+  // Only `pm` is passed as an argument, but this is NOT a true sandbox: the
+  // script still runs in-origin via new Function, so window/fetch/document
+  // remain reachable as free variables. This is safe only because the script
+  // being run is the user's own (imported Postman scripts are deliberately
+  // never executed, see comment above).
+  fn(pmApi(env));
 }
 
 // ---- build + send ----
@@ -878,18 +965,74 @@ function buildCurl(req, env) {
   if (req.body && req.method !== "get") cmd += ` \\\n  -d '${interpolate(req.body,env).replace(/'/g,"'\\''")}'`;
   return cmd;
 }
-function pick(obj, path) {
-  if (!path || path === "$") return obj;
-  const parts = path.replace(/^\$\.?/, "").split(/[.\[\]]/).filter(Boolean);
-  let cur = obj;
-  for (const p of parts) { if (cur == null) return undefined; cur = cur[p]; }
-  return cur;
+function tokenizeJsonPath(path) {
+  const body = path.replace(/^\$/, "");
+  const toks = [];
+  const re = /\.\.([A-Za-z0-9_]+|\*)|\.(\*)|\.([A-Za-z0-9_]+)|\[\*\]|\[\?\(@\.([A-Za-z0-9_]+)\s*(==|!=)\s*'([^']*)'\)\]|\[\?\(@\.([A-Za-z0-9_]+)\)\]|\[(-?\d+)\]/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    if (m[1] !== undefined) toks.push({ type: "recurse", key: m[1] });
+    else if (m[2] !== undefined) toks.push({ type: "wild" });
+    else if (m[3] !== undefined) toks.push({ type: "key", key: m[3] });
+    else if (m[0] === "[*]") toks.push({ type: "wild" });
+    else if (m[4] !== undefined) toks.push({ type: "filter", key: m[4], op: m[5], val: m[6] });
+    else if (m[7] !== undefined) toks.push({ type: "filter", key: m[7], op: "exists" });
+    else if (m[8] !== undefined) toks.push({ type: "index", index: parseInt(m[8], 10) });
+  }
+  return toks;
 }
+function stepJsonPath(node, tok) {
+  if (node == null) return [];
+  if (tok.type === "key") return [node[tok.key]];
+  if (tok.type === "index") {
+    if (!Array.isArray(node)) return [];
+    const i = tok.index < 0 ? node.length + tok.index : tok.index;
+    return [node[i]];
+  }
+  if (tok.type === "wild") {
+    if (Array.isArray(node)) return node.slice();
+    if (typeof node === "object") return Object.values(node);
+    return [];
+  }
+  if (tok.type === "recurse") {
+    const out = [];
+    const walk = (n) => {
+      if (n == null || typeof n !== "object") return;
+      if (Array.isArray(n)) { for (const v of n) walk(v); return; }
+      for (const k in n) {
+        if (k === tok.key) out.push(n[k]);
+        walk(n[k]);
+      }
+    };
+    walk(node);
+    return out;
+  }
+  if (tok.type === "filter") {
+    const items = Array.isArray(node) ? node : (typeof node === "object" ? Object.values(node) : []);
+    return items.filter(it => {
+      if (it == null || typeof it !== "object") return false;
+      if (tok.op === "exists") return it[tok.key] !== undefined;
+      const v = it[tok.key];
+      if (tok.op === "==") return String(v) === tok.val;
+      if (tok.op === "!=") return String(v) !== tok.val;
+      return false;
+    });
+  }
+  return [];
+}
+function pick(obj, path) {
+  if (!path || path === "$") return [obj];
+  const toks = tokenizeJsonPath(path);
+  let nodes = [obj];
+  for (const t of toks) nodes = nodes.flatMap(n => stepJsonPath(n, t)).filter(v => v !== undefined);
+  return nodes;
+}
+function pickOne(obj, path) { const r = pick(obj, path); return r.length ? r[0] : undefined; }
 function runTest(t, res, bodyJson) {
   let ok = false, actual = "";
   if (t.kind === "status") { actual = String(res.status); ok = actual === String(t.expected); }
-  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = v !== undefined; }
-  else if (t.kind === "jsonEquals") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v); ok = actual === JSON.stringify(coerce(t.expected)); }
+  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v.length ? v[0] : undefined); ok = v.length > 0; }
+  else if (t.kind === "jsonEquals") { const v = pickOne(bodyJson, t.target); actual = JSON.stringify(v); ok = actual === JSON.stringify(coerce(t.expected)); }
   else if (t.kind === "headerEquals") { actual = res.headers.get(t.target) || ""; ok = actual === t.expected; }
   return { ok, label: `${t.kind} ${t.target||""} = ${t.expected}  (got ${actual})` };
 }
@@ -897,6 +1040,11 @@ function coerce(s) { if (s==="true")return true; if (s==="false")return false; i
 
 async function send(req, out) {
   const env = activeEnv();
+  try { runPreRequest(req, env); } catch (e) {
+    out.innerHTML = '<div class="status s-err">Error</div><pre></pre>';
+    out.querySelector("pre").textContent = "Pre-request script error: " + String(e);
+    return;
+  }
   const url = buildURL(req, env);
   const headers = buildHeaders(req, env);
   const opts = { method: req.method.toUpperCase(), headers };
@@ -917,7 +1065,7 @@ async function send(req, out) {
       let val;
       if (rule.from === "status") val = res.status;
       else if (rule.from === "header") val = res.headers.get(rule.jsonPath);
-      else val = pick(json, rule.jsonPath);
+      else val = pickOne(json, rule.jsonPath);
       if (val !== undefined && val !== null) { env.vars[rule.setVar] = String(val); extracted.push(`${rule.setVar} = ${val}`); }
     }
     // tests
@@ -966,10 +1114,10 @@ function addSaveVar(parent, json) {
   const name = document.createElement("input"); name.className = "mono"; name.placeholder = "variable name, e.g. token";
   const btn = document.createElement("button"); btn.textContent = "Save to {{var}}";
   const preview = document.createElement("div"); preview.className = "hint";
-  const refresh = () => { const v = pick(json, path.value); preview.textContent = v === undefined ? "path not found" : "value: " + JSON.stringify(v); };
+  const refresh = () => { const v = pickOne(json, path.value); preview.textContent = v === undefined ? "path not found" : "value: " + JSON.stringify(v); };
   path.oninput = refresh; refresh();
   btn.onclick = () => {
-    const v = pick(json, path.value);
+    const v = pickOne(json, path.value);
     if (v === undefined) { alert("Path not found: " + path.value); return; }
     if (!name.value.trim()) { alert("Enter a variable name"); return; }
     activeEnv().vars[name.value.trim()] = typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -1176,6 +1324,14 @@ function testsEditor(pane, req) {
   rerender();
 }
 
+function preRequestScriptEditor(pane, req) {
+  const p = document.createElement("div"); p.className="hint"; p.textContent = "Runs your own JS before send with a `pm` helper (pm.environment/variables). Runs in-page — only paste code you trust."; pane.appendChild(p);
+  const ta = document.createElement("textarea"); ta.className = "mono"; ta.placeholder = "pm.environment.set('token', 'abc');";
+  ta.value = req.preRequestScript || "";
+  ta.oninput = () => { req.preRequestScript = ta.value; persistOpState(req); };
+  pane.appendChild(ta);
+}
+
 function requestEditor(spec, req, op) {
   const wrap = document.createElement("div");
   const tabs = [];
@@ -1193,6 +1349,7 @@ function requestEditor(spec, req, op) {
   tabs.push({ label:"Auth", build:p=>authEditor(p, req.auth) });
   tabs.push({ label:"Chaining", build:p=>extractEditor(p, req) });
   tabs.push({ label:"Tests", build:p=>testsEditor(p, req) });
+  tabs.push({ label:"Pre-request Script", build:p=>preRequestScriptEditor(p, req) });
   subtabs(wrap, tabs);
   return wrap;
 }
@@ -1450,7 +1607,10 @@ function buildGrpcurl(svc, m, targetVal, dataVal) {
   const host = interpolate(targetVal || env.vars.grpcHost || "localhost:50051", env);
   const input = interpolate(dataVal != null ? dataVal : JSON.stringify(sample(grpcSpec(), { $ref:"#/components/schemas/"+m.inputType })), env);
   const oneLine = input.replace(/\s+/g, " ").trim();
-  return `grpcurl -plaintext \\\n  -d '${oneLine.replace(/'/g,"'\\''")}' \\\n  ${host} ${svc.fullName}/${m.name}`;
+  const tls = env.vars.grpcTLS === "true";
+  const insecure = env.vars.grpcInsecure === "true";
+  const flag = tls ? (insecure ? "-insecure " : "") : "-plaintext ";
+  return `grpcurl ${flag}\\\n  -d '${oneLine.replace(/'/g,"'\\''")}' \\\n  ${host} ${svc.fullName}/${m.name}`;
 }
 
 function renderGrpc() {
@@ -1519,8 +1679,39 @@ function methodCard(gs, svc, m) {
   target.title = "Shared by every method of " + svc.name + " — set it in Env → Manage";
   body.appendChild(target);
 
+  const tlsRow = document.createElement("div"); tlsRow.className = "btnrow";
+  const tlsLbl = document.createElement("label");
+  const tlsChk = document.createElement("input"); tlsChk.type = "checkbox";
+  tlsChk.checked = activeEnv().vars.grpcTLS === "true";
+  tlsLbl.appendChild(tlsChk); tlsLbl.appendChild(document.createTextNode(" TLS"));
+  const insecureLbl = document.createElement("label");
+  const insecureChk = document.createElement("input"); insecureChk.type = "checkbox";
+  insecureChk.checked = activeEnv().vars.grpcInsecure === "true";
+  insecureLbl.appendChild(insecureChk); insecureLbl.appendChild(document.createTextNode(" Insecure (skip verify)"));
+  tlsChk.onchange = () => { activeEnv().vars.grpcTLS = tlsChk.checked ? "true" : "false"; saveStore(); };
+  insecureChk.onchange = () => { activeEnv().vars.grpcInsecure = insecureChk.checked ? "true" : "false"; saveStore(); };
+  tlsRow.title = "Shared across environments — set it in Env → Manage";
+  tlsRow.appendChild(tlsLbl); tlsRow.appendChild(insecureLbl);
+  body.appendChild(tlsRow);
+
   const rLbl = document.createElement("label"); rLbl.textContent = "Request — " + m.inputType + " (JSON, {{var}} ok)"; body.appendChild(rLbl);
-  const reqArea = document.createElement("textarea"); reqArea.value = JSON.stringify(sample(gs, { $ref:"#/components/schemas/"+m.inputType }), null, 2); body.appendChild(reqArea);
+  const msgsWrap = document.createElement("div"); msgsWrap.className = "grpc-msgs"; body.appendChild(msgsWrap);
+  const reqArea = document.createElement("textarea"); reqArea.className = "grpc-msg"; reqArea.value = JSON.stringify(sample(gs, { $ref:"#/components/schemas/"+m.inputType }), null, 2); msgsWrap.appendChild(reqArea);
+
+  // Client-streaming and bidi methods can send more than one request message;
+  // unary and server-stream methods only ever send the one already shown.
+  const canAddMsgs = m.clientStreaming;
+  if (canAddMsgs) {
+    const addBtn = document.createElement("button");
+    addBtn.type = "button"; addBtn.className = "add-msg"; addBtn.textContent = "＋ Add message";
+    addBtn.onclick = () => {
+      const ta = document.createElement("textarea");
+      ta.className = "grpc-msg";
+      ta.value = JSON.stringify(sample(gs, { $ref:"#/components/schemas/"+m.inputType }), null, 2);
+      msgsWrap.insertBefore(ta, addBtn);
+    };
+    msgsWrap.appendChild(addBtn);
+  }
 
   addMsgBlock(body, gs, "Response — " + m.outputType, m.outputType);
 
@@ -1530,26 +1721,33 @@ function methodCard(gs, svc, m) {
   const gBtn = document.createElement("button"); gBtn.textContent = "Copy as grpcurl";
   const out = document.createElement("div"); out.className = "resp";
   const gBox = document.createElement("div");
-  invBtn.onclick = () => invokeGrpc(svc, m, reqArea, target, out);
+  invBtn.onclick = () => invokeGrpc(svc, m, msgsWrap, target, out);
   gBtn.onclick = () => { const c = buildGrpcurl(svc, m, target.value, reqArea.value); gBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; gBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ gBtn.textContent="Copied!"; setTimeout(()=>gBtn.textContent="Copy as grpcurl",1200); }); };
   row.appendChild(invBtn); row.appendChild(gBtn);
   body.appendChild(row);
-  if (streaming) { const h = document.createElement("div"); h.className="hint"; h.textContent = "Note: streaming method — Invoke shows collected messages (bidi/client-stream sends this single request)."; body.appendChild(h); }
+  if (streaming) { const h = document.createElement("div"); h.className="hint"; h.textContent = "Note: streaming method — Invoke shows collected messages (client-stream/bidi sends every message added via \"＋ Add message\")."; body.appendChild(h); }
   body.appendChild(gBox); body.appendChild(out);
   el.appendChild(body);
   return el;
 }
 
-async function invokeGrpc(svc, m, reqArea, targetInput, out) {
+async function invokeGrpc(svc, m, msgsWrap, targetInput, out) {
   const env = activeEnv();
   const target = interpolate(targetInput.value || env.vars.grpcHost || "localhost:50051", env);
-  const data = interpolate(reqArea.value, env);
+  // Client-stream/bidi methods may have several message textareas appended by
+  // "＋ Add message"; each parsed JSON object is joined on its own line, and
+  // the backend (grpcurl's request parser) reads one message per object.
+  const msgs = msgsWrap.querySelectorAll(".grpc-msg");
+  const data = Array.from(msgs).map(t => interpolate(t.value, env)).join("\n");
+  const tls = env.vars.grpcTLS === "true";
+  const insecure = env.vars.grpcInsecure === "true";
+  const timeoutSec = parseInt(env.vars.grpcTimeoutSec, 10) || 0;
   out.innerHTML = '<div class="status">…</div>';
   const t0 = performance.now();
   try {
     const res = await fetch("grpc/invoke", {
       method: "POST", headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ target, symbol: svc.fullName + "/" + m.name, data }),
+      body: JSON.stringify({ target, symbol: svc.fullName + "/" + m.name, data, tls, insecure, timeoutSec }),
     });
     const text = await res.text();
     const ms = Math.round(performance.now() - t0);

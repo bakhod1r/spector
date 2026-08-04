@@ -2,6 +2,7 @@ package grpcx
 
 import (
 	"context"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,6 +28,20 @@ func (s *userServer) GetUser(ctx context.Context, req *shoppb.GetUserRequest) (*
 
 func (s *userServer) ListUsers(ctx context.Context, req *shoppb.ListUsersRequest) (*shoppb.ListUsersResponse, error) {
 	return &shoppb.ListUsersResponse{Users: []*shoppb.User{{Id: 1, Name: "Ada"}, {Id: 2, Name: "Alan"}}}, nil
+}
+
+func (s *userServer) CountUsers(stream shoppb.UserService_CountUsersServer) error {
+	count := int32(0)
+	for {
+		_, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&shoppb.CountUsersResponse{Count: count})
+		}
+		if err != nil {
+			return err
+		}
+		count++
+	}
 }
 
 func (s *userServer) StreamUsers(req *shoppb.ListUsersRequest, stream shoppb.UserService_StreamUsersServer) error {

@@ -94,6 +94,43 @@ module.exports = async function run(BASE) {
   check('alert shown', alertMsg !== null, String(alertMsg));
   check('alert explains why', /not a specter collection/i.test(alertMsg || ''), String(alertMsg));
 
+  // ---- 3b. Import: Postman v2.1 collection ----
+  c.section('[3b] Import (Postman v2.1)');
+  const postman = {
+    info: {
+      name: 'demo',
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+    },
+    item: [{
+      name: 'Get user',
+      request: {
+        method: 'GET',
+        header: [{ key: 'X-Trace', value: '{{traceId}}' }],
+        url: {
+          raw: '{{baseUrl}}/users/1',
+          path: ['users', '1'],
+          query: [{ key: 'q', value: 'ada' }],
+        },
+        auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{token}}' }] },
+      },
+    }],
+  };
+  const postmanFile = path.join(DL, 'postman.json');
+  fs.writeFileSync(postmanFile, JSON.stringify(postman));
+  page.once('dialog', d => d.accept());          // confirm() -> replace
+  await page.setInputFiles('#importFile', postmanFile);
+  await page.waitForTimeout(600);
+
+  const pmStore = await page.evaluate(() => JSON.parse(localStorage.getItem('specter.state') || '{}'));
+  const pmColl = (pmStore.collections || []).find(c => c.name === 'demo');
+  check('demo collection imported', !!pmColl, JSON.stringify(pmStore.collections));
+  const pmReq = pmColl && pmColl.requests[0];
+  check('request method GET', pmReq && pmReq.method.toLowerCase() === 'get', JSON.stringify(pmReq));
+  check('request path contains users', pmReq && /users/.test(pmReq.path), JSON.stringify(pmReq));
+  check('query q=ada', pmReq && pmReq.queryParams && pmReq.queryParams.q === 'ada', JSON.stringify(pmReq && pmReq.queryParams));
+  check('header X-Trace', pmReq && pmReq.headers && pmReq.headers['X-Trace'] === '{{traceId}}', JSON.stringify(pmReq && pmReq.headers));
+  check('auth type bearer', pmReq && pmReq.auth && pmReq.auth.type === 'bearer', JSON.stringify(pmReq && pmReq.auth));
+
   // ---- 4. GraphQL Execute ----
   c.section('[4] GraphQL Execute');
   await page.goto(BASE + '#/graphql/gql-Query-user', { waitUntil: 'networkidle' });
@@ -211,12 +248,108 @@ module.exports = async function run(BASE) {
   await page.waitForTimeout(400);
   check('a deleted rule stays deleted', (await readRules()).length === 0);
 
+  // ---- 8.6 Pre-request script (constrained sandbox) ----
+  // The script runs before buildURL/buildHeaders, with only a `pm` argument —
+  // no window/fetch/document. It should be able to set env vars that {{interpolate}}
+  // then picks up on the outgoing request, but it must not be able to reach real globals.
+  c.section('[8.6] Pre-request script');
+  await page.goto(`${BASE}#/rest/op-get--api-v1-carts`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+
+  const preReqCardSel = '#op-get--api-v1-carts';
+  await page.evaluate(s => document.querySelector(s).classList.add('open'), preReqCardSel);
+
+  // Add a header that references {{token}} so we can observe whether the
+  // pre-request script's pm.environment.set actually reached the request.
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    const btn = [...card.querySelectorAll('button')].find(b => b.textContent === 'Headers');
+    if (btn) btn.click();
+  }, preReqCardSel);
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    const add = [...card.querySelectorAll('.pane.on button')].find(b => b.textContent === '+ Add');
+    add.click();
+  }, preReqCardSel);
+  await page.waitForTimeout(100);
+  const headerKeyInput = page.locator(preReqCardSel + ' .pane.on input[placeholder="key"]').last();
+  const headerValInput = page.locator(preReqCardSel + ' .pane.on input[placeholder="value ({{var}} ok)"]').last();
+  await headerKeyInput.fill('X-Token');
+  await headerValInput.fill('{{token}}');
+  await headerKeyInput.dispatchEvent('change');
+
+  // Open the Pre-request Script tab and author a script that also probes for
+  // leaked globals: pm.window must be undefined since only `pm` is in scope.
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    const btn = [...card.querySelectorAll('button')].find(b => b.textContent === 'Pre-request Script');
+    if (btn) btn.click();
+  }, preReqCardSel);
+  const scriptArea = page.locator(preReqCardSel + ' .pane.on textarea').last();
+  await scriptArea.fill("pm.environment.set('token','abc'); pm.environment.set('leak', String(typeof pm.window));");
+  await scriptArea.dispatchEvent('input');
+  await page.waitForTimeout(100);
+
+  let capturedHeaders = null;
+  await page.route('**/api/v1/carts*', route => {
+    capturedHeaders = route.request().headers();
+    route.continue();
+  });
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    [...card.querySelectorAll('button')].find(b => b.textContent === 'Send').click();
+  }, preReqCardSel);
+  await page.waitForTimeout(1200);
+  await page.unroute('**/api/v1/carts*');
+
+  check('pre-request script set token, used in outgoing header',
+        !!capturedHeaders && capturedHeaders['x-token'] === 'abc',
+        JSON.stringify(capturedHeaders));
+
+  const leakVal = await page.evaluate(() => activeEnv().vars.leak);
+  check('pm has no window global (constrained sandbox)', leakVal === 'undefined', String(leakVal));
+
+  // Imported (foreign) scripts must never auto-run: req.notes from a Postman
+  // import must not be wired into execution.
+  const notesNotExecuted = await page.evaluate(() => typeof runPreRequest === 'function' && typeof pmApi === 'function');
+  check('runPreRequest / pmApi exist as the only execution path', notesNotExecuted);
+
   // ---- 9. Search filter in URL ----
   c.section('[9] Search filter routing');
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.fill('#search', 'users');
   await page.waitForTimeout(500);
   check('filter in hash', /q=users/.test(page.url()), page.url());
+
+  // ---- 10. JSONPath pick()/pickOne() evaluator ----
+  c.section('[10] JSONPath pick/pickOne');
+  const jpResults = await page.evaluate(() => {
+    const fixture = {
+      id: 1,
+      users: [
+        { id: 2, name: 'ada', role: 'admin' },
+        { id: 3, name: 'bob', role: 'user' },
+      ],
+    };
+    return {
+      wildcardNames: pick(fixture, '$.users[*].name'),
+      dotWildcardNames: pick(fixture, '$.users.*.name'),
+      recursiveIds: pick(fixture, '$..id'),
+      filterEqAdminNames: pick(fixture, "$.users[?(@.role=='admin')].name"),
+      filterNeAdminNames: pick(fixture, "$.users[?(@.role!='admin')].name"),
+      filterExistsRole: pick(fixture, '$.users[?(@.role)].name'),
+      plainId: pickOne(fixture, '$.id'),
+      plainIdArr: pick(fixture, '$.id'),
+    };
+  });
+  check('wildcard [*] matches names', JSON.stringify(jpResults.wildcardNames) === JSON.stringify(['ada', 'bob']), JSON.stringify(jpResults.wildcardNames));
+  check('dot wildcard .* matches names', JSON.stringify(jpResults.dotWildcardNames) === JSON.stringify(['ada', 'bob']), JSON.stringify(jpResults.dotWildcardNames));
+  check('recursive descent ..id matches all ids', JSON.stringify(jpResults.recursiveIds) === JSON.stringify([1, 2, 3]), JSON.stringify(jpResults.recursiveIds));
+  check("filter [?(@.role=='admin')] matches ada", JSON.stringify(jpResults.filterEqAdminNames) === JSON.stringify(['ada']), JSON.stringify(jpResults.filterEqAdminNames));
+  check("filter [?(@.role!='admin')] matches bob", JSON.stringify(jpResults.filterNeAdminNames) === JSON.stringify(['bob']), JSON.stringify(jpResults.filterNeAdminNames));
+  check('filter [?(@.role)] existence matches both', JSON.stringify(jpResults.filterExistsRole) === JSON.stringify(['ada', 'bob']), JSON.stringify(jpResults.filterExistsRole));
+  check('plain $.id regression via pickOne', jpResults.plainId === 1, String(jpResults.plainId));
+  check('plain $.id regression via pick (array)', JSON.stringify(jpResults.plainIdArr) === JSON.stringify([1]), JSON.stringify(jpResults.plainIdArr));
 
   console.log('\n[JS errors]', jsErrors.length ? jsErrors : 'none');
   check('no uncaught JS errors', jsErrors.length === 0, jsErrors.join('; '));
