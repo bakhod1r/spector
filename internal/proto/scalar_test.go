@@ -31,7 +31,7 @@ func TestScalarSchema(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.proto, func(t *testing.T) {
-			got := scalarSchema(tc.proto)
+			got := scalarSchema(tc.proto, "")
 			if got.Type != tc.typ {
 				t.Errorf("type = %q, want %q", got.Type, tc.typ)
 			}
@@ -54,12 +54,12 @@ func TestWellKnownScalars(t *testing.T) {
 		"google.protobuf.Empty":     {"object", ""},
 	}
 	for in, want := range cases {
-		s := scalarSchema(in)
+		s := scalarSchema(in, "")
 		if s.Type != want.typ || s.Format != want.format {
 			t.Errorf("%s -> {%s,%s}, want {%s,%s}", in, s.Type, s.Format, want.typ, want.format)
 		}
 	}
-	if a := scalarSchema("google.protobuf.Any"); a.Properties["@type"] == nil {
+	if a := scalarSchema("google.protobuf.Any", ""); a.Properties["@type"] == nil {
 		t.Errorf("Any should expose @type property")
 	}
 }

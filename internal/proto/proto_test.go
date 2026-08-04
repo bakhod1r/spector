@@ -16,11 +16,15 @@ func TestScan(t *testing.T) {
 	if doc.Package != "shop.v1" {
 		t.Errorf("package = %q, want shop.v1", doc.Package)
 	}
-	if len(doc.Services) != 1 || doc.Services[0].Name != "UserService" {
-		t.Fatalf("services = %+v", doc.Services)
+	var svc *core.GrpcService
+	for _, s := range doc.Services {
+		if s.Name == "UserService" {
+			svc = s
+		}
 	}
-
-	svc := doc.Services[0]
+	if svc == nil {
+		t.Fatalf("UserService missing, services = %+v", doc.Services)
+	}
 	if svc.FullName != "shop.v1.UserService" {
 		t.Errorf("fullName = %q", svc.FullName)
 	}
@@ -36,7 +40,7 @@ func TestScan(t *testing.T) {
 	}
 
 	// Enum variant names are surfaced as the schema's enum values.
-	status := doc.Messages["Status"]
+	status := doc.Messages["shop.v1.Status"]
 	if status == nil {
 		t.Fatal("Status enum message missing")
 	}
@@ -45,7 +49,7 @@ func TestScan(t *testing.T) {
 	}
 
 	// Repeated + map fields map to array / object schemas.
-	user := doc.Messages["User"]
+	user := doc.Messages["shop.v1.User"]
 	if user == nil {
 		t.Fatal("User message missing")
 	}
@@ -54,6 +58,24 @@ func TestScan(t *testing.T) {
 	}
 	if md := user.Properties["metadata"]; md == nil || md.AdditionalProperties == nil {
 		t.Errorf("metadata = %+v", md)
+	}
+}
+
+func TestScanResolvesCrossFileImport(t *testing.T) {
+	doc, err := Scan("importdata")
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	order := doc.Messages["shop.v1.Order"]
+	if order == nil {
+		t.Fatal("Order message missing (expected qualified key)")
+	}
+	total := order.Properties["total"]
+	if total == nil || total.Ref != "#/components/schemas/shop.v1.Money" {
+		t.Fatalf("total ref = %+v, want ref to shop.v1.Money", total)
+	}
+	if doc.Messages["shop.v1.Money"] == nil {
+		t.Fatal("Money (imported) not collected")
 	}
 }
 
@@ -76,7 +98,7 @@ func TestMessageToSchemaOneof(t *testing.T) {
 
 	var schema *core.Schema
 	proto.Walk(def, proto.WithMessage(func(m *proto.Message) {
-		schema = messageToSchema(m)
+		schema = messageToSchema(m, "")
 	}))
 	if schema == nil {
 		t.Fatal("Notification message not parsed")

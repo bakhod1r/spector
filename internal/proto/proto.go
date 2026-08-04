@@ -35,11 +35,12 @@ func Scan(dir string) (*core.GrpcDoc, error) {
 		if pkg != "" && doc.Package == "" {
 			doc.Package = pkg
 		}
+		filePkg := pkg
 		proto.Walk(def,
-			proto.WithMessage(func(m *proto.Message) { all[m.Name] = messageToSchema(m) }),
-			proto.WithEnum(func(e *proto.Enum) { all[e.Name] = enumToSchema(e) }),
+			proto.WithMessage(func(m *proto.Message) { all[qualify(m.Name, filePkg)] = messageToSchema(m, filePkg) }),
+			proto.WithEnum(func(e *proto.Enum) { all[qualify(e.Name, filePkg)] = enumToSchema(e) }),
 			proto.WithService(func(s *proto.Service) {
-				doc.Services = append(doc.Services, serviceToGrpc(pkg, s))
+				doc.Services = append(doc.Services, serviceToGrpc(filePkg, s))
 			}),
 		)
 	}
@@ -73,6 +74,16 @@ func protoFiles(dir string) ([]string, error) {
 	return out, err
 }
 
+// qualify prefixes an unqualified type/message name with its package, so
+// messages become "shop.v1.User". Names that already contain a dot (e.g.
+// cross-package or well-known references) are left untouched.
+func qualify(name, pkg string) string {
+	if pkg == "" || strings.Contains(name, ".") {
+		return name
+	}
+	return pkg + "." + name
+}
+
 func serviceToGrpc(pkg string, s *proto.Service) *core.GrpcService {
 	full := s.Name
 	if pkg != "" {
@@ -86,8 +97,8 @@ func serviceToGrpc(pkg string, s *proto.Service) *core.GrpcService {
 		}
 		svc.Methods = append(svc.Methods, &core.GrpcMethod{
 			Name:            rpc.Name,
-			InputType:       rpc.RequestType,
-			OutputType:      rpc.ReturnsType,
+			InputType:       qualify(rpc.RequestType, pkg),
+			OutputType:      qualify(rpc.ReturnsType, pkg),
 			ClientStreaming: rpc.StreamsRequest,
 			ServerStreaming: rpc.StreamsReturns,
 		})
@@ -95,22 +106,22 @@ func serviceToGrpc(pkg string, s *proto.Service) *core.GrpcService {
 	return svc
 }
 
-func messageToSchema(m *proto.Message) *core.Schema {
+func messageToSchema(m *proto.Message, pkg string) *core.Schema {
 	schema := &core.Schema{Type: "object", Properties: map[string]*core.Schema{}}
 	for _, e := range m.Elements {
 		switch f := e.(type) {
 		case *proto.NormalField:
-			schema.Properties[f.Name] = fieldSchema(f.Type, f.Repeated)
+			schema.Properties[f.Name] = fieldSchema(f.Type, f.Repeated, pkg)
 		case *proto.MapField:
 			schema.Properties[f.Name] = &core.Schema{
 				Type:                 "object",
-				AdditionalProperties: fieldSchema(f.Type, false),
+				AdditionalProperties: fieldSchema(f.Type, false, pkg),
 			}
 		case *proto.Oneof:
 			group := []string{}
 			for _, oe := range f.Elements {
 				if of, ok := oe.(*proto.OneOfField); ok {
-					schema.Properties[of.Name] = fieldSchema(of.Type, false)
+					schema.Properties[of.Name] = fieldSchema(of.Type, false, pkg)
 					group = append(group, of.Name)
 				}
 			}
@@ -134,15 +145,15 @@ func enumToSchema(e *proto.Enum) *core.Schema {
 	return schema
 }
 
-func fieldSchema(protoType string, repeated bool) *core.Schema {
-	base := scalarSchema(protoType)
+func fieldSchema(protoType string, repeated bool, pkg string) *core.Schema {
+	base := scalarSchema(protoType, pkg)
 	if repeated {
 		return &core.Schema{Type: "array", Items: base}
 	}
 	return base
 }
 
-func scalarSchema(t string) *core.Schema {
+func scalarSchema(t, pkg string) *core.Schema {
 	switch t {
 	case "string":
 		return &core.Schema{Type: "string"}
@@ -174,7 +185,7 @@ func scalarSchema(t string) *core.Schema {
 	case "google.protobuf.DoubleValue", "google.protobuf.FloatValue":
 		return &core.Schema{Type: "number"}
 	default:
-		return &core.Schema{Ref: "#/components/schemas/" + t}
+		return &core.Schema{Ref: "#/components/schemas/" + qualify(t, pkg)}
 	}
 }
 

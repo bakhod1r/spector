@@ -1,0 +1,5 @@
+syntax = "proto3";
+package shop.v1;
+import "common.proto";
+message Order { int32 id = 1; Money total = 2; }
+service OrderService { rpc GetOrder(Order) returns (Order); }
