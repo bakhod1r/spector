@@ -125,11 +125,27 @@ func writeGoStruct(b *strings.Builder, name string, s *core.Schema) {
 		return
 	}
 	typeName := exportName(name)
-	if s.Type != "object" || len(s.Properties) == 0 {
+	// A schema that is nothing but an allOf of a single ref is an alias for the
+	// type it composes — emit a named alias so callers still see that type
+	// rather than any/unknown.
+	if len(s.AllOf) == 1 && len(s.Properties) == 0 && s.Type != "object" && s.AllOf[0].Ref != "" {
+		fmt.Fprintf(b, "type %s = %s\n\n", typeName, exportName(refName(s.AllOf[0].Ref)))
+		return
+	}
+	// With no allOf and no object shape (an enum string, say) it is a plain
+	// alias to the underlying Go type.
+	if len(s.AllOf) == 0 && (s.Type != "object" || len(s.Properties) == 0) {
 		fmt.Fprintf(b, "type %s = %s\n\n", typeName, goType(s))
 		return
 	}
+	// Otherwise it is a struct: allOf refs become embedded fields (Go's way of
+	// composing), followed by the type's own properties.
 	fmt.Fprintf(b, "type %s struct {\n", typeName)
+	for _, a := range s.AllOf {
+		if a.Ref != "" {
+			fmt.Fprintf(b, "\t%s\n", exportName(refName(a.Ref)))
+		}
+	}
 	props := make([]string, 0, len(s.Properties))
 	for p := range s.Properties {
 		props = append(props, p)

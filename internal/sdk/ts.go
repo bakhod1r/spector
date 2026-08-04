@@ -75,9 +75,15 @@ func writeTSInterface(b *strings.Builder, name string, s *core.Schema) {
 	if s == nil {
 		return
 	}
-	// A named schema that is not an object (an enum string, say) becomes a
-	// type alias rather than an interface.
-	if s.Type != "object" || len(s.Properties) == 0 {
+	// An allOf of a single ref with no own fields is an alias for the type it
+	// composes.
+	if len(s.AllOf) == 1 && len(s.Properties) == 0 && s.Type != "object" && s.AllOf[0].Ref != "" {
+		fmt.Fprintf(b, "export type %s = %s;\n\n", name, refName(s.AllOf[0].Ref))
+		return
+	}
+	// A named schema that is not an object (an enum string, say) and does not
+	// compose anything becomes a plain type alias rather than an interface.
+	if len(s.AllOf) == 0 && (s.Type != "object" || len(s.Properties) == 0) {
 		fmt.Fprintf(b, "export type %s = %s;\n\n", name, tsType(s))
 		return
 	}
@@ -85,7 +91,19 @@ func writeTSInterface(b *strings.Builder, name string, s *core.Schema) {
 	for _, r := range s.Required {
 		required[r] = true
 	}
-	fmt.Fprintf(b, "export interface %s {\n", name)
+	// allOf refs become `extends A, B`, giving the interface their members
+	// without restating them.
+	var ext []string
+	for _, a := range s.AllOf {
+		if a.Ref != "" {
+			ext = append(ext, refName(a.Ref))
+		}
+	}
+	if len(ext) > 0 {
+		fmt.Fprintf(b, "export interface %s extends %s {\n", name, strings.Join(ext, ", "))
+	} else {
+		fmt.Fprintf(b, "export interface %s {\n", name)
+	}
 	props := make([]string, 0, len(s.Properties))
 	for p := range s.Properties {
 		props = append(props, p)
