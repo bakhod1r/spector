@@ -751,6 +751,13 @@ func ExportPostmanEnvironment(doc *Document) ([]byte, error) {
 	return export.PostmanEnvironment(doc)
 }
 
+// ExportHAR renders the document as a HAR 1.2 archive: one entry per operation
+// with a sampled request and response body, replayable by browsers, proxies and
+// load-testing tools.
+func ExportHAR(doc *Document) ([]byte, error) {
+	return export.HAR(doc)
+}
+
 // ExportMarkdown renders the document as a static Markdown API reference,
 // suitable for a README or a docs site.
 func ExportMarkdown(doc *Document) []byte {

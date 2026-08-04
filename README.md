@@ -72,6 +72,7 @@ specter -graphql -dir ./graph -o graphql.json
 | `-postman`    | Export a Postman collection v2.1 (Insomnia imports it too) |
 | `-postman-env` | Export a Postman environment (`baseUrl` and auth placeholders) instead of the collection |
 | `-markdown`   | Export static Markdown API docs                            |
+| `-har`        | Export a HAR 1.2 archive of example calls (one entry per operation) |
 | `-sdk`        | Generate a typed client instead of a document: `go`, `ts`, `python`, `js`, `ruby`, `php`, `csharp`, `rust`, `kotlin`, `java` |
 | `-sdk-out`    | Directory the client is written into (default `./sdk`)     |
 | `-sdk-package` | Package name for the generated Go client (default `client`) |
@@ -660,6 +661,20 @@ The collection imports ready to run:
 - Path parameters render as editable `:id` variables, optional query parameters
   import disabled, and one representable security scheme becomes collection-level
   auth.
+
+### HAR archive
+
+Export the API as a [HAR 1.2](http://www.softwareishard.com/blog/har-12-spec/)
+archive — the log format browsers, proxies and load tools read:
+
+```sh
+specter -har -dir . -o api.har
+```
+
+Each operation becomes one entry with a request body sampled from its schema and
+a response seeded from the lowest documented status, so the archive replays as a
+realistic set of example calls. URLs are absolute against the first server, or
+relative when the document names none.
 
 ## Admin panel
 
