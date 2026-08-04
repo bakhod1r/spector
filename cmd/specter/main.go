@@ -44,9 +44,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	adminPrefix := fs.String("admin-prefix", "/admin", "path the generated panel is served under")
 	adminPkg := fs.String("admin-package", "", "package name for the generated panel (default: the directory name)")
 	adminImport := fs.String("admin-import", "", "import path of the generated package (default: derived from go.mod)")
-	sdkLang := fs.String("sdk", "", "generate a typed client instead of a document: ts or go")
+	sdkLang := fs.String("sdk", "", "generate a typed client instead of a document: go, ts, python, js, ruby, php, csharp, rust, kotlin, java")
 	sdkOut := fs.String("sdk-out", "", "directory the generated client is written into (default ./sdk)")
 	sdkPkg := fs.String("sdk-package", "", "package name for the generated Go client (default: client)")
+	openapiIn := fs.String("openapi", "", "generate the -sdk client from this OpenAPI file (.json/.yaml) instead of scanning source")
 	watch := fs.Bool("watch", false, "stay running and regenerate whenever the scanned sources change")
 	contractOut := fs.String("contract", "", "generate contract artefacts into this directory (e.g. ./contract)")
 	contractFormat := fs.String("contract-format", "", "comma-separated: http, go, curl (default: all three)")
@@ -234,10 +235,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 			dir = "./sdk"
 		}
 		emit := func() int {
-			files, gerr := specter.GenerateSDK(cfg, specter.SDKOptions{
-				Lang:    *sdkLang,
-				Package: *sdkPkg,
-			})
+			opts := specter.SDKOptions{Lang: *sdkLang, Package: *sdkPkg}
+			var files []specter.SDKFile
+			var gerr error
+			if *openapiIn != "" {
+				// The client is generated from an existing OpenAPI file rather than
+				// by scanning source: hand-written specs and third-party APIs.
+				doc, lerr := specter.LoadDocument(*openapiIn)
+				if lerr != nil {
+					return fail(lerr)
+				}
+				files, gerr = specter.GenerateSDKFromDocument(doc, opts)
+			} else {
+				files, gerr = specter.GenerateSDK(cfg, opts)
+			}
 			if gerr != nil {
 				return fail(gerr)
 			}

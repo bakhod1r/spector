@@ -83,7 +83,7 @@ func doc() *core.Document {
 }
 
 func TestUnknownLanguageErrors(t *testing.T) {
-	if _, err := Generate(doc(), Options{Lang: "rust"}); err == nil {
+	if _, err := Generate(doc(), Options{Lang: "cobol"}); err == nil {
 		t.Error("expected an error for an unknown language")
 	}
 }

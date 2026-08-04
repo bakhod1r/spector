@@ -20,6 +20,7 @@ import (
 	"github.com/user/specter/internal/coverage"
 	"github.com/user/specter/internal/export"
 	"github.com/user/specter/internal/testgen"
+	"gopkg.in/yaml.v3"
 
 	chiadapter "github.com/user/specter/internal/adapter/chi"
 	echoadapter "github.com/user/specter/internal/adapter/echo"
@@ -489,6 +490,69 @@ func GenerateSDK(cfg Config, opts SDKOptions) ([]SDKFile, error) {
 		return nil, err
 	}
 	return sdk.Generate(doc, opts)
+}
+
+// GenerateSDKFromDocument builds a client from an OpenAPI document that already
+// exists, rather than by scanning source. This is the path for an API described
+// by a hand-written or third-party openapi.json/yaml: load it with
+// LoadDocument, then generate a client in any supported language.
+func GenerateSDKFromDocument(doc *core.Document, opts SDKOptions) ([]SDKFile, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("sdk: nil document")
+	}
+	return sdk.Generate(doc, opts)
+}
+
+// LoadDocument reads an OpenAPI document from a JSON or YAML file into the model
+// the generators consume. The format is chosen by extension (.yaml/.yml are
+// YAML, anything else JSON); YAML is bridged through JSON so the document's
+// existing JSON field names are honoured either way.
+func LoadDocument(path string) (*core.Document, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".yaml" || ext == ".yml" {
+		var any interface{}
+		if err := yaml.Unmarshal(data, &any); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if data, err = json.Marshal(normalizeYAML(any)); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	var doc core.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return &doc, nil
+}
+
+// normalizeYAML turns the map[interface{}]interface{} that a YAML decoder can
+// produce into the map[string]interface{} that json.Marshal requires, walking
+// nested maps and slices.
+func normalizeYAML(v interface{}) interface{} {
+	switch t := v.(type) {
+	case map[interface{}]interface{}:
+		m := make(map[string]interface{}, len(t))
+		for k, val := range t {
+			m[fmt.Sprint(k)] = normalizeYAML(val)
+		}
+		return m
+	case map[string]interface{}:
+		for k, val := range t {
+			t[k] = normalizeYAML(val)
+		}
+		return t
+	case []interface{}:
+		for i, val := range t {
+			t[i] = normalizeYAML(val)
+		}
+		return t
+	default:
+		return v
+	}
 }
 
 func Generate(cfg Config) (*core.Document, error) {

@@ -69,22 +69,32 @@ specter -graphql -dir ./graph -o graphql.json
 | `-admin-prefix` | Path the panel is served under (default `/admin`)        |
 | `-admin-package` | Package name for the generated panel (default: the directory name) |
 | `-admin-import` | Import path of the generated package (derived from `go.mod`) |
-| `-sdk`        | Generate a typed client instead of a document: `ts` or `go` |
+| `-sdk`        | Generate a typed client instead of a document: `go`, `ts`, `python`, `js`, `ruby`, `php`, `csharp`, `rust`, `kotlin`, `java` |
 | `-sdk-out`    | Directory the client is written into (default `./sdk`)     |
 | `-sdk-package` | Package name for the generated Go client (default `client`) |
+| `-openapi`    | Generate the `-sdk` client from this OpenAPI file (`.json`/`.yaml`) instead of scanning source |
 | `-watch`      | Stay running and regenerate whenever the scanned sources change |
 
-### Client SDKs
+### Client SDKs — ten languages
 
 ```sh
 specter -dir ./api -sdk ts -sdk-out ./web/src/api
 specter -dir ./api -sdk go -sdk-package usersapi -sdk-out ./client
+specter -dir ./api -sdk python -sdk-out ./clients/py
 ```
 
-One file, no runtime dependency: the TypeScript client is `fetch`, the Go client
-is `net/http`. Each schema becomes an `interface`/`struct` and each operation a
-typed method, named after its `operationId` when the document has one and after
-its method and path otherwise.
+A typed client in any of ten languages — **Go, TypeScript, Python, JavaScript,
+Ruby, PHP, C#, Rust, Kotlin, Java** — all from the same document. Each is
+dependency-light, using the language's own HTTP client and JSON: Go `net/http`,
+TS/JS `fetch`, Python `urllib`, Ruby `net/http`, PHP ext-curl, C#
+`HttpClient`+`System.Text.Json`, Rust `reqwest`+`serde`, Kotlin
+`java.net.http`+`kotlinx.serialization`, Java `java.net.http` with a
+dependency-free JSON runtime. Each schema becomes a type (`struct`, `class`,
+`dataclass`, `data class`, record, …) and each operation a typed method, named
+after its `operationId` when the document has one and after its method and path
+otherwise. `allOf` composition is carried through — Go embeds the base type, TS
+`extends` it, and the rest flatten its fields in — so a composed type never
+silently loses the fields it inherits.
 
 ```ts
 const api = new Client({ baseUrl: "https://api.example.com", token });
@@ -97,9 +107,24 @@ api.Token = token
 users, err := api.ListUsers(ctx, nil) // []User
 ```
 
+```python
+api = Client("https://api.example.com", token=token)
+users = api.list_users()  # list[User]
+```
+
 The output is source you own, in the same spirit as the admin panel: commit it,
 edit it, and regenerate when the API changes. It is not a framework to
 configure, and nothing imports specter at runtime.
+
+#### From an OpenAPI document
+
+The client does not have to come from scanning source — point `-openapi` at an
+existing `openapi.json` or `openapi.yaml` (a hand-written spec, or a third-party
+API) and generate a client for it directly:
+
+```sh
+specter -openapi ./openapi.yaml -sdk rust -sdk-out ./clients/rust
+```
 
 ### Watch mode
 
