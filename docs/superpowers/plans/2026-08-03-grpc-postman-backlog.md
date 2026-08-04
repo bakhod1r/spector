@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ Done — all 7 tasks (G1–G4, P1–P3) implemented and merged; `internal/grpcx`, `internal/proto`, `internal/sdk` green.
+
 **Goal:** Close the 7 deliberately-deferred limitations in `docs/grpc-plan.md` and `docs/postman-plan.md` (gRPC streaming/TLS/schema/imports, Postman JSONPath/import/pre-request script).
 
 **Architecture:** Each item is independent, gets its own task, test cycle, and commit. gRPC changes touch `internal/grpcx/invoke.go` + `internal/proto/proto.go` + the gRPC section of `internal/ui/ui.html`. Postman changes are all in `internal/ui/ui.html` (single self-contained file, state in localStorage).
@@ -30,7 +32,7 @@
 - Consumes: existing `Invoke(protoDir string, req Request) (string, error)`, `Request{Target,Symbol,Data,Headers}`.
 - Produces: no signature change. `req.Data` MAY contain multiple whitespace/newline-separated JSON objects; `grpcurl.RequestParserAndFormatter` + `rf.Next` already emit one per object into a client/bidi stream.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `internal/grpcx/invoke_test.go`. Use the existing test gRPC server pattern from `live_test.go` (a client-streaming method that counts messages). If no client-streaming method exists on the test server, add one that returns the count.
 
@@ -52,21 +54,21 @@ func TestInvokeClientStreamSendsAllMessages(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/grpcx/ -run TestInvokeClientStreamSendsAllMessages -v`
 Expected: FAIL (test server lacks client-streaming method, or count != 3).
 
-- [ ] **Step 3: Add the client-streaming method to the test server**
+- [x] **Step 3: Add the client-streaming method to the test server**
 
 In the test server type in `internal/grpcx/live_test.go`, implement a client-streaming `CountUsers` that reads all messages and returns the count. (Backend `Invoke` needs no change — `rf.Next` already feeds each parsed object.) Register it. If the proto/test stub does not define it, add a minimal streaming method to the existing test service stub used by these tests.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/grpcx/ -run TestInvokeClientStreamSendsAllMessages -v`
 Expected: PASS. Confirms multi-object `Data` reaches the stream.
 
-- [ ] **Step 5: UI — multi-message input for client/bidi**
+- [x] **Step 5: UI — multi-message input for client/bidi**
 
 In `internal/ui/ui.html` gRPC method card: when the method badge is `client` or `bidi`, render an "＋ Add message" button that appends extra `<textarea>` inputs. In `invokeGrpc()` (~1543), join all message textareas with `"\n"` into the `data` field before POST. Unary/server-stream keep the single textarea.
 
@@ -77,7 +79,7 @@ const data = Array.from(msgs).map(t => interpolate(t.value, activeEnv())).join("
 // ...existing POST with { target, symbol, data }
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/grpcx/ internal/ui/ui.html
@@ -96,7 +98,7 @@ git commit -m "feat(grpc): send multiple messages for client-stream/bidi Execute
 **Interfaces:**
 - Produces: `Request` gains `TLS bool`, `Insecure bool`, `TimeoutSec int` (JSON: `tls`, `insecure`, `timeoutSec`). New helper `dialCreds(req Request) credentials.TransportCredentials`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestDialCredsSelectsTLS(t *testing.T) {
@@ -118,12 +120,12 @@ func TestTimeoutDefault(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/grpcx/ -run 'TestDialCreds|TestTimeout' -v`
 Expected: FAIL ("undefined: dialCreds", "undefined: timeoutOf").
 
-- [ ] **Step 3: Implement fields + helpers**
+- [x] **Step 3: Implement fields + helpers**
 
 In `internal/grpcx/invoke.go` add to `Request`:
 
@@ -153,12 +155,12 @@ func timeoutOf(req Request) time.Duration {
 
 Replace `:30` `context.WithTimeout(..., 15*time.Second)` with `timeoutOf(req)` and `:33` `grpc.WithTransportCredentials(insecure.NewCredentials())` with `grpc.WithTransportCredentials(dialCreds(req))`. Add imports `crypto/tls` and `google.golang.org/grpc/credentials`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/grpcx/ -run 'TestDialCreds|TestTimeout' -v`
 Expected: PASS.
 
-- [ ] **Step 5: UI — TLS toggle + grpcurl flags**
+- [x] **Step 5: UI — TLS toggle + grpcurl flags**
 
 In `internal/ui/ui.html`: add a TLS checkbox (and an "Insecure (skip verify)" checkbox) to the gRPC panel, backed by env vars `grpcTLS`/`grpcInsecure`. Include `tls`/`insecure`/`timeoutSec` in the `invokeGrpc()` POST body. In the "Copy as grpcurl" builder, emit `-plaintext` only when TLS is off, and `-insecure` when insecure is on.
 
@@ -168,7 +170,7 @@ const insecure = activeEnv().vars.grpcInsecure === "true";
 // grpcurl: (tls ? (insecure ? "-insecure " : "") : "-plaintext ")
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/grpcx/ internal/ui/ui.html
@@ -186,7 +188,7 @@ git commit -m "feat(grpc): TLS transport + configurable timeout"
 **Interfaces:**
 - Produces: `scalarSchema` recognizes well-known type names. `messageToSchema` handles `*proto.Oneof`, adding a `x-oneof` marker. Requires `core.Schema` to carry the marker — add field `XOneof [][]string \`json:"x-oneof,omitempty\"\`` to `core.Schema` if absent.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `internal/proto/scalar_test.go`:
 
@@ -211,12 +213,12 @@ func TestWellKnownScalars(t *testing.T) {
 
 Add to `internal/proto/proto_test.go` a message with a `oneof` (parse from a small proto string via `proto.NewParser`) and assert the resulting schema has both variant properties AND a non-empty `XOneof` group listing them.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/proto/ -run 'TestWellKnown|TestOneof' -v`
 Expected: FAIL (well-known types return message refs; oneof variants absent; `XOneof` undefined).
 
-- [ ] **Step 3: Implement well-known + oneof**
+- [x] **Step 3: Implement well-known + oneof**
 
 If `core.Schema` lacks it, add `XOneof [][]string` field. In `scalarSchema` add cases BEFORE the `default`:
 
@@ -257,17 +259,17 @@ In `messageToSchema`, add a case for oneof and collect its variant names:
 			}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/proto/ -run 'TestWellKnown|TestOneof' -v`
 Expected: PASS.
 
-- [ ] **Step 5: Full package test**
+- [x] **Step 5: Full package test**
 
 Run: `go test ./internal/proto/ ./internal/...`
 Expected: PASS (no regression in existing scalar/proto tests).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/proto/ internal/core/
@@ -285,7 +287,7 @@ git commit -m "feat(proto): well-known types + oneof schema marker"
 **Interfaces:**
 - Produces: `Scan` keys the message map by fully-qualified name (`pkg.Message`); `$ref` values point to the qualified name; cross-file references resolve. `collect`/`walk` operate on qualified names.
 
-- [ ] **Step 1: Add testdata + failing test**
+- [x] **Step 1: Add testdata + failing test**
 
 Create `internal/proto/testdata/common.proto`:
 
@@ -327,30 +329,30 @@ func TestScanResolvesCrossFileImport(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/proto/ -run TestScanResolvesCrossFileImport -v`
 Expected: FAIL (messages keyed by bare name `Order`/`Money`, ref is `#/.../Money` not qualified).
 
-- [ ] **Step 3: Key by qualified name, resolve refs**
+- [x] **Step 3: Key by qualified name, resolve refs**
 
 In `Scan`, capture each file's package, and store messages/enums as `pkg + "." + name`. In `scalarSchema`'s `default` ref branch, the message name may be bare in the proto source — resolve it against the current file's package: build the ref as `#/components/schemas/<pkg>.<type>` when `<type>` is unqualified. Thread the current package into `messageToSchema`/`fieldSchema`/`scalarSchema` (add a `pkg string` param), or resolve refs in a post-pass that qualifies any bare ref against the message's own package. Update `serviceToGrpc` so `InputType`/`OutputType` are qualified too. `collect`/`walk` already follow `$ref`; they now traverse qualified keys.
 
 Imports: emicklei `proto.WithImport` can be walked, but since all testdata files are scanned anyway (`protoFiles` walks the dir), the key change is consistent qualified naming so a ref from `orders.proto` finds `Money` from `common.proto`. Keep it simple: qualify by package, no separate import graph needed when all files share the scan dir.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/proto/ -run TestScanResolvesCrossFileImport -v`
 Expected: PASS.
 
-- [ ] **Step 5: Update existing proto tests for qualified keys**
+- [x] **Step 5: Update existing proto tests for qualified keys**
 
 Existing `proto_test.go` assertions using bare names (e.g. `doc.Messages["User"]`) must become `doc.Messages["shop.v1.User"]`. Run full package and fix each:
 
 Run: `go test ./internal/proto/ -v`
 Expected: PASS after updating key expectations.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/proto/
@@ -368,7 +370,7 @@ git commit -m "feat(proto): qualify message names by package for cross-file refs
 **Interfaces:**
 - Produces: `pick(obj, path)` returns an array of matches for wildcard/filter/recursive paths, and the single value for a plain path. Callers adapt: extract uses first match; `jsonExists` = at least one match; `jsonEquals` compares first match.
 
-- [ ] **Step 1: Write the failing e2e assertions**
+- [x] **Step 1: Write the failing e2e assertions**
 
 In `e2e/console.spec.js`, add a test that loads a response fixture and evaluates `pick` in the page context (via `page.evaluate`) for:
 
@@ -380,12 +382,12 @@ In `e2e/console.spec.js`, add a test that loads a response fixture and evaluates
 
 Assert each returns the expected matches.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run the e2e suite for this spec (per existing `e2e` run command).
 Expected: FAIL (current `pick` returns undefined for `[*]`, `..`, `[?()]`).
 
-- [ ] **Step 3: Rewrite `pick` as a small evaluator**
+- [x] **Step 3: Rewrite `pick` as a small evaluator**
 
 Replace `pick` with a tokenizing evaluator supporting `.key`, `[n]`, `[-1]`, `[*]`, `.*`, `..key`, and `[?(@.k=='v')]` / `[?(@.k!='v')]` / `[?(@.k)]`. Return an array of matches; add a `pickOne(obj,path)` that returns the first match (or undefined) for callers that need a scalar.
 
@@ -402,18 +404,18 @@ function pickOne(obj, path) { const r = pick(obj, path); return r.length ? r[0] 
 
 Implement `tokenizeJsonPath` and `stepJsonPath` (wildcard expands object/array; recurse descends all nodes matching key; filter keeps array items where `@.k op v` holds).
 
-- [ ] **Step 4: Update callers**
+- [x] **Step 4: Update callers**
 
 - `:920` extract: `let val = pickOne(json, rule.jsonPath);`
 - `:891` jsonExists: `const v = pick(bodyJson, t.target); ok = v.length > 0;`
 - `:892` jsonEquals: `const v = pickOne(bodyJson, t.target); ok = JSON.stringify(v) === JSON.stringify(coerce(t.expected));`
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run the e2e suite for this spec.
 Expected: PASS. Also manually confirm a plain `$.id` still works (regression).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/ui/ui.html e2e/console.spec.js
@@ -431,7 +433,7 @@ git commit -m "feat(ui): JSONPath wildcard, recursive descent, and filters in pi
 **Interfaces:**
 - Produces: `isPostmanV21(json)` detector; `postmanToStore(json)` mapper returning `{collections:[...]}` in Specter's shape. `importStore` routes to it when detected, else the existing `parseImport`.
 
-- [ ] **Step 1: Write the failing e2e test**
+- [x] **Step 1: Write the failing e2e test**
 
 In `e2e/console.spec.js`, import a small Postman v2.1 collection JSON:
 
@@ -445,12 +447,12 @@ In `e2e/console.spec.js`, import a small Postman v2.1 collection JSON:
 
 Assert after import a collection "demo" exists with one request: method GET, path containing `users`, query `q=ada`, header `X-Trace={{traceId}}`, auth type bearer.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run the e2e suite.
 Expected: FAIL (`parseImport` rejects — no `specter.collection` format marker).
 
-- [ ] **Step 3: Add detector + mapper**
+- [x] **Step 3: Add detector + mapper**
 
 ```js
 function isPostmanV21(j) {
@@ -489,7 +491,7 @@ function kv(arr, name) { const f = (arr||[]).find(x=>x.key===name); return f ? f
 
 Match the `SavedRequest`/`Auth` field names already used in `ui.html` (adjust `auth` shape to the existing one — e.g. if auth stores a `fields` map, write into that instead). Add `notes` to `SavedRequest` if it does not exist (used again in P3).
 
-- [ ] **Step 4: Route in importStore**
+- [x] **Step 4: Route in importStore**
 
 In `importStore()` (~371), before calling `parseImport`, branch:
 
@@ -504,12 +506,12 @@ if (isPostmanV21(parsed)) {
 
 Reuse the existing replace/merge confirm dialog and `mergeStore`.
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run the e2e suite.
 Expected: PASS. Also confirm native `specter.collection` import still works (regression).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/ui/ui.html e2e/console.spec.js
@@ -529,16 +531,16 @@ git commit -m "feat(ui): import Postman v2.1 collections"
 
 **SECURITY:** `new Function` runs user-authored code in-origin. The `pm`-only argument hides globals from casual scripts but is NOT a true sandbox (adversarial code can reach globals via constructor chains). Acceptable because the user authors/pastes their own script into their own console. Imported (foreign) scripts must NOT auto-execute; require an explicit opt-in. Full isolation (Worker/iframe) is future work.
 
-- [ ] **Step 1: Write the failing e2e test**
+- [x] **Step 1: Write the failing e2e test**
 
 In `e2e/console.spec.js`, create a saved request with `preRequestScript = "pm.environment.set('token','abc')"`, then send it and assert the outgoing request used `token=abc` where `{{token}}` appears (e.g. in a header). Also assert `pm.window` is `undefined` inside the script (write a script `pm.environment.set('leak', String(typeof pm.window))` and expect `undefined`).
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run the e2e suite.
 Expected: FAIL (`preRequestScript` unsupported; nothing runs).
 
-- [ ] **Step 3: Implement the pm API + runner**
+- [x] **Step 3: Implement the pm API + runner**
 
 ```js
 function pmApi(env) {
@@ -554,16 +556,16 @@ function runPreRequest(req, env) {
 }
 ```
 
-- [ ] **Step 4: Wire into send() + editor**
+- [x] **Step 4: Wire into send() + editor**
 
 At the top of `send()` (before `buildURL` ~900): `try { runPreRequest(req, activeEnv()); } catch (e) { /* surface as response error */ }`. Add a "Pre-request Script" textarea to the request editor bound to `req.preRequestScript`. Do NOT run `req.notes` (imported scripts) automatically.
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run the e2e suite.
 Expected: PASS (token set to abc; `pm.window` undefined).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/ui/ui.html e2e/console.spec.js
