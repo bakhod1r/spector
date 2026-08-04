@@ -33,7 +33,7 @@ specter -graphql -dir ./graph -o graphql.json
 | ------------- | ---------------------------------------------------------- |
 | `-dir`        | Directory to scan (default `.`)                            |
 | `-config`     | JSON config file (default: `specter.json` in `-dir`, if present) |
-| `-adapter`    | `gin`, `chi`, `echo`, `fiber`, `gorillamux`, or `stdlib`; autodetected when empty |
+| `-adapter`    | `gin`, `chi`, `echo`, `fiber`, `gorillamux`, `httprouter`, or `stdlib`; autodetected when empty |
 | `-title`      | API title (defaults to the directory name)                 |
 | `-version`    | API version (default `0.1.0`)                              |
 | `-grpc`       | Export the gRPC document instead of OpenAPI                |
@@ -783,6 +783,7 @@ that ambiguity is worth removing either way.
 | fiber          |   ✅   |     ✅      |  ✅   |   ✅   |  `app.Group(...)`   |      ✅      |     ✅     |
 | gorilla/mux    |   ✅   |     ✅      |  ✅   |   ✅   | `PathPrefix(...).Subrouter()` | ✅ |    ✅     |
 | net/http (1.22)|   ✅   |     ✅      |  ✅   |   ✅   | sub-mux + `StripPrefix` | ✅      |     ✅     |
+| httprouter     |   ✅   |     ✅      |  ✅   |   ✅   |        —            |      ✅      |     —      |
 
 What Specter infers from handlers:
 

@@ -27,6 +27,7 @@ import (
 	fiberadapter "github.com/user/specter/internal/adapter/fiber"
 	ginadapter "github.com/user/specter/internal/adapter/gin"
 	gorillamuxadapter "github.com/user/specter/internal/adapter/gorillamux"
+	httprouteradapter "github.com/user/specter/internal/adapter/httprouter"
 	stdlibadapter "github.com/user/specter/internal/adapter/stdlib"
 	"github.com/user/specter/internal/admin"
 	"github.com/user/specter/internal/advice"
@@ -194,6 +195,8 @@ func adapterFor(cfg Config) core.Adapter {
 		return &fiberadapter.Adapter{}
 	case "gorillamux", "mux", "gorilla":
 		return &gorillamuxadapter.Adapter{}
+	case "httprouter":
+		return &httprouteradapter.Adapter{}
 	case "stdlib":
 		return &stdlibadapter.Adapter{}
 	default:
@@ -222,6 +225,8 @@ func detect(dir string) string {
 					return "fiber"
 				case strings.Contains(p, "gorilla/mux"):
 					return "gorillamux"
+				case strings.Contains(p, "julienschmidt/httprouter"):
+					return "httprouter"
 				}
 			}
 		}
