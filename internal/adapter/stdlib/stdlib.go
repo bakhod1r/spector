@@ -96,13 +96,23 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 				// mirrors gin's router groups / chi's Route for versioning:
 				//   v1 := http.NewServeMux(); v1.HandleFunc("GET /users", ...)
 				//   mux.Handle("/v1/", http.StripPrefix("/v1", v1))
-				m := mounts[recv.Name]
-				path = m.prefix + path
+				//
+				// Sub-muxes nest: v2 mounted on v1 mounted on the root mux, so
+				// the prefix and the wrapping are composed up the whole chain
+				// rather than one level, giving net/http the same nested
+				// versioning the framework adapters have.
+				prefix, chain := resolveMount(recv.Name, mounts)
+				path = prefix + path
 				// Whatever wraps the server's handler runs in front of every
-				// route it serves, including the ones on a mounted sub-mux.
-				wrappers = append(wrappers, served[m.parent]...)
-				wrappers = append(wrappers, served[recv.Name]...)
-				wrappers = append(wrappers, m.wrappers...)
+				// route it serves; a guard around a mounted sub-mux applies to
+				// every route on it. Both run outermost first, so the chain is
+				// walked from the root end down to this route.
+				for i := len(chain) - 1; i >= 0; i-- {
+					wrappers = append(wrappers, served[chain[i]]...)
+				}
+				for i := len(chain) - 2; i >= 0; i-- {
+					wrappers = append(wrappers, mounts[chain[i]].wrappers...)
+				}
 			}
 			handlerArg, inline := unwrap(call.Args[1])
 			wrappers = append(wrappers, inline...)
@@ -130,6 +140,30 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 	}
 
 	return routes, scanner.Schemas, nil
+}
+
+// resolveMount walks the mount chain from a sub-mux up to the root mux,
+// composing the full path prefix its routes hang under. It returns that prefix
+// and the chain of mux names, child first and root last, so callers can apply
+// per-mux wrapping in order. A mux that was never mounted returns an empty
+// prefix and a one-element chain — itself. The seen guard stops a malformed
+// mutual mount from looping forever.
+func resolveMount(name string, mounts map[string]mount) (prefix string, chain []string) {
+	seen := map[string]bool{}
+	for {
+		if seen[name] {
+			break
+		}
+		seen[name] = true
+		m, ok := mounts[name]
+		if !ok {
+			break
+		}
+		prefix = m.prefix + prefix
+		chain = append(chain, name)
+		name = m.parent
+	}
+	return prefix, append(chain, name)
 }
 
 // mount is where a sub-mux is mounted: the prefix its routes hang under, the

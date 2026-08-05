@@ -1003,8 +1003,9 @@ catches a misreading of the protocol.
 
 - REST inference is AST-based; dynamically registered routes or params built
   from non-literal values are not detected.
-- net/http grouping is limited to the sub-mux + `http.StripPrefix` idiom
-  (the standard mux has no native groups).
+- net/http grouping uses the sub-mux + `http.StripPrefix` idiom, and sub-muxes
+  nest: a mux mounted on a mux mounted on the root composes every prefix and
+  guard onto the leaf routes (the standard mux has no native groups).
 - gRPC client-streaming and bidirectional RPCs are documented but not
   interactively invocable from the console.
 - `.pb.go` enums surface their names, read from the generated `Xxx_name` map;
