@@ -813,8 +813,12 @@ Specter documents gRPC services two ways:
 - **Generated `*.pb.go` stubs** — reconstructed from `grpc.ServiceDesc` values
   and the server interfaces when the original protos are not available.
 
-The console can invoke unary and server-streaming RPCs against a running target
-(via server reflection or the local protos).
+The console can invoke gRPC methods interactively against a running target (via
+server reflection or the local protos), over a WebSocket. Unary and
+server-streaming methods send a single request and stream responses back live.
+Client-streaming and bidirectional methods support sending multiple messages
+on the same call, with an explicit Half-close to signal the end of the request
+stream, plus Cancel to abort the call.
 
 ## GraphQL
 
@@ -1006,8 +1010,6 @@ catches a misreading of the protocol.
 - net/http grouping uses the sub-mux + `http.StripPrefix` idiom, and sub-muxes
   nest: a mux mounted on a mux mounted on the root composes every prefix and
   guard onto the leaf routes (the standard mux has no native groups).
-- gRPC client-streaming and bidirectional RPCs are documented but not
-  interactively invocable from the console.
 - `.pb.go` enums surface their names, read from the generated `Xxx_name` map;
   `.proto` enums surface their names directly.
 - The Go (gqlgen) GraphQL fallback infers non-null from pointer-ness (a value is

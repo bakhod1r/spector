@@ -383,8 +383,8 @@ func TestServiceDesc(t *testing.T) {
 	if len(UserService_ServiceDesc.Methods) != 4 {
 		t.Errorf("unary methods = %d, want 4", len(UserService_ServiceDesc.Methods))
 	}
-	if len(UserService_ServiceDesc.Streams) != 2 {
-		t.Errorf("streams = %d, want 2", len(UserService_ServiceDesc.Streams))
+	if len(UserService_ServiceDesc.Streams) != 3 {
+		t.Errorf("streams = %d, want 3", len(UserService_ServiceDesc.Streams))
 	}
 }
 
@@ -706,7 +706,7 @@ func TestAllServiceDescs(t *testing.T) {
 		methods int
 		streams int
 	}{
-		{UserService_ServiceDesc, "shop.v1.UserService", 4, 2},
+		{UserService_ServiceDesc, "shop.v1.UserService", 4, 3},
 		{ProductService_ServiceDesc, "shop.v1.ProductService", 2, 1},
 		{OrderService_ServiceDesc, "shop.v1.OrderService", 2, 0},
 	}
