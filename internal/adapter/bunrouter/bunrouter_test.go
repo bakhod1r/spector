@@ -15,7 +15,7 @@ func routeMap(routes []core.Route) map[string]core.Route {
 }
 
 func TestScanRoutes(t *testing.T) {
-	routes, schemas, err := (&Adapter{}).Scan("testdata/sample")
+	routes, schemas, _, err := (&Adapter{}).Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}

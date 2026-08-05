@@ -2,7 +2,20 @@
 // that all framework adapters produce.
 package core
 
-import "strconv"
+import (
+	"go/token"
+	"strconv"
+)
+
+// Diagnostic records a route site an adapter could not statically resolve to
+// a literal string. It lives in core (rather than astutil) so the Adapter
+// interface can reference it without astutil importing core creating an
+// import cycle; astutil.Diagnostic is a type alias for this.
+type Diagnostic struct {
+	Pos    token.Position
+	Kind   string // "route" | "group-prefix"
+	Reason string
+}
 
 // Document is a minimal OpenAPI 3.0 document.
 type Document struct {
@@ -14,6 +27,10 @@ type Document struct {
 	// alternatives: any one of them is enough.
 	Security   []SecurityRequirement `json:"security,omitempty"`
 	Components Components            `json:"components"`
+	// Diagnostics lists the route/group-prefix sites the adapter could not
+	// statically resolve to a literal string. It is not part of the OpenAPI
+	// spec and is excluded from the document's JSON/YAML encoding.
+	Diagnostics []Diagnostic `json:"-"`
 }
 
 // Server is one base URL the API is reachable at.
@@ -385,5 +402,5 @@ type RouteResponse struct {
 // Adapter scans a package's AST and returns discovered routes.
 type Adapter interface {
 	Name() string
-	Scan(dir string) ([]Route, map[string]*Schema, error)
+	Scan(dir string) ([]Route, map[string]*Schema, []Diagnostic, error)
 }

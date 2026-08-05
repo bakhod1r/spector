@@ -16,7 +16,7 @@ func routeMap(routes []core.Route) map[string]core.Route {
 
 func TestScan(t *testing.T) {
 	a := &Adapter{}
-	routes, schemas, err := a.Scan("testdata/sample")
+	routes, schemas, _, err := a.Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,5 +58,21 @@ func TestScan(t *testing.T) {
 	}
 	if create.ResponseType != "User" {
 		t.Errorf("create response = %q, want User", create.ResponseType)
+	}
+}
+
+func TestGinResolvesConstAndConcatRoutes(t *testing.T) {
+	routes, _, _, err := (&Adapter{}).Scan("testdata/constroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range routes {
+		got[r.Method+" "+r.Path] = true
+	}
+	for _, want := range []string{"get /users/{id}", "get /api/v1/health"} {
+		if !got[want] {
+			t.Errorf("missing route %q; got %v", want, got)
+		}
 	}
 }

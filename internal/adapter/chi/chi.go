@@ -26,14 +26,14 @@ type Adapter struct{}
 
 func (a *Adapter) Name() string { return "chi" }
 
-func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error) {
+func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	// ParseComments is required, not optional: summaries, descriptions and the
 	// specter: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	scanner := core.NewStructScanner()
@@ -59,12 +59,14 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	w := &walker{handlers: handlers, loc: loc, index: index, mw: mw}
+	consts := astutil.StringConsts(files)
+	var diags astutil.Diagnostics
+	w := &walker{handlers: handlers, loc: loc, index: index, mw: mw, consts: consts, diags: &diags}
 	for _, file := range files {
 		w.collect(file, "", nil)
 	}
 
-	return w.routes, scanner.Schemas, nil
+	return w.routes, scanner.Schemas, diags.List(), nil
 }
 
 // walker carries the state that does not change as the walk descends, so the
@@ -75,6 +77,8 @@ type walker struct {
 	index    *calls.Index
 	mw       *middleware.Index
 	routes   []core.Route
+	consts   map[string]string
+	diags    *astutil.Diagnostics
 }
 
 // collect walks node for chi routing calls under the accumulated path prefix.
@@ -106,7 +110,7 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 		// Groups: r.Route("/api", func(r chi.Router){...}) with a prefix, and
 		// r.Group(func(r chi.Router){...}) without one — the latter exists
 		// precisely to scope middleware.
-		if body, p, ok := groupBody(sel, call); ok {
+		if body, p, ok := groupBody(sel, call, w.consts, w.loc, w.diags); ok {
 			w.collect(body, prefix+p, scope)
 			return false // inner routes already handled with the prefix
 		}
@@ -115,8 +119,9 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 		if !ok || len(call.Args) != 2 {
 			return true
 		}
-		path, ok := astutil.StringLit(call.Args[0])
+		path, ok := astutil.ResolveString(call.Args[0], w.consts)
 		if !ok {
+			w.diags.Add(w.loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			return true
 		}
 		name := astutil.HandlerName(call.Args[1])
@@ -144,11 +149,12 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 
 // groupBody reports the closure a chi group runs, and the prefix it adds.
 // Route carries a path; Group carries none and exists to scope middleware.
-func groupBody(sel *ast.SelectorExpr, call *ast.CallExpr) (body *ast.BlockStmt, prefix string, ok bool) {
+func groupBody(sel *ast.SelectorExpr, call *ast.CallExpr, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) (body *ast.BlockStmt, prefix string, ok bool) {
 	switch {
 	case sel.Sel.Name == "Route" && len(call.Args) == 2:
-		p, ok := astutil.StringLit(call.Args[0])
+		p, ok := astutil.ResolveString(call.Args[0], consts)
 		if !ok {
+			diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 			return nil, "", false
 		}
 		fn, ok := call.Args[1].(*ast.FuncLit)

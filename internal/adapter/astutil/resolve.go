@@ -5,6 +5,8 @@ import (
 	"go/token"
 	"sort"
 	"strconv"
+
+	"github.com/user/specter/internal/core"
 )
 
 // StringConsts indexes package-level string const and var declarations by name.
@@ -101,11 +103,9 @@ func resolve(expr ast.Expr, consts map[string]string) (string, bool) {
 }
 
 // Diagnostic records a route site the scanner could not statically resolve.
-type Diagnostic struct {
-	Pos    token.Position
-	Kind   string // "route" | "group-prefix"
-	Reason string
-}
+// It is an alias for core.Diagnostic so the core.Adapter interface can
+// reference the type without core importing astutil (which imports core).
+type Diagnostic = core.Diagnostic
 
 // Diagnostics is an append-only collector; List returns them in source order.
 type Diagnostics struct {

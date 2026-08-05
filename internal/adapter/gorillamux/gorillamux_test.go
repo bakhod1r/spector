@@ -16,7 +16,7 @@ func routeMap(routes []core.Route) map[string]core.Route {
 
 func scan(t *testing.T) (map[string]core.Route, map[string]*core.Schema) {
 	t.Helper()
-	routes, schemas, err := (&Adapter{}).Scan("testdata/sample")
+	routes, schemas, _, err := (&Adapter{}).Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,13 +167,13 @@ func TestMiddlewareInferred(t *testing.T) {
 }
 
 func TestScanMissingDirErrors(t *testing.T) {
-	if _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
+	if _, _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
 		t.Error("expected an error for a missing dir")
 	}
 }
 
 func TestScanEmptyDir(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan(t.TempDir())
+	routes, _, _, err := (&Adapter{}).Scan(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

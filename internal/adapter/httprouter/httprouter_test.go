@@ -15,7 +15,7 @@ func routeMap(routes []core.Route) map[string]core.Route {
 }
 
 func TestScanRoutes(t *testing.T) {
-	routes, schemas, err := (&Adapter{}).Scan("testdata/sample")
+	routes, schemas, _, err := (&Adapter{}).Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestName(t *testing.T) {
 
 // A directory that will not parse surfaces the error rather than panicking.
 func TestScanBadDir(t *testing.T) {
-	if _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
+	if _, _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
 		t.Skip("missing dir parses as empty on this toolchain")
 	}
 }

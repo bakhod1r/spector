@@ -27,14 +27,14 @@ type Adapter struct{}
 
 func (a *Adapter) Name() string { return "stdlib" }
 
-func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error) {
+func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	// ParseComments is required, not optional: summaries, descriptions and the
 	// specter: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	scanner := core.NewStructScanner()
@@ -59,11 +59,13 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		}
 	}
 
-	mounts := collectMounts(files)
+	loc := astutil.Locator{Fset: fset, Dir: dir}
+	consts := astutil.StringConsts(files)
+	var diags astutil.Diagnostics
+	mounts := collectMounts(files, consts, loc, &diags)
 	served := collectServed(files)
 
 	var routes []core.Route
-	loc := astutil.Locator{Fset: fset, Dir: dir}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -80,8 +82,9 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 			if len(call.Args) != 2 {
 				return true
 			}
-			pattern, ok := astutil.StringLit(call.Args[0])
+			pattern, ok := astutil.ResolveString(call.Args[0], consts)
 			if !ok {
+				diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 				return true
 			}
 			method, path, ok := splitPattern(pattern)
@@ -139,7 +142,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		})
 	}
 
-	return routes, scanner.Schemas, nil
+	return routes, scanner.Schemas, diags.List(), nil
 }
 
 // resolveMount walks the mount chain from a sub-mux up to the root mux,
@@ -179,7 +182,7 @@ type mount struct {
 // for mux.Handle("/v1/", <handler referencing the sub-mux>) calls. The handler
 // argument may be the sub-mux directly or wrapped in http.StripPrefix(...) and
 // middleware; the wrapping is peeled off to find it.
-func collectMounts(files []*ast.File) map[string]mount {
+func collectMounts(files []*ast.File, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) map[string]mount {
 	mounts := map[string]mount{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -191,8 +194,9 @@ func collectMounts(files []*ast.File) map[string]mount {
 			if !ok || sel.Sel.Name != "Handle" || len(call.Args) != 2 {
 				return true
 			}
-			prefix, ok := astutil.StringLit(call.Args[0])
+			prefix, ok := astutil.ResolveString(call.Args[0], consts)
 			if !ok {
+				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 				return true
 			}
 			inner, wrappers := unwrap(call.Args[1])

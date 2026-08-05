@@ -9,7 +9,7 @@ import (
 
 func scanEdge(t *testing.T) map[string]core.Route {
 	t.Helper()
-	routes, _, err := (&Adapter{}).Scan("testdata/edge")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/edge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +17,7 @@ func scanEdge(t *testing.T) map[string]core.Route {
 }
 
 func TestScanParseError(t *testing.T) {
-	if _, _, err := (&Adapter{}).Scan("testdata/broken"); err == nil {
+	if _, _, _, err := (&Adapter{}).Scan("testdata/broken"); err == nil {
 		t.Fatal("want parse error")
 	}
 }

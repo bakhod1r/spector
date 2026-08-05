@@ -245,7 +245,7 @@ type (
 // scan rather than OpenAPI.
 func ScanRoutes(cfg Config) ([]Route, error) {
 	cfg = cfg.withDefaults()
-	routes, _, err := adapterFor(cfg).Scan(cfg.Dir)
+	routes, _, _, err := adapterFor(cfg).Scan(cfg.Dir)
 	return routes, err
 }
 
@@ -527,11 +527,12 @@ func normalizeYAML(v interface{}) interface{} {
 
 func Generate(cfg Config) (*core.Document, error) {
 	cfg = cfg.withDefaults()
-	routes, schemas, err := adapterFor(cfg).Scan(cfg.Dir)
+	routes, schemas, diags, err := adapterFor(cfg).Scan(cfg.Dir)
 	if err != nil {
 		return nil, err
 	}
 	doc := gen.Build(cfg.Title, cfg.Version, routes, schemas)
+	doc.Diagnostics = diags
 	applyInferredSchemes(doc, routes)
 	applyDeclared(doc, cfg)
 	applyAdvice(doc)

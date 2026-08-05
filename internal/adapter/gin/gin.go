@@ -26,14 +26,14 @@ type Adapter struct{}
 
 func (a *Adapter) Name() string { return "gin" }
 
-func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error) {
+func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	// ParseComments is required, not optional: summaries, descriptions and the
 	// specter: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	scanner := core.NewStructScanner()
@@ -82,8 +82,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		}
 	}
 
-	groups := collectGroups(files)
+	consts := astutil.StringConsts(files)
+	var diags astutil.Diagnostics
 	loc := astutil.Locator{Fset: fset, Dir: dir}
+	groups := collectGroups(files, consts, &diags, loc)
 	// Handlers that return a value from a store or service — the normal shape
 	// in real code — need the package's function result types to be
 	// documentable at all.
@@ -104,8 +106,9 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 			if !ok || len(call.Args) < 2 {
 				return true
 			}
-			path, ok := astutil.StringLit(call.Args[0])
+			path, ok := astutil.ResolveString(call.Args[0], consts)
 			if !ok {
+				diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 				return true
 			}
 			prefix := ""
@@ -138,7 +141,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		})
 	}
 
-	return routes, scanner.Schemas, nil
+	return routes, scanner.Schemas, diags.List(), nil
 }
 
 type groupDef struct {
@@ -146,7 +149,7 @@ type groupDef struct {
 	prefix string
 }
 
-func collectGroups(files []*ast.File) map[string]groupDef {
+func collectGroups(files []*ast.File, consts map[string]string, diags *astutil.Diagnostics, loc astutil.Locator) map[string]groupDef {
 	groups := map[string]groupDef{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -166,8 +169,9 @@ func collectGroups(files []*ast.File) map[string]groupDef {
 			if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
 				return true
 			}
-			prefix, ok := astutil.StringLit(call.Args[0])
+			prefix, ok := astutil.ResolveString(call.Args[0], consts)
 			if !ok {
+				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 				return true
 			}
 			recv := ""

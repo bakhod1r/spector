@@ -5,7 +5,7 @@ import "testing"
 // Two levels of sub-mux mounting compose both prefixes onto the leaf routes,
 // and the guard wrapping each level applies to every route beneath it.
 func TestNestedSubMux(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan("testdata/nested")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/nested")
 	if err != nil {
 		t.Fatal(err)
 	}

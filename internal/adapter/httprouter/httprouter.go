@@ -32,14 +32,14 @@ type Adapter struct{}
 
 func (a *Adapter) Name() string { return "httprouter" }
 
-func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error) {
+func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	// ParseComments is required, not optional: summaries, descriptions and the
 	// specter: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	scanner := core.NewStructScanner()
@@ -63,11 +63,13 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	w := &walker{handlers: handlers, loc: loc, index: index}
+	consts := astutil.StringConsts(files)
+	var diags astutil.Diagnostics
+	w := &walker{handlers: handlers, loc: loc, index: index, consts: consts, diags: &diags}
 	for _, file := range files {
 		w.collect(file)
 	}
-	return w.routes, scanner.Schemas, nil
+	return w.routes, scanner.Schemas, diags.List(), nil
 }
 
 type walker struct {
@@ -75,6 +77,8 @@ type walker struct {
 	loc      astutil.Locator
 	index    *calls.Index
 	routes   []core.Route
+	consts   map[string]string
+	diags    *astutil.Diagnostics
 }
 
 func (w *walker) collect(node ast.Node) {
@@ -88,7 +92,7 @@ func (w *walker) collect(node ast.Node) {
 			return true
 		}
 
-		method, path, handler, ok := routingCall(sel, call)
+		method, path, handler, ok := routingCall(sel, call, w.consts, w.loc, w.diags)
 		if !ok {
 			return true
 		}
@@ -102,19 +106,23 @@ func (w *walker) collect(node ast.Node) {
 //
 //	r.GET("/users", handle)          — method from the selector
 //	r.Handle("GET", "/users", handle) — method from the first argument
-func routingCall(sel *ast.SelectorExpr, call *ast.CallExpr) (method, path string, handler ast.Expr, ok bool) {
+func routingCall(sel *ast.SelectorExpr, call *ast.CallExpr, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) (method, path string, handler ast.Expr, ok bool) {
 	if m, isMethod := methods[sel.Sel.Name]; isMethod && len(call.Args) == 2 {
-		if p, ok := astutil.StringLit(call.Args[0]); ok {
+		if p, ok := astutil.ResolveString(call.Args[0], consts); ok {
 			return m, p, call.Args[1], true
 		}
+		diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 		return "", "", nil, false
 	}
 	if sel.Sel.Name == "Handle" && len(call.Args) == 3 {
 		verb, ok1 := astutil.StringLit(call.Args[0])
-		p, ok2 := astutil.StringLit(call.Args[1])
+		p, ok2 := astutil.ResolveString(call.Args[1], consts)
 		m, known := methods[strings.ToUpper(verb)]
 		if ok1 && ok2 && known {
 			return m, p, call.Args[2], true
+		}
+		if ok1 && known && !ok2 {
+			diags.Add(loc.Position(call.Args[1].Pos()), "route", astutil.DescribeExpr(call.Args[1]))
 		}
 	}
 	return "", "", nil, false
