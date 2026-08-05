@@ -94,6 +94,15 @@ func Stream(protoDir string, conn *websocket.Conn) error {
 	// The pipe feeds grpcurl's JSON request parser: each "send" frame writes one
 	// JSON message; "halfClose" closes the writer so the parser sees io.EOF.
 	pr, pw := io.Pipe()
+
+	// grpcurl reads requests from pr synchronously (with a deferred wg.Wait for
+	// client-stream/bidi). A bare ctx cancel cannot unblock that read, so close
+	// the pipe on ctx.Done to let the request goroutine — and InvokeRPC — return.
+	go func() {
+		<-ctx.Done()
+		pw.CloseWithError(io.EOF)
+	}()
+
 	rf, formatter, err := grpcurl.RequestParserAndFormatter(
 		grpcurl.FormatJSON, source, pr, grpcurl.FormatOptions{EmitJSONDefaultFields: true})
 	if err != nil {
@@ -117,6 +126,15 @@ func Stream(protoDir string, conn *websocket.Conn) error {
 		}
 	}()
 	send := func(f outFrame) {
+		// Prefer the buffered channel: once ctx is cancelled (e.g. by a cancel
+		// frame) sendCh <- f and <-ctx.Done() can both be ready at once, and a
+		// bare select would drop terminal frames like "end" about half the time.
+		// Only fall back to the ctx-aware select if the buffer is actually full.
+		select {
+		case sendCh <- f:
+			return
+		default:
+		}
 		select {
 		case sendCh <- f:
 		case <-ctx.Done():

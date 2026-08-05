@@ -187,3 +187,44 @@ func TestStreamBidi(t *testing.T) {
 		t.Errorf("bidi echo expected 2 messages, got %d (%v)", msgs, typesOf(frames))
 	}
 }
+
+func TestStreamCancel(t *testing.T) {
+	target := startServer(t, false)
+	srv := streamServer(t)
+	defer srv.Close()
+	c := dialWS(t, srv)
+	defer c.Close()
+
+	c.WriteJSON(map[string]any{"type": "init", "request": map[string]any{
+		"target": target, "symbol": "shop.v1.UserService/Chat",
+	}})
+	c.WriteJSON(map[string]any{"type": "send", "data": json.RawMessage(`{"id":1}`)})
+	c.WriteJSON(map[string]any{"type": "cancel"})
+
+	frames := collect(t, c)
+	got := typesOf(frames)
+	ended := false
+	for _, g := range got {
+		if g == "end" {
+			ended = true
+		}
+	}
+	if !ended {
+		t.Errorf("cancel did not produce an end frame; got %v", got)
+	}
+}
+
+func TestStreamRejectsMissingTarget(t *testing.T) {
+	srv := streamServer(t)
+	defer srv.Close()
+	c := dialWS(t, srv)
+	defer c.Close()
+
+	c.WriteJSON(map[string]any{"type": "init", "request": map[string]any{"symbol": "x/y"}})
+
+	frames := collect(t, c)
+	got := typesOf(frames)
+	if len(got) == 0 || got[0] != "error" {
+		t.Errorf("expected leading error frame for missing target; got %v", got)
+	}
+}
