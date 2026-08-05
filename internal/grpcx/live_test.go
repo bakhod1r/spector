@@ -53,6 +53,21 @@ func (s *userServer) StreamUsers(req *shoppb.ListUsersRequest, stream shoppb.Use
 	return nil
 }
 
+func (s *userServer) Chat(stream shoppb.UserService_ChatServer) error {
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(&shoppb.User{Id: req.Id, Name: "echo"}); err != nil {
+			return err
+		}
+	}
+}
+
 // startServer brings up a real gRPC server on an ephemeral port. withReflection
 // controls whether the reflection service is registered, which is what decides
 // the descriptor source when no .proto files are available.
