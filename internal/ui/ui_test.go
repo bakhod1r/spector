@@ -28,10 +28,27 @@ func TestControlsHaveMarkup(t *testing.T) {
 		"collPane", "histPane", "envOverlay", "envClose",
 		"catNav", "catSect", "collGroup", "histGroup",
 		"exportBtn", "importBtn", "importFile",
+		"grpcConnect", "grpcSend", "grpcHalfClose", "grpcCancel",
 	}
 	for _, id := range ids {
 		if !strings.Contains(page, `id="`+id+`"`) {
 			t.Errorf("no element with id=%q, but the script queries it", id)
+		}
+	}
+}
+
+// The gRPC panel must open a live WebSocket to grpc/stream and speak the frame
+// protocol the Go side implements. Renaming either silently breaks streaming.
+func TestGrpcStreamContract(t *testing.T) {
+	page := string(Page)
+	for _, want := range []string{
+		`grpc/stream`,
+		`"halfClose"`,
+		`"cancel"`,
+		`"init"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("gRPC streaming page missing %s", want)
 		}
 	}
 }
