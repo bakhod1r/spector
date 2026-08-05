@@ -78,24 +78,6 @@ func newMCPServer() *server.MCPServer {
 		mcp.WithString("config", mcp.Description("JSON config file (default: specter.json in dir, if present)")),
 	), handleGenerateSDK)
 
-	s.AddTool(mcp.NewTool("generate_admin",
-		mcp.WithDescription("Generate a gin admin panel for the scanned API and return the source files as JSON: [{name, content}]. Nothing is written to disk."),
-		mcp.WithString("dir", mcp.Required(), mcp.Description("directory to scan")),
-		mcp.WithString("package", mcp.Description("package name for the generated panel (default: admin)")),
-		mcp.WithString("prefix", mcp.Description("path the panel is served under (default: /admin)")),
-		mcp.WithString("base_url", mcp.Description("base URL the panel calls (default: the document's first server)")),
-		mcp.WithString("import_path", mcp.Description("import path of the generated package; without it no standalone entrypoint is written")),
-		mcp.WithString("adapter", mcp.Description("framework adapter; autodetected if empty")),
-		mcp.WithString("config", mcp.Description("JSON config file (default: specter.json in dir, if present)")),
-	), handleGenerateAdmin)
-
-	s.AddTool(mcp.NewTool("admin_model",
-		mcp.WithDescription("Report the resources an admin panel would contain, without generating any files. A dry run for generate_admin."),
-		mcp.WithString("dir", mcp.Required(), mcp.Description("directory to scan")),
-		mcp.WithString("adapter", mcp.Description("framework adapter; autodetected if empty")),
-		mcp.WithString("config", mcp.Description("JSON config file (default: specter.json in dir, if present)")),
-	), handleAdminModel)
-
 	s.AddTool(mcp.NewTool("mock_request",
 		mcp.WithDescription("Call one documented path against specter's in-process mock and return the status, headers and body it answers with. No port is opened. The mock is shape, not state: it answers from the response schema, so repeated calls return the same body."),
 		mcp.WithString("dir", mcp.Required(), mcp.Description("directory to scan")),
@@ -241,39 +223,6 @@ func handleGenerateSDK(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		out = append(out, genFile{Name: f.Name, Content: string(f.Data)})
 	}
 	return jsonResult(out)
-}
-
-func handleGenerateAdmin(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	cfg, err := mcpConfig(req)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	files, err := specter.GenerateAdmin(cfg, specter.AdminOptions{
-		Package:    req.GetString("package", ""),
-		Prefix:     req.GetString("prefix", ""),
-		BaseURL:    req.GetString("base_url", ""),
-		ImportPath: req.GetString("import_path", ""),
-	})
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	out := make([]genFile, 0, len(files))
-	for _, f := range files {
-		out = append(out, genFile{Name: f.Name, Content: string(f.Data)})
-	}
-	return jsonResult(out)
-}
-
-func handleAdminModel(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	cfg, err := mcpConfig(req)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	model, err := specter.AdminModel(cfg)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return jsonResult(model)
 }
 
 // handleMockRequest runs the request through the mock handler directly rather

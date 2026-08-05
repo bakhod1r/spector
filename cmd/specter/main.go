@@ -39,12 +39,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	graphqlDir := fs.String("graphqlDir", "", "directory to scan for GraphQL sources (defaults to -dir)")
 	lintOnly := fs.Bool("lint", false, "report routing problems instead of a document; exits 1 if any are found")
 	all := fs.Bool("all", false, "write openapi.json, grpc.json and graphql.json into -o (a directory)")
-	adminOut := fs.String("admin", "", "generate a gin admin panel into this directory (e.g. ./admin)")
-	adminAPI := fs.String("admin-api", "", "base URL the generated panel calls (default: the document's first server)")
-	adminPrefix := fs.String("admin-prefix", "/admin", "path the generated panel is served under")
-	adminPkg := fs.String("admin-package", "", "package name for the generated panel (default: the directory name)")
-	adminImport := fs.String("admin-import", "", "import path of the generated package (default: derived from go.mod)")
-	sdkLang := fs.String("sdk", "", "generate a typed client instead of a document: go, ts, python, js, ruby, php, csharp, rust, kotlin, java")
+	sdkLang := fs.String("sdk", "","generate a typed client instead of a document: go, ts, python, js, ruby, php, csharp, rust, kotlin, java")
 	sdkOut := fs.String("sdk-out", "", "directory the generated client is written into (default ./sdk)")
 	sdkPkg := fs.String("sdk-package", "", "package name for the generated Go client (default: client)")
 	openapiIn := fs.String("openapi", "", "generate the -sdk client from this OpenAPI file (.json/.yaml) instead of scanning source")
@@ -82,6 +77,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	testPkg := fs.String("test-package", "", "package name for the generated test file (default: apitest)")
 	coverageFlag := fs.Bool("coverage", false, "report documentation coverage instead of a document")
 	coverageMin := fs.Float64("coverage-min", 0, "exit 1 when coverage is below this percent (implies -coverage)")
+	strictRoutes := fs.Bool("strict-routes", false, "exit non-zero if any route path cannot be statically resolved")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -187,51 +183,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return watchLoop(cfg.Dir, stderr, emit)
 	}
 
-	// -admin writes a project rather than a document: Go source you own and
-	// edit, not a runtime to configure.
-	if *adminOut != "" {
-		pkg := *adminPkg
-		if pkg == "" {
-			pkg = packageName(*adminOut)
-		}
-		imp := *adminImport
-		if imp == "" {
-			// Derived rather than demanded: the module path plus where the
-			// output sits inside it is exactly what the entrypoint needs, and
-			// asking for it invites a typo that only shows up at build time.
-			imp = importPath(*adminOut)
-			if imp == "" {
-				fmt.Fprintln(stderr, "specter: no go.mod found, so cmd/adminpanel is skipped; pass -admin-import to generate it")
-			}
-		}
-
-		files, gerr := specter.GenerateAdmin(cfg, specter.AdminOptions{
-			Package:    pkg,
-			Prefix:     *adminPrefix,
-			BaseURL:    *adminAPI,
-			ImportPath: imp,
-			Dir:        *adminOut,
-		})
-		if gerr != nil {
-			return fail(gerr)
-		}
-		for _, f := range files {
-			path := filepath.Join(*adminOut, f.Name)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				return fail(err)
-			}
-			if err := os.WriteFile(path, f.Data, 0o644); err != nil {
-				return fail(err)
-			}
-			fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(f.Data))
-		}
-		fmt.Fprintf(stderr, "\nspecter: run it with:\n  go run ./%s/cmd/adminpanel -api http://localhost:8080 -addr :9090\n",
-			strings.Trim(filepath.ToSlash(*adminOut), "./"))
-		return 0
-	}
-
-	// -sdk writes a typed client the caller owns, in the same spirit as -admin:
-	// source to commit and edit, not a runtime to depend on.
+	// -sdk writes a typed client the caller owns: source to commit and edit,
+	// not a runtime to depend on.
 	if *sdkLang != "" {
 		dir := *sdkOut
 		if dir == "" {
@@ -509,7 +462,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	// regen builds the requested document and marshals it. It is a closure
 	// rather than straight-line code so -watch can re-run exactly what the
-	// first pass did, with the same flags applied.
+	// first pass did, with the same flags applied. Diagnostics are emitted
+	// here, inside the closure, so every regen — the first pass and every
+	// -watch re-run — reports dynamic routes, not just the first.
+	var routeDiags []specter.Diagnostic
+	emitRouteDiags := func() {
+		for _, d := range routeDiags {
+			fmt.Fprintf(stderr, "specter: %s: dynamic %s, cannot infer path (%s)\n", d.Pos, d.Kind, d.Reason)
+		}
+		if n := len(routeDiags); n > 0 {
+			fmt.Fprintf(stderr, "specter: %d route(s) could not be statically resolved\n", n)
+		}
+	}
 	regen := func() ([]byte, error) {
 		var v any
 		switch {
@@ -539,6 +503,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			if len(doc.Paths) == 0 {
 				warnEmpty("routes", *dirFlag)
 			}
+			routeDiags = doc.Diagnostics
+			emitRouteDiags()
 			v = doc
 			// 3.1 is a conversion of the same document, not a second generator, so
 			// everything upstream — adapters, config, middleware — is untouched.
@@ -565,6 +531,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	data, err := regen()
 	if err != nil {
 		return fail(err)
+	}
+
+	if len(routeDiags) > 0 && *strictRoutes {
+		return 1
 	}
 
 	if *out == "" {
@@ -664,7 +634,6 @@ type fileConfig struct {
 	Servers  []specter.Server                  `json:"servers"`
 	Security map[string]specter.SecurityScheme `json:"security"`
 	BasePath string                            `json:"basePath"`
-	AdminURL string                            `json:"adminUrl"`
 	// AccessKey gates the console. It is read here so one file describes the
 	// whole deployment, but it has no effect on the document the CLI writes.
 	AccessKey string `json:"accessKey"`
@@ -712,7 +681,6 @@ func applyConfigFile(cfg *specter.Config, fs *flag.FlagSet, path, dir string) er
 	cfg.Servers = fc.Servers
 	cfg.Security = fc.Security
 	cfg.BasePath = fc.BasePath
-	cfg.AdminURL = fc.AdminURL
 	cfg.AccessKey = fc.AccessKey
 	return nil
 }
@@ -748,49 +716,4 @@ func packageName(dir string) string {
 		return "admin"
 	}
 	return name
-}
-
-// importPath derives the generated package's import path from the nearest
-// go.mod and where the output directory sits beneath it. It returns "" when
-// there is no module to derive from, which the caller reports rather than
-// guessing a path that would not compile.
-func importPath(out string) string {
-	abs, err := filepath.Abs(out)
-	if err != nil {
-		return ""
-	}
-	dir := abs
-	for {
-		data, rerr := os.ReadFile(filepath.Join(dir, "go.mod"))
-		if rerr == nil {
-			module := moduleOf(data)
-			if module == "" {
-				return ""
-			}
-			rel, rerr := filepath.Rel(dir, abs)
-			if rerr != nil || rel == "." {
-				return module
-			}
-			// An output outside the module cannot be imported from it.
-			if strings.HasPrefix(rel, "..") {
-				return ""
-			}
-			return module + "/" + filepath.ToSlash(rel)
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
-}
-
-func moduleOf(gomod []byte) string {
-	for _, line := range strings.Split(string(gomod), "\n") {
-		line = strings.TrimSpace(line)
-		if rest, ok := strings.CutPrefix(line, "module"); ok {
-			return strings.Trim(strings.TrimSpace(rest), `"`)
-		}
-	}
-	return ""
 }

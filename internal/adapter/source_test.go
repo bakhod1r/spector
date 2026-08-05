@@ -32,7 +32,7 @@ func adapters() map[string]core.Adapter {
 func scan(t *testing.T, name string, a core.Adapter) (string, []core.Route) {
 	t.Helper()
 	dir := filepath.Join(name, "testdata", "sample")
-	routes, _, err := a.Scan(dir)
+	routes, _, _, err := a.Scan(dir)
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}

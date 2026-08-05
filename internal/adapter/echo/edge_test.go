@@ -5,7 +5,7 @@ import "testing"
 // TestScanEdge covers Match with selector method constants, non-literal
 // method lists, dynamic paths and group prefixes, and bare-star wildcards.
 func TestScanEdge(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan("testdata/edge")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/edge")
 	if err != nil {
 		t.Fatal(err)
 	}

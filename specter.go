@@ -1,7 +1,6 @@
 package specter
 
 import (
-	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -31,7 +30,6 @@ import (
 	gorillamuxadapter "github.com/user/specter/internal/adapter/gorillamux"
 	httprouteradapter "github.com/user/specter/internal/adapter/httprouter"
 	stdlibadapter "github.com/user/specter/internal/adapter/stdlib"
-	"github.com/user/specter/internal/admin"
 	"github.com/user/specter/internal/advice"
 	"github.com/user/specter/internal/contract"
 	"github.com/user/specter/internal/core"
@@ -68,6 +66,10 @@ type (
 	GraphqlDoc = core.GraphqlDoc
 	Schema     = core.Schema
 	Operation  = core.Operation
+
+	// Diagnostic reports a route whose path could not be statically
+	// resolved. Generate attaches these to Document.Diagnostics.
+	Diagnostic = core.Diagnostic
 )
 
 type Config struct {
@@ -94,11 +96,6 @@ type Config struct {
 	// A leading slash is added and a trailing one removed, so "docs",
 	// "/docs" and "/docs/" all mean the same thing.
 	BasePath string
-
-	// AdminURL, when set, adds an "Admin panel" button to the console that
-	// links there. It is only a link — the panel authenticates on its own, so
-	// pointing at it does not expose it. Empty hides the button.
-	AdminURL string
 
 	// AccessKey gates the console behind a shared secret. Empty (the default)
 	// serves it to anyone who can reach the route.
@@ -252,7 +249,7 @@ type (
 // scan rather than OpenAPI.
 func ScanRoutes(cfg Config) ([]Route, error) {
 	cfg = cfg.withDefaults()
-	routes, _, err := adapterFor(cfg).Scan(cfg.Dir)
+	routes, _, _, err := adapterFor(cfg).Scan(cfg.Dir)
 	return routes, err
 }
 
@@ -425,29 +422,6 @@ func revisionDoc(cfg Config, rev string) (*Document, error) {
 	return Generate(baseCfg)
 }
 
-// AdminOptions configures the generated admin panel.
-type AdminOptions = admin.Options
-
-// AdminFile is one generated file, named relative to the output directory.
-type AdminFile = admin.File
-
-// GenerateAdmin builds an admin panel from the scanned API: a master list per
-// resource, a read-only detail view, and per-row actions limited to the
-// operations the API actually has.
-//
-// It returns source rather than serving anything. An admin panel is where
-// per-project judgement lives — which column matters, which field is a secret,
-// what a status value means — and none of that is in an OpenAPI document. The
-// generated code is a starting point that compiles, not a framework to
-// configure.
-func GenerateAdmin(cfg Config, opts AdminOptions) ([]AdminFile, error) {
-	doc, err := Generate(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return admin.Generate(doc, opts)
-}
-
 // ContractOptions configures the generated contract artefacts.
 type ContractOptions = contract.Options
 
@@ -463,25 +437,14 @@ type ContractFile = contract.File
 // failure that makes documentation worse than none — it is believed. These
 // artefacts are what makes the drift fail a build instead.
 //
-// Like the admin panel, the output is source rather than a runtime: the first
-// version is free and every version after it belongs to the project.
+// The output is source rather than a runtime: the first version is free and
+// every version after it belongs to the project.
 func GenerateContract(cfg Config, opts ContractOptions) ([]ContractFile, error) {
 	doc, err := Generate(cfg)
 	if err != nil {
 		return nil, err
 	}
 	return contract.Generate(doc, opts)
-}
-
-// AdminModel reports the resources GenerateAdmin would produce, without
-// generating anything. It answers "what would the panel contain?" — useful for
-// a dry run before writing files into a project.
-func AdminModel(cfg Config) (admin.Model, error) {
-	doc, err := Generate(cfg)
-	if err != nil {
-		return admin.Model{}, err
-	}
-	return admin.Build(doc), nil
 }
 
 // SDKOptions configures the client generator: language ("ts" or "go"),
@@ -492,8 +455,8 @@ type SDKOptions = sdk.Options
 type SDKFile = sdk.File
 
 // GenerateSDK builds a typed client for the scanned API in the requested
-// language. Like GenerateAdmin it returns source rather than serving anything:
-// the output has no dependency beyond the standard library (net/http, fetch)
+// language. It returns source rather than serving anything: the output has no
+// dependency beyond the standard library (net/http, fetch)
 // and is meant to be committed and edited.
 func GenerateSDK(cfg Config, opts SDKOptions) ([]SDKFile, error) {
 	doc, err := Generate(cfg)
@@ -568,11 +531,12 @@ func normalizeYAML(v interface{}) interface{} {
 
 func Generate(cfg Config) (*core.Document, error) {
 	cfg = cfg.withDefaults()
-	routes, schemas, err := adapterFor(cfg).Scan(cfg.Dir)
+	routes, schemas, diags, err := adapterFor(cfg).Scan(cfg.Dir)
 	if err != nil {
 		return nil, err
 	}
 	doc := gen.Build(cfg.Title, cfg.Version, routes, schemas)
+	doc.Diagnostics = diags
 	applyInferredSchemes(doc, routes)
 	applyDeclared(doc, cfg)
 	applyAdvice(doc)
@@ -977,28 +941,6 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(pageWith(cfg))
+		w.Write(ui.Page)
 	})
-}
-
-// pageWith injects runtime settings the console cannot infer — currently just
-// the admin panel URL — as a script tag before </head>. When there is nothing
-// to inject the embedded page is served unchanged.
-func pageWith(cfg Config) []byte {
-	if cfg.AdminURL == "" {
-		return ui.Page
-	}
-	cfgJSON, err := json.Marshal(map[string]string{"adminUrl": cfg.AdminURL})
-	if err != nil {
-		return ui.Page
-	}
-	tag := []byte("<script>window.__specter=" + string(cfgJSON) + "</script></head>")
-	if i := bytes.Index(ui.Page, []byte("</head>")); i >= 0 {
-		out := make([]byte, 0, len(ui.Page)+len(tag))
-		out = append(out, ui.Page[:i]...)
-		out = append(out, tag...)
-		out = append(out, ui.Page[i+len("</head>"):]...)
-		return out
-	}
-	return ui.Page
 }

@@ -19,7 +19,7 @@ func routeMap(routes []core.Route) map[string]core.Route {
 // name. Getting this wrong leaks a guard onto sibling subtrees, and the
 // document looks entirely plausible while being wrong.
 func TestMiddlewareInferred(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan("testdata/sample")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestMiddlewareInferred(t *testing.T) {
 
 func TestScan(t *testing.T) {
 	a := &Adapter{}
-	routes, schemas, err := a.Scan("testdata/sample")
+	routes, schemas, _, err := a.Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,5 +103,37 @@ func TestScan(t *testing.T) {
 	create, ok := m["post /api/v1/users"]
 	if !ok || create.RequestType != "CreateUserReq" || create.ResponseType != "User" {
 		t.Errorf("create = %+v", create)
+	}
+}
+
+func TestChiResolvesConstAndConcatRoutes(t *testing.T) {
+	routes, _, _, err := (&Adapter{}).Scan("testdata/constroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range routes {
+		got[r.Method+" "+r.Path] = true
+	}
+	for _, want := range []string{"get /users/{id}", "get /api/v1/health"} {
+		if !got[want] {
+			t.Errorf("missing route %q; got %v", want, got)
+		}
+	}
+}
+
+func TestChiReportsDynamicRoute(t *testing.T) {
+	_, _, diags, err := (&Adapter{}).Scan("testdata/dynroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 1 {
+		t.Fatalf("diags = %d, want 1: %+v", len(diags), diags)
+	}
+	if diags[0].Kind != "route" {
+		t.Errorf("kind = %q, want route", diags[0].Kind)
+	}
+	if diags[0].Pos.Line == 0 || diags[0].Pos.Filename == "" {
+		t.Errorf("diagnostic has no source position: %+v", diags[0])
 	}
 }

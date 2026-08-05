@@ -252,7 +252,7 @@ func TestMCPAllToolsRegistered(t *testing.T) {
 	for _, want := range []string{
 		"generate_openapi", "generate_grpc", "generate_graphql",
 		"scan_routes", "lint_routes",
-		"generate_sdk", "generate_admin", "admin_model", "mock_request",
+		"generate_sdk", "mock_request",
 	} {
 		if !got[want] {
 			t.Errorf("tool %s not registered (got %v)", want, resp.Result.Tools)
@@ -373,66 +373,6 @@ func TestMCPGenerateSDKBadLangIsToolError(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("unsupported lang did not produce a tool error")
-	}
-}
-
-func TestMCPGenerateAdmin(t *testing.T) {
-	res, err := handleGenerateAdmin(context.Background(), callReq(map[string]any{
-		"dir":     "../../examples/ginapp",
-		"package": "panel",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	files := decodeFiles(t, res)
-	found := false
-	for _, f := range files {
-		if strings.Contains(f.Content, "package panel") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("generated panel does not use the requested package name")
-	}
-}
-
-// Without import_path there is no standalone entrypoint, because a main.go
-// importing an unresolvable path would not build.
-func TestMCPGenerateAdminEntrypointNeedsImportPath(t *testing.T) {
-	without, err := handleGenerateAdmin(context.Background(), callReq(map[string]any{
-		"dir": "../../examples/ginapp",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	with, err := handleGenerateAdmin(context.Background(), callReq(map[string]any{
-		"dir":         "../../examples/ginapp",
-		"import_path": "example.com/app/admin",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(decodeFiles(t, with)) <= len(decodeFiles(t, without)) {
-		t.Fatal("import_path did not add the standalone entrypoint")
-	}
-}
-
-func TestMCPAdminModel(t *testing.T) {
-	res, err := handleAdminModel(context.Background(), callReq(map[string]any{
-		"dir": "../../examples/ginapp",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.IsError {
-		t.Fatalf("tool error: %s", textOf(t, res))
-	}
-	var model map[string]any
-	if err := json.Unmarshal([]byte(textOf(t, res)), &model); err != nil {
-		t.Fatal(err)
-	}
-	if len(model) == 0 {
-		t.Fatal("admin model is empty")
 	}
 }
 

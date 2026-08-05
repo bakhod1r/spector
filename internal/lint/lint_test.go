@@ -10,7 +10,7 @@ import (
 
 func fixture(t *testing.T) []Finding {
 	t.Helper()
-	routes, _, err := (&ginadapter.Adapter{}).Scan("testdata/app")
+	routes, _, _, err := (&ginadapter.Adapter{}).Scan("testdata/app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestAnalyzeOnMissingDir(t *testing.T) {
 
 // The example the project ships must be clean, or the check has no credibility.
 func TestShopExampleIsClean(t *testing.T) {
-	routes, _, err := (&ginadapter.Adapter{}).Scan("../../examples/shop")
+	routes, _, _, err := (&ginadapter.Adapter{}).Scan("../../examples/shop")
 	if err != nil {
 		t.Fatal(err)
 	}

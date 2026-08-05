@@ -119,104 +119,6 @@ func TestAllWriteFileFailureExits1(t *testing.T) {
 	}
 }
 
-// ---- -admin ----
-
-func TestAdminGeneratesIntoModule(t *testing.T) {
-	dir := writeTree(t, map[string]string{
-		"go.mod":  "module example.com/app\n",
-		"main.go": ginSrc,
-	})
-	adminDir := filepath.Join(dir, "admin")
-	code, _, stderr := exec(t, "-dir", dir, "-admin", adminDir)
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr: %s", code, stderr)
-	}
-	for _, name := range []string{"admin.go", "resources.go", "cmd/adminpanel/main.go", "templates/list.html"} {
-		if _, err := os.Stat(filepath.Join(adminDir, name)); err != nil {
-			t.Errorf("%s not written: %v", name, err)
-		}
-	}
-	entry, err := os.ReadFile(filepath.Join(adminDir, "cmd", "adminpanel", "main.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(entry), "example.com/app/admin") {
-		t.Errorf("entrypoint does not import the derived path:\n%s", entry)
-	}
-	if !strings.Contains(stderr, "go run") {
-		t.Errorf("stderr = %q, want a run hint", stderr)
-	}
-}
-
-func TestAdminPackageAndImportOverrides(t *testing.T) {
-	dir := writeTree(t, map[string]string{"main.go": ginSrc})
-	adminDir := filepath.Join(t.TempDir(), "panel")
-	code, _, stderr := exec(t, "-dir", dir, "-admin", adminDir,
-		"-admin-package", "custompkg", "-admin-import", "example.com/x/panel")
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr: %s", code, stderr)
-	}
-	src, err := os.ReadFile(filepath.Join(adminDir, "admin.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(src), "package custompkg") {
-		t.Errorf("admin.go does not use the overridden package:\n%.200s", src)
-	}
-}
-
-// Without a go.mod there is no import path, so the entrypoint is skipped with a
-// message rather than generated broken.
-func TestAdminWithoutGoModSkipsEntrypoint(t *testing.T) {
-	dir := writeTree(t, map[string]string{"main.go": ginSrc})
-	adminDir := filepath.Join(t.TempDir(), "admin")
-	code, _, stderr := exec(t, "-dir", dir, "-admin", adminDir)
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr: %s", code, stderr)
-	}
-	if !strings.Contains(stderr, "no go.mod found") {
-		t.Errorf("stderr = %q, want the skip message", stderr)
-	}
-	if _, err := os.Stat(filepath.Join(adminDir, "cmd", "adminpanel", "main.go")); !os.IsNotExist(err) {
-		t.Error("entrypoint was generated without an import path")
-	}
-}
-
-func TestAdminGenerateErrorExits1(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	code, _, stderr := exec(t, "-dir", missing, "-admin", filepath.Join(t.TempDir(), "admin"))
-	if code != 1 {
-		t.Errorf("exit = %d, want 1", code)
-	}
-	if !strings.Contains(stderr, "specter:") {
-		t.Errorf("stderr = %q, want a prefixed error", stderr)
-	}
-}
-
-// The output path sits under a file, so MkdirAll fails.
-func TestAdminMkdirFailureExits1(t *testing.T) {
-	dir := writeTree(t, map[string]string{"main.go": ginSrc})
-	blockedRoot := writeTree(t, map[string]string{"file.txt": "x"})
-	blocked := filepath.Join(blockedRoot, "file.txt", "admin")
-	code, _, stderr := exec(t, "-dir", dir, "-admin", blocked, "-admin-import", "example.com/x/admin")
-	if code != 1 {
-		t.Errorf("exit = %d, want 1, stderr: %s", code, stderr)
-	}
-}
-
-// A directory squatting on admin.go makes the write fail.
-func TestAdminWriteFileFailureExits1(t *testing.T) {
-	dir := writeTree(t, map[string]string{"main.go": ginSrc})
-	adminDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(adminDir, "admin.go"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	code, _, stderr := exec(t, "-dir", dir, "-admin", adminDir, "-admin-import", "example.com/x/admin")
-	if code != 1 {
-		t.Errorf("exit = %d, want 1, stderr: %s", code, stderr)
-	}
-}
-
 // ---- -mock ----
 
 // An unlistenable address makes ServeMock fail after the banners are printed.
@@ -322,24 +224,5 @@ func TestConfigFileSetsAdapter(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "/widgets") {
 		t.Errorf("stdout does not contain the route:\n%s", stdout)
-	}
-}
-
-// ---- importPath ----
-
-// A go.mod without a module line yields no import path.
-func TestImportPathEmptyModule(t *testing.T) {
-	dir := writeTree(t, map[string]string{"go.mod": "// no module line\n"})
-	if got := importPath(dir); got != "" {
-		t.Errorf("importPath = %q, want empty for a module-less go.mod", got)
-	}
-}
-
-// go.mod in the output directory itself: rel is "." and the module path alone
-// is the import path.
-func TestImportPathAtModuleRoot(t *testing.T) {
-	dir := writeTree(t, map[string]string{"go.mod": "module example.com/root\n"})
-	if got := importPath(dir); got != "example.com/root" {
-		t.Errorf("importPath = %q, want example.com/root", got)
 	}
 }

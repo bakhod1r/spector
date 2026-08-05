@@ -64,11 +64,6 @@ specter -graphql -dir ./graph -o graphql.json
 | `-mock-origin` | Comma-separated origins allowed to call the mock (default any) |
 | `-mock-credentials` | Allow cookies and `Authorization` headers on mock requests |
 | `-mock-max-age` | Seconds a browser may cache the mock's CORS preflight |
-| `-admin`      | Generate a gin admin panel into this directory, e.g. `./admin` |
-| `-admin-api`  | Base URL the generated panel calls (default: the document's first server) |
-| `-admin-prefix` | Path the panel is served under (default `/admin`)        |
-| `-admin-package` | Package name for the generated panel (default: the directory name) |
-| `-admin-import` | Import path of the generated package (derived from `go.mod`) |
 | `-postman`    | Export a Postman collection v2.1 (Insomnia imports it too) |
 | `-postman-env` | Export a Postman environment (`baseUrl` and auth placeholders) instead of the collection |
 | `-markdown`   | Export static Markdown API docs                            |
@@ -117,9 +112,9 @@ api = Client("https://api.example.com", token=token)
 users = api.list_users()  # list[User]
 ```
 
-The output is source you own, in the same spirit as the admin panel: commit it,
-edit it, and regenerate when the API changes. It is not a framework to
-configure, and nothing imports specter at runtime.
+The output is source you own: commit it, edit it, and regenerate when the API
+changes. It is not a framework to configure, and nothing imports specter at
+runtime.
 
 #### From an OpenAPI document
 
@@ -161,7 +156,6 @@ and the CLI writes the same document the embedded console serves:
     "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
   },
   "basePath": "/docs",
-  "adminUrl": "/admin",
   "accessKey": ""
 }
 ```
@@ -441,8 +435,8 @@ Flags: `-contract-format` selects `http,go,curl`; `-contract-api` sets the base
 URL (default: the document's first server); `-contract-package` names the Go
 package (default: the directory name).
 
-The output is source, like the admin panel — the first version is free and every
-version after it is yours.
+The output is source — the first version is free and every version after it is
+yours.
 
 ## API evolution
 
@@ -676,69 +670,6 @@ Each operation becomes one entry with a request body sampled from its schema and
 a response seeded from the lowest documented status, so the archive replays as a
 realistic set of example calls. URLs are absolute against the first server, or
 relative when the document names none.
-
-## Admin panel
-
-Generate a working admin panel from the scanned API:
-
-```sh
-specter -admin ./admin -dir .
-go run ./admin/cmd/adminpanel -api http://localhost:8080 -addr :9090
-```
-
-It runs on its own router and its own port. The panel is an HTTP client of your
-API — it never touches your database, and nothing in your service changes to run
-it. Mount it into an existing router instead if you prefer:
-
-```go
-admin.Mount(r, admin.Config{BaseURL: "http://localhost:8080", Prefix: "/admin"})
-```
-
-Each resource gets a master table, a read-only detail view, and a per-row menu.
-
-**The menu is derived, never assumed.** Entries exist only where the endpoint
-does:
-
-| Endpoint found            | What appears        |
-|---------------------------|---------------------|
-| `GET /users`              | the resource itself |
-| `GET /users/{id}`         | row click, "View"   |
-| `POST /users`             | the "New" button    |
-| `PUT` / `PATCH /users/{id}` | "Edit"            |
-| `DELETE /users/{id}`      | "Delete"            |
-
-A read-only API generates a read-only screen. A button that exists and does
-nothing is worse than no button, so none is rendered.
-
-**Labels come from your handler names.** A `POST /carts` whose handler is
-`openCart` gets a button reading "Open Cart", not a generic "Create" — that is
-the name your team chose. Collection titles come from the path instead, since
-`/categories` is spelled correctly where `listCategorys` is not.
-
-Columns come from the list response schema, forms from the request body schema:
-`binding:"required"` marks a field required, `oneof` becomes a `<select>`, and
-nested objects are edited as JSON rather than silently flattened.
-
-A collection with no `GET` list endpoint is not made into a resource, and
-WebSocket/SSE endpoints are excluded — neither has a table to fill.
-
-### What it does not know
-
-An OpenAPI document carries paths, schemas and security. It does not carry
-which column matters, which field is a secret, what a status value means, or how
-two resources relate. That is why `-admin` emits **source rather than a
-runtime**: `resources.go` is regenerated and marked `DO NOT EDIT`, while
-`admin.go` and `templates/` are yours to change and are never overwritten by
-intent.
-
-If the API is guarded, pass the credential through:
-
-```sh
-go run ./admin/cmd/adminpanel -header "Authorization:Bearer $TOKEN"
-```
-
-The panel reads required headers off the spec, so it warns at startup when the
-API is guarded and no header was supplied.
 
 ## Linting routes
 
@@ -1005,8 +936,16 @@ catches a misreading of the protocol.
 
 ## Limitations
 
-- REST inference is AST-based; dynamically registered routes or params built
-  from non-literal values are not detected.
+- REST inference is AST-based. Route paths and group prefixes built from
+  package-level string constants/vars and `+` concatenations resolve just
+  like literals; function-local `:=` short variables do not yet resolve.
+  A path that is genuinely dynamic — built in a loop, from a slice/map, or
+  from a function return — is reported to stderr as a diagnostic instead of
+  silently dropped. Pass `-strict-routes` to turn any such diagnostic into a
+  non-zero exit, for CI. Resolution is not scope-aware: a function-local
+  variable that shadows a same-named package-level const/var currently
+  resolves to the package-level value, so give local route-path variables
+  distinct names.
 - net/http grouping uses the sub-mux + `http.StripPrefix` idiom, and sub-muxes
   nest: a mux mounted on a mux mounted on the root composes every prefix and
   guard onto the leaf routes (the standard mux has no native groups).

@@ -245,7 +245,6 @@
   <input class="search" id="search" placeholder="Filter endpoints…">
   <button id="runAllBtn" class="primary" title="Run every endpoint in this tab and check status + response schema">Run all</button>
   <a class="linkbtn" href="openapi.json" download="openapi.json"><button>Spec</button></a>
-  <a class="linkbtn hidden" id="adminLink"><button>Admin panel</button></a>
   <button id="exportBtn" title="Export collections, environments and history">Export</button>
   <button id="importBtn" title="Import a Specter collection file">Import</button>
   <input type="file" id="importFile" accept="application/json,.json" class="hidden">
@@ -542,14 +541,6 @@ async function load() {
   try { GRAPHQL = await (await fetch("graphql.json")).json(); } catch (e) { GRAPHQL = null; }
   document.getElementById("title").textContent = SPEC.info.title || "API";
   document.getElementById("ver").textContent = SPEC.info.version || "";
-  // The admin panel link appears only when the server injected its URL; the
-  // panel does its own authentication, so linking to it exposes nothing.
-  var adminUrl = (window.__specter || {}).adminUrl;
-  if (adminUrl) {
-    var link = document.getElementById("adminLink");
-    link.href = adminUrl;
-    link.classList.remove("hidden");
-  }
   renderEnvSelector();
   renderSide();
   wireToolbar();

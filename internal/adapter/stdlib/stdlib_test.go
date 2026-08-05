@@ -16,7 +16,7 @@ func routeMap(routes []core.Route) map[string]core.Route {
 
 func TestScan(t *testing.T) {
 	a := &Adapter{}
-	routes, schemas, err := a.Scan("testdata/sample")
+	routes, schemas, _, err := a.Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestScan(t *testing.T) {
 // the only place a guard shows up. A scan that ignored them would document
 // every one of these endpoints as public.
 func TestMiddlewareInferred(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan("testdata/sample")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,5 +125,37 @@ func TestSplitPattern(t *testing.T) {
 	}
 	if _, _, ok := splitPattern("/no-method"); ok {
 		t.Error("expected methodless pattern to be skipped")
+	}
+}
+
+func TestStdlibResolvesConstAndConcatRoutes(t *testing.T) {
+	routes, _, _, err := (&Adapter{}).Scan("testdata/constroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range routes {
+		got[r.Method+" "+r.Path] = true
+	}
+	for _, want := range []string{"get /users/{id}", "get /api/health"} {
+		if !got[want] {
+			t.Errorf("missing route %q; got %v", want, got)
+		}
+	}
+}
+
+func TestStdlibReportsDynamicRoute(t *testing.T) {
+	_, _, diags, err := (&Adapter{}).Scan("testdata/dynroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 1 {
+		t.Fatalf("diags = %d, want 1: %+v", len(diags), diags)
+	}
+	if diags[0].Kind != "route" {
+		t.Errorf("kind = %q, want route", diags[0].Kind)
+	}
+	if diags[0].Pos.Line == 0 || diags[0].Pos.Filename == "" {
+		t.Errorf("diagnostic has no source position: %+v", diags[0])
 	}
 }

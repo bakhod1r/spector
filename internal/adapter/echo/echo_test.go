@@ -16,7 +16,7 @@ func routeMap(routes []core.Route) map[string]core.Route {
 
 func scan(t *testing.T) (map[string]core.Route, map[string]*core.Schema) {
 	t.Helper()
-	routes, schemas, err := (&Adapter{}).Scan("testdata/sample")
+	routes, schemas, _, err := (&Adapter{}).Scan("testdata/sample")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,18 +210,34 @@ func TestMiddlewareInferred(t *testing.T) {
 }
 
 func TestScanMissingDirErrors(t *testing.T) {
-	if _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
+	if _, _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
 		t.Error("expected an error for a missing dir")
 	}
 }
 
 func TestScanEmptyDir(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan(t.TempDir())
+	routes, _, _, err := (&Adapter{}).Scan(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(routes) != 0 {
 		t.Errorf("routes = %v, want none", routes)
+	}
+}
+
+func TestEchoResolvesConstAndConcatRoutes(t *testing.T) {
+	routes, _, _, err := (&Adapter{}).Scan("testdata/constroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range routes {
+		got[r.Method+" "+r.Path] = true
+	}
+	for _, want := range []string{"get /users/{id}", "get /api/v1/health"} {
+		if !got[want] {
+			t.Errorf("missing route %q; got %v", want, got)
+		}
 	}
 }
 
@@ -231,4 +247,20 @@ func keys[V any](m map[string]V) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestEchoReportsDynamicRoute(t *testing.T) {
+	_, _, diags, err := (&Adapter{}).Scan("testdata/dynroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 1 {
+		t.Fatalf("diags = %d, want 1: %+v", len(diags), diags)
+	}
+	if diags[0].Kind != "route" {
+		t.Errorf("kind = %q, want route", diags[0].Kind)
+	}
+	if diags[0].Pos.Line == 0 || diags[0].Pos.Filename == "" {
+		t.Errorf("diagnostic has no source position: %+v", diags[0])
+	}
 }

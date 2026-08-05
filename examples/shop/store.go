@@ -14,9 +14,8 @@ import (
 // store is a small SQLite backing for the shop example.
 //
 // Its purpose is to make the example a real API rather than a set of handlers
-// returning empty slices: an admin panel generated from this service can then
-// list, create, edit and delete actual rows, which is the only way to see
-// whether the panel works.
+// returning empty slices, so a client of this service can list, create, edit
+// and delete actual rows.
 //
 // The nested parts of each record (addresses, tags, line items) are stored as
 // JSON columns. A normalised schema would be more faithful to how a production

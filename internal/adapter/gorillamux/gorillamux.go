@@ -32,11 +32,11 @@ type Adapter struct{}
 
 func (a *Adapter) Name() string { return "gorillamux" }
 
-func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error) {
+func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	scanner := core.NewStructScanner()
@@ -61,8 +61,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		}
 	}
 
-	subrouters := collectSubrouters(files)
 	loc := astutil.Locator{Fset: fset, Dir: dir}
+	consts := astutil.StringConsts(files)
+	var diags astutil.Diagnostics
+	subrouters := collectSubrouters(files, consts, loc, &diags)
 
 	// A HandleFunc that is the receiver of a Methods chain is reported by the
 	// chain, not on its own — otherwise the same route appears twice, once per
@@ -86,8 +88,9 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		if sel.Sel.Name != "HandleFunc" && sel.Sel.Name != "Handle" {
 			return
 		}
-		path, ok := astutil.StringLit(reg.Args[0])
+		path, ok := astutil.ResolveString(reg.Args[0], consts)
 		if !ok {
+			diags.Add(loc.Position(reg.Args[0].Pos()), "route", astutil.DescribeExpr(reg.Args[0]))
 			return
 		}
 
@@ -138,7 +141,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		})
 	}
 
-	return routes, scanner.Schemas, nil
+	return routes, scanner.Schemas, diags.List(), nil
 }
 
 // methodsChain unpicks r.HandleFunc(...).Methods("GET", "POST"): it returns
@@ -183,7 +186,7 @@ type subDef struct {
 // collectSubrouters records `s := r.PathPrefix("/api").Subrouter()` so routes
 // registered on s resolve to the full path. Subrouters nest, so each one
 // remembers its receiver.
-func collectSubrouters(files []*ast.File) map[string]subDef {
+func collectSubrouters(files []*ast.File, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) map[string]subDef {
 	subs := map[string]subDef{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -211,8 +214,9 @@ func collectSubrouters(files []*ast.File) map[string]subDef {
 			if !ok || innerSel.Sel.Name != "PathPrefix" || len(inner.Args) < 1 {
 				return true
 			}
-			prefix, ok := astutil.StringLit(inner.Args[0])
+			prefix, ok := astutil.ResolveString(inner.Args[0], consts)
 			if !ok {
+				diags.Add(loc.Position(inner.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(inner.Args[0]))
 				return true
 			}
 			recv := ""

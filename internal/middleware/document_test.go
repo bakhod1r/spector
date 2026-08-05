@@ -16,7 +16,7 @@ import (
 // the middleware findings have to arrive to be worth anything.
 func buildDoc(t *testing.T) *core.Document {
 	t.Helper()
-	routes, schemas, err := (&ginadapter.Adapter{}).Scan("testdata/app")
+	routes, schemas, _, err := (&ginadapter.Adapter{}).Scan("testdata/app")
 	if err != nil {
 		t.Fatal(err)
 	}

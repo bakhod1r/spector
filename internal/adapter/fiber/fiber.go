@@ -32,11 +32,11 @@ type Adapter struct{}
 
 func (a *Adapter) Name() string { return "fiber" }
 
-func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error) {
+func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	scanner := core.NewStructScanner()
@@ -61,18 +61,20 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, error
 		}
 	}
 
-	groups := collectGroups(files)
 	loc := astutil.Locator{Fset: fset, Dir: dir}
+	consts := astutil.StringConsts(files)
+	var diags astutil.Diagnostics
+	groups := collectGroups(files, consts, loc, &diags)
 
 	var routes []core.Route
 	for _, file := range files {
-		collectRoutes(file, groups, handlers, &routes, loc, index, mw)
+		collectRoutes(file, groups, handlers, &routes, loc, index, mw, consts, &diags)
 	}
 
-	return routes, scanner.Schemas, nil
+	return routes, scanner.Schemas, diags.List(), nil
 }
 
-func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index) {
+func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index, consts map[string]string, diags *astutil.Diagnostics) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -86,11 +88,13 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		// app.All("/x", h) registers every method; report the common ones so
 		// the endpoint is not silently missing from the document.
 		if sel.Sel.Name == "All" && len(call.Args) >= 2 {
-			if path, ok := astutil.StringLit(call.Args[0]); ok {
+			if path, ok := astutil.ResolveString(call.Args[0], consts); ok {
 				handler, inline := splitHandlers(call.Args[1:])
 				for _, m := range []string{"get", "post", "put", "patch", "delete"} {
 					addRoute(m, path, handler, inline, sel, call, groups, handlers, routes, loc, index, mw)
 				}
+			} else {
+				diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			}
 			return true
 		}
@@ -108,8 +112,9 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 			if !known {
 				return true
 			}
-			path, ok := astutil.StringLit(call.Args[1])
+			path, ok := astutil.ResolveString(call.Args[1], consts)
 			if !ok {
+				diags.Add(loc.Position(call.Args[1].Pos()), "route", astutil.DescribeExpr(call.Args[1]))
 				return true
 			}
 			handler, inline := splitHandlers(call.Args[2:])
@@ -121,8 +126,9 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		if !ok || len(call.Args) < 2 {
 			return true
 		}
-		path, ok := astutil.StringLit(call.Args[0])
+		path, ok := astutil.ResolveString(call.Args[0], consts)
 		if !ok {
+			diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			return true
 		}
 		handler, inline := splitHandlers(call.Args[1:])
@@ -189,7 +195,7 @@ type groupDef struct {
 // collectGroups records `v := app.Group("/prefix", mw...)` so routes registered
 // on v resolve to the full path. Groups nest, so each one remembers its
 // receiver.
-func collectGroups(files []*ast.File) map[string]groupDef {
+func collectGroups(files []*ast.File, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) map[string]groupDef {
 	groups := map[string]groupDef{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -209,8 +215,9 @@ func collectGroups(files []*ast.File) map[string]groupDef {
 			if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
 				return true
 			}
-			prefix, ok := astutil.StringLit(call.Args[0])
+			prefix, ok := astutil.ResolveString(call.Args[0], consts)
 			if !ok {
+				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 				return true
 			}
 			recv := ""

@@ -4,7 +4,7 @@ import "testing"
 
 // TestScanBrokenDir verifies a parse failure is reported, not swallowed.
 func TestScanBrokenDir(t *testing.T) {
-	if _, _, err := (&Adapter{}).Scan("testdata/broken"); err == nil {
+	if _, _, _, err := (&Adapter{}).Scan("testdata/broken"); err == nil {
 		t.Fatal("Scan of an unparsable dir returned nil error")
 	}
 }
@@ -13,7 +13,7 @@ func TestScanBrokenDir(t *testing.T) {
 // mounts without a nameable handler, ListenAndServe/TLS wrapping, and
 // non-transparent http.* wrappers.
 func TestScanEdge(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan("testdata/edge")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/edge")
 	if err != nil {
 		t.Fatal(err)
 	}

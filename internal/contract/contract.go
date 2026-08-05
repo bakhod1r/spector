@@ -13,10 +13,9 @@
 //   - contract_test.go — the same requests as Go tests, for CI.
 //   - smoke.sh — status codes only, for a pipeline with nothing installed.
 //
-// All three are source, not a runtime. That follows the same reasoning as the
-// generated admin panel: the first version is free and every version after it
-// belongs to the project, which is where the judgement about a particular API
-// actually lives.
+// All three are source, not a runtime: the first version is free and every
+// version after it belongs to the project, which is where the judgement about a
+// particular API actually lives.
 package contract
 
 import (

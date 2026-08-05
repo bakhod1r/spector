@@ -4,7 +4,7 @@ import "testing"
 
 func edgeRouteMap(t *testing.T) map[string]bool {
 	t.Helper()
-	routes, _, err := (&Adapter{}).Scan("testdata/edge")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/edge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +17,7 @@ func edgeRouteMap(t *testing.T) map[string]bool {
 
 // TestScanBrokenDir verifies a parse failure is reported, not swallowed.
 func TestScanBrokenDir(t *testing.T) {
-	if _, _, err := (&Adapter{}).Scan("testdata/broken"); err == nil {
+	if _, _, _, err := (&Adapter{}).Scan("testdata/broken"); err == nil {
 		t.Fatal("Scan of an unparsable dir returned nil error")
 	}
 }
@@ -36,7 +36,7 @@ func TestScanEdge(t *testing.T) {
 // TestMethodHandlerResolved checks a route whose handler exists only as a
 // method still gets its response type documented.
 func TestMethodHandlerResolved(t *testing.T) {
-	routes, _, err := (&Adapter{}).Scan("testdata/edge")
+	routes, _, _, err := (&Adapter{}).Scan("testdata/edge")
 	if err != nil {
 		t.Fatal(err)
 	}

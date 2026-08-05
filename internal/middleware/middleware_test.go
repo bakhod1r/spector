@@ -13,7 +13,7 @@ import (
 // whole path from source text to route rather than the index in isolation.
 func scan(t *testing.T) map[string]core.Route {
 	t.Helper()
-	routes, _, err := (&ginadapter.Adapter{}).Scan("testdata/app")
+	routes, _, _, err := (&ginadapter.Adapter{}).Scan("testdata/app")
 	if err != nil {
 		t.Fatal(err)
 	}
