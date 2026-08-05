@@ -1009,6 +1009,8 @@ catches a misreading of the protocol.
   interactively invocable from the console.
 - `.pb.go` enums surface their names, read from the generated `Xxx_name` map;
   `.proto` enums surface their names directly.
-- The Go (gqlgen) GraphQL fallback reports Go type names and loses
-  non-null/enum detail, since the SDL is not present to map them. Reading the
-  `.graphql` SDL directly keeps that detail.
+- The Go (gqlgen) GraphQL fallback infers non-null from pointer-ness (a value is
+  non-null, a pointer nullable) and reads enum values from typed consts, so
+  `[]*User` reads `[User]!` and a `Role` string enum surfaces its members.
+  Reading the `.graphql` SDL directly is still more precise for detail Go cannot
+  carry, such as custom scalar names and directives.

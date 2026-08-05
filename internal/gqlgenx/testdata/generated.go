@@ -4,7 +4,7 @@ import "context"
 
 type QueryResolver interface {
 	User(ctx context.Context, id string) (*User, error)
-	Users(ctx context.Context) ([]*User, error)
+	Users(ctx context.Context, role Role) ([]*User, error)
 }
 
 type MutationResolver interface {
