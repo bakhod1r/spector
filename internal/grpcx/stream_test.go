@@ -103,3 +103,87 @@ func TestStreamUnary(t *testing.T) {
 		t.Errorf("message did not echo id 7; got %s", msgData)
 	}
 }
+
+func TestStreamServerStreaming(t *testing.T) {
+	target := startServer(t, false)
+	srv := streamServer(t)
+	defer srv.Close()
+	c := dialWS(t, srv)
+	defer c.Close()
+
+	c.WriteJSON(map[string]any{"type": "init", "request": map[string]any{
+		"target": target, "symbol": "shop.v1.UserService/StreamUsers",
+	}})
+	c.WriteJSON(map[string]any{"type": "send", "data": json.RawMessage(`{}`)})
+	c.WriteJSON(map[string]any{"type": "halfClose"})
+
+	frames := collect(t, c)
+	msgs := 0
+	for _, f := range frames {
+		var typ string
+		json.Unmarshal(f["type"], &typ)
+		if typ == "message" {
+			msgs++
+		}
+	}
+	if msgs < 2 {
+		t.Errorf("expected >=2 streamed messages, got %d (%v)", msgs, typesOf(frames))
+	}
+}
+
+func TestStreamClientStreaming(t *testing.T) {
+	target := startServer(t, false)
+	srv := streamServer(t)
+	defer srv.Close()
+	c := dialWS(t, srv)
+	defer c.Close()
+
+	c.WriteJSON(map[string]any{"type": "init", "request": map[string]any{
+		"target": target, "symbol": "shop.v1.UserService/CountUsers",
+	}})
+	c.WriteJSON(map[string]any{"type": "send", "data": json.RawMessage(`{"id":1}`)})
+	c.WriteJSON(map[string]any{"type": "send", "data": json.RawMessage(`{"id":2}`)})
+	c.WriteJSON(map[string]any{"type": "send", "data": json.RawMessage(`{"id":3}`)})
+	c.WriteJSON(map[string]any{"type": "halfClose"})
+
+	frames := collect(t, c)
+	var msgData string
+	for _, f := range frames {
+		var typ string
+		json.Unmarshal(f["type"], &typ)
+		if typ == "message" {
+			msgData = string(f["data"])
+		}
+	}
+	if !strings.Contains(msgData, "3") {
+		t.Errorf("expected count 3 in response, got %s (%v)", msgData, typesOf(frames))
+	}
+}
+
+func TestStreamBidi(t *testing.T) {
+	target := startServer(t, false)
+	srv := streamServer(t)
+	defer srv.Close()
+	c := dialWS(t, srv)
+	defer c.Close()
+
+	c.WriteJSON(map[string]any{"type": "init", "request": map[string]any{
+		"target": target, "symbol": "shop.v1.UserService/Chat",
+	}})
+	c.WriteJSON(map[string]any{"type": "send", "data": json.RawMessage(`{"id":11}`)})
+	c.WriteJSON(map[string]any{"type": "send", "data": json.RawMessage(`{"id":22}`)})
+	c.WriteJSON(map[string]any{"type": "halfClose"})
+
+	frames := collect(t, c)
+	msgs := 0
+	for _, f := range frames {
+		var typ string
+		json.Unmarshal(f["type"], &typ)
+		if typ == "message" {
+			msgs++
+		}
+	}
+	if msgs != 2 {
+		t.Errorf("bidi echo expected 2 messages, got %d (%v)", msgs, typesOf(frames))
+	}
+}
