@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/bakhod1r/synth"
+	"github.com/gorilla/websocket"
 	"github.com/user/specter/internal/coverage"
 	"github.com/user/specter/internal/export"
 	"github.com/user/specter/internal/testgen"
@@ -807,6 +808,27 @@ func MeasureCoverage(doc *Document) CoverageReport {
 	return coverage.Measure(doc)
 }
 
+// grpcStreamUpgrader upgrades console gRPC streaming requests. Same-origin only:
+// a cross-origin page must not be able to open a stream against the console.
+var grpcStreamUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // non-browser clients (tests, CLIs) send no Origin
+		}
+		return sameOrigin(origin, r.Host)
+	},
+}
+
+// sameOrigin reports whether an Origin header matches the request host.
+func sameOrigin(origin, host string) bool {
+	i := strings.Index(origin, "://")
+	if i < 0 {
+		return false
+	}
+	return origin[i+3:] == host
+}
+
 func Handler(cfg Config) http.Handler {
 	var (
 		once sync.Once
@@ -859,6 +881,14 @@ func Handler(cfg Config) http.Handler {
 		}
 
 		once.Do(build)
+		if strings.HasSuffix(r.URL.Path, "grpc/stream") {
+			conn, uerr := grpcStreamUpgrader.Upgrade(w, r, nil)
+			if uerr != nil {
+				return // Upgrade already wrote an error response
+			}
+			_ = grpcx.Stream(protoDir, conn)
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "grpc/invoke") {
 			if r.Method != http.MethodPost {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)

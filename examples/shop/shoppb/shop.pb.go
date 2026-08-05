@@ -946,7 +946,7 @@ const file_shop_proto_rawDesc = "" +
 	"\vproduct_ids\x18\x02 \x03(\x05R\n" +
 	"productIds\"!\n" +
 	"\x0fGetOrderRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x05R\x02id2\xf8\x02\n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id2\xac\x03\n" +
 	"\vUserService\x121\n" +
 	"\aGetUser\x12\x17.shop.v1.GetUserRequest\x1a\r.shop.v1.User\x12B\n" +
 	"\tListUsers\x12\x19.shop.v1.ListUsersRequest\x1a\x1a.shop.v1.ListUsersResponse\x127\n" +
@@ -956,7 +956,8 @@ const file_shop_proto_rawDesc = "" +
 	"DeleteUser\x12\x1a.shop.v1.DeleteUserRequest\x1a\x0e.shop.v1.Empty\x129\n" +
 	"\vStreamUsers\x12\x19.shop.v1.ListUsersRequest\x1a\r.shop.v1.User0\x01\x12D\n" +
 	"\n" +
-	"CountUsers\x12\x17.shop.v1.GetUserRequest\x1a\x1b.shop.v1.CountUsersResponse(\x012\xdc\x01\n" +
+	"CountUsers\x12\x17.shop.v1.GetUserRequest\x1a\x1b.shop.v1.CountUsersResponse(\x01\x122\n" +
+	"\x04Chat\x12\x17.shop.v1.GetUserRequest\x1a\r.shop.v1.User(\x010\x012\xdc\x01\n" +
 	"\x0eProductService\x12:\n" +
 	"\n" +
 	"GetProduct\x12\x1a.shop.v1.GetProductRequest\x1a\x10.shop.v1.Product\x12K\n" +
@@ -1011,24 +1012,26 @@ var file_shop_proto_depIdxs = []int32{
 	6,  // 8: shop.v1.UserService.DeleteUser:input_type -> shop.v1.DeleteUserRequest
 	3,  // 9: shop.v1.UserService.StreamUsers:input_type -> shop.v1.ListUsersRequest
 	2,  // 10: shop.v1.UserService.CountUsers:input_type -> shop.v1.GetUserRequest
-	10, // 11: shop.v1.ProductService.GetProduct:input_type -> shop.v1.GetProductRequest
-	11, // 12: shop.v1.ProductService.ListProducts:input_type -> shop.v1.ListProductsRequest
-	11, // 13: shop.v1.ProductService.WatchProducts:input_type -> shop.v1.ListProductsRequest
-	14, // 14: shop.v1.OrderService.PlaceOrder:input_type -> shop.v1.PlaceOrderRequest
-	15, // 15: shop.v1.OrderService.GetOrder:input_type -> shop.v1.GetOrderRequest
-	1,  // 16: shop.v1.UserService.GetUser:output_type -> shop.v1.User
-	4,  // 17: shop.v1.UserService.ListUsers:output_type -> shop.v1.ListUsersResponse
-	1,  // 18: shop.v1.UserService.CreateUser:output_type -> shop.v1.User
-	7,  // 19: shop.v1.UserService.DeleteUser:output_type -> shop.v1.Empty
-	1,  // 20: shop.v1.UserService.StreamUsers:output_type -> shop.v1.User
-	8,  // 21: shop.v1.UserService.CountUsers:output_type -> shop.v1.CountUsersResponse
-	9,  // 22: shop.v1.ProductService.GetProduct:output_type -> shop.v1.Product
-	12, // 23: shop.v1.ProductService.ListProducts:output_type -> shop.v1.ListProductsResponse
-	9,  // 24: shop.v1.ProductService.WatchProducts:output_type -> shop.v1.Product
-	13, // 25: shop.v1.OrderService.PlaceOrder:output_type -> shop.v1.Order
-	13, // 26: shop.v1.OrderService.GetOrder:output_type -> shop.v1.Order
-	16, // [16:27] is the sub-list for method output_type
-	5,  // [5:16] is the sub-list for method input_type
+	2,  // 11: shop.v1.UserService.Chat:input_type -> shop.v1.GetUserRequest
+	10, // 12: shop.v1.ProductService.GetProduct:input_type -> shop.v1.GetProductRequest
+	11, // 13: shop.v1.ProductService.ListProducts:input_type -> shop.v1.ListProductsRequest
+	11, // 14: shop.v1.ProductService.WatchProducts:input_type -> shop.v1.ListProductsRequest
+	14, // 15: shop.v1.OrderService.PlaceOrder:input_type -> shop.v1.PlaceOrderRequest
+	15, // 16: shop.v1.OrderService.GetOrder:input_type -> shop.v1.GetOrderRequest
+	1,  // 17: shop.v1.UserService.GetUser:output_type -> shop.v1.User
+	4,  // 18: shop.v1.UserService.ListUsers:output_type -> shop.v1.ListUsersResponse
+	1,  // 19: shop.v1.UserService.CreateUser:output_type -> shop.v1.User
+	7,  // 20: shop.v1.UserService.DeleteUser:output_type -> shop.v1.Empty
+	1,  // 21: shop.v1.UserService.StreamUsers:output_type -> shop.v1.User
+	8,  // 22: shop.v1.UserService.CountUsers:output_type -> shop.v1.CountUsersResponse
+	1,  // 23: shop.v1.UserService.Chat:output_type -> shop.v1.User
+	9,  // 24: shop.v1.ProductService.GetProduct:output_type -> shop.v1.Product
+	12, // 25: shop.v1.ProductService.ListProducts:output_type -> shop.v1.ListProductsResponse
+	9,  // 26: shop.v1.ProductService.WatchProducts:output_type -> shop.v1.Product
+	13, // 27: shop.v1.OrderService.PlaceOrder:output_type -> shop.v1.Order
+	13, // 28: shop.v1.OrderService.GetOrder:output_type -> shop.v1.Order
+	17, // [17:29] is the sub-list for method output_type
+	5,  // [5:17] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name

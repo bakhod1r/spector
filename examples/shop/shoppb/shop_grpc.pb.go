@@ -25,6 +25,7 @@ const (
 	UserService_DeleteUser_FullMethodName  = "/shop.v1.UserService/DeleteUser"
 	UserService_StreamUsers_FullMethodName = "/shop.v1.UserService/StreamUsers"
 	UserService_CountUsers_FullMethodName  = "/shop.v1.UserService/CountUsers"
+	UserService_Chat_FullMethodName        = "/shop.v1.UserService/Chat"
 )
 
 // UserServiceClient is the client API for UserService service.
@@ -37,6 +38,7 @@ type UserServiceClient interface {
 	DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...grpc.CallOption) (*Empty, error)
 	StreamUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[User], error)
 	CountUsers(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[GetUserRequest, CountUsersResponse], error)
+	Chat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[GetUserRequest, User], error)
 }
 
 type userServiceClient struct {
@@ -119,6 +121,19 @@ func (c *userServiceClient) CountUsers(ctx context.Context, opts ...grpc.CallOpt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type UserService_CountUsersClient = grpc.ClientStreamingClient[GetUserRequest, CountUsersResponse]
 
+func (c *userServiceClient) Chat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[GetUserRequest, User], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &UserService_ServiceDesc.Streams[2], UserService_Chat_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[GetUserRequest, User]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type UserService_ChatClient = grpc.BidiStreamingClient[GetUserRequest, User]
+
 // UserServiceServer is the server API for UserService service.
 // All implementations must embed UnimplementedUserServiceServer
 // for forward compatibility.
@@ -129,6 +144,7 @@ type UserServiceServer interface {
 	DeleteUser(context.Context, *DeleteUserRequest) (*Empty, error)
 	StreamUsers(*ListUsersRequest, grpc.ServerStreamingServer[User]) error
 	CountUsers(grpc.ClientStreamingServer[GetUserRequest, CountUsersResponse]) error
+	Chat(grpc.BidiStreamingServer[GetUserRequest, User]) error
 	mustEmbedUnimplementedUserServiceServer()
 }
 
@@ -156,6 +172,9 @@ func (UnimplementedUserServiceServer) StreamUsers(*ListUsersRequest, grpc.Server
 }
 func (UnimplementedUserServiceServer) CountUsers(grpc.ClientStreamingServer[GetUserRequest, CountUsersResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method CountUsers not implemented")
+}
+func (UnimplementedUserServiceServer) Chat(grpc.BidiStreamingServer[GetUserRequest, User]) error {
+	return status.Errorf(codes.Unimplemented, "method Chat not implemented")
 }
 func (UnimplementedUserServiceServer) mustEmbedUnimplementedUserServiceServer() {}
 func (UnimplementedUserServiceServer) testEmbeddedByValue()                     {}
@@ -268,6 +287,13 @@ func _UserService_CountUsers_Handler(srv interface{}, stream grpc.ServerStream) 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type UserService_CountUsersServer = grpc.ClientStreamingServer[GetUserRequest, CountUsersResponse]
 
+func _UserService_Chat_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(UserServiceServer).Chat(&grpc.GenericServerStream[GetUserRequest, User]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type UserService_ChatServer = grpc.BidiStreamingServer[GetUserRequest, User]
+
 // UserService_ServiceDesc is the grpc.ServiceDesc for UserService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -301,6 +327,12 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "CountUsers",
 			Handler:       _UserService_CountUsers_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "Chat",
+			Handler:       _UserService_Chat_Handler,
+			ServerStreams: true,
 			ClientStreams: true,
 		},
 	},

@@ -1876,18 +1876,78 @@ function methodCard(gs, svc, m) {
 
   addMsgBlock(body, gs, "Response — " + m.outputType, m.outputType);
 
-  const streaming = m.clientStreaming || m.serverStreaming;
+  // Live streaming session. Every kind uses one WebSocket per invocation; the
+  // method kind decides which controls are live (see below).
   const row = document.createElement("div"); row.className = "btnrow";
-  const invBtn = document.createElement("button"); invBtn.className = "primary"; invBtn.textContent = "Invoke";
+  const dot = document.createElement("span"); dot.className="dot"; dot.style.alignSelf = "center";
+  const connectBtn = document.createElement("button"); connectBtn.id="grpcConnect"; connectBtn.className = "primary"; connectBtn.textContent = "Connect";
+  const sendBtn = document.createElement("button"); sendBtn.id="grpcSend"; sendBtn.textContent = "Send"; sendBtn.disabled = true;
+  const halfBtn = document.createElement("button"); halfBtn.id="grpcHalfClose"; halfBtn.textContent = "Half-close"; halfBtn.disabled = true;
+  const cancelBtn = document.createElement("button"); cancelBtn.id="grpcCancel"; cancelBtn.textContent = "Cancel"; cancelBtn.disabled = true;
   const gBtn = document.createElement("button"); gBtn.textContent = "Copy as grpcurl";
-  const out = document.createElement("div"); out.className = "resp";
-  const gBox = document.createElement("div");
-  invBtn.onclick = () => invokeGrpc(svc, m, msgsWrap, target, out);
-  gBtn.onclick = () => { const c = buildGrpcurl(svc, m, target.value, reqArea.value); gBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; gBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ gBtn.textContent="Copied!"; setTimeout(()=>gBtn.textContent="Copy as grpcurl",1200); }); };
-  row.appendChild(invBtn); row.appendChild(gBtn);
+  row.appendChild(dot); row.appendChild(connectBtn); row.appendChild(sendBtn); row.appendChild(halfBtn); row.appendChild(cancelBtn); row.appendChild(gBtn);
   body.appendChild(row);
-  if (streaming) { const h = document.createElement("div"); h.className="hint"; h.textContent = "Note: streaming method — Invoke shows collected messages (client-stream/bidi sends every message added via \"＋ Add message\")."; body.appendChild(h); }
-  body.appendChild(gBox); body.appendChild(out);
+
+  const gBox = document.createElement("div");
+  const log = document.createElement("div"); log.className = "log";
+  body.appendChild(gBox); body.appendChild(log);
+
+  gBtn.onclick = () => { const c = buildGrpcurl(svc, m, target.value, reqArea.value); gBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; gBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ gBtn.textContent="Copied!"; setTimeout(()=>gBtn.textContent="Copy as grpcurl",1200); }); };
+
+  let ws = null;
+  const setConnected = (on) => {
+    dot.className = "dot " + (on ? "live" : "");
+    connectBtn.disabled = on;
+    // Client-stream and bidi can send repeatedly; unary/server-stream send once.
+    sendBtn.disabled = !on;
+    halfBtn.disabled = !(on && m.clientStreaming);
+    cancelBtn.disabled = !on;
+  };
+  const teardown = () => { setConnected(false); dot.className = "dot dead"; ws = null; };
+
+  connectBtn.onclick = () => {
+    const env = activeEnv();
+    const t = interpolate(target.value || env.vars.grpcHost || "localhost:50051", env);
+    log.innerHTML = "";
+    // Resolve relative to the document base, same as fetch("grpc.json") does,
+    // so the socket lands on the console's mount even when served under a prefix.
+    const wsUrl = new URL("grpc/stream", location.href);
+    wsUrl.protocol = wsUrl.protocol.replace("http", "ws");
+    ws = new WebSocket(wsUrl.href);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "init", request: {
+        target: t, symbol: svc.fullName + "/" + m.name,
+        tls: env.vars.grpcTLS === "true", insecure: env.vars.grpcInsecure === "true",
+        timeoutSec: parseInt(env.vars.grpcTimeoutSec, 10) || 0,
+      }}));
+    };
+    ws.onmessage = (ev) => {
+      let f; try { f = JSON.parse(ev.data); } catch (e) { return; }
+      if (f.type === "open") { setConnected(true); rtLog(log, "in", "● stream open"); }
+      else if (f.type === "message") { rtLog(log, "in", "← " + JSON.stringify(f.data)); }
+      else if (f.type === "status") { rtLog(log, f.code === "OK" ? "in" : "err", "status " + f.code + (f.message ? ": " + f.message : "")); }
+      else if (f.type === "error") { rtLog(log, "err", "error: " + f.error); }
+      else if (f.type === "end") { rtLog(log, "in", "● stream end"); }
+    };
+    ws.onclose = teardown;
+    ws.onerror = () => rtLog(log, "err", "socket error");
+  };
+
+  const sendCurrent = () => {
+    if (!ws || ws.readyState !== 1) return;
+    const env = activeEnv();
+    const msgs = msgsWrap.querySelectorAll(".grpc-msg");
+    for (const t of msgs) {
+      let data; try { data = JSON.parse(interpolate(t.value, env)); } catch (e) { rtLog(log, "err", "invalid JSON: " + e); return; }
+      ws.send(JSON.stringify({ type: "send", data }));
+      rtLog(log, "out", "→ " + JSON.stringify(data));
+    }
+    // Unary and server-stream only ever send once, so half-close immediately.
+    if (!m.clientStreaming) { ws.send(JSON.stringify({ type: "halfClose" })); sendBtn.disabled = true; }
+  };
+  sendBtn.onclick = sendCurrent;
+  halfBtn.onclick = () => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ type: "halfClose" })); halfBtn.disabled = true; sendBtn.disabled = true; rtLog(log, "out", "◁ half-close"); } };
+  cancelBtn.onclick = () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "cancel" })); };
   el.appendChild(body);
   return el;
 }

@@ -55,6 +55,7 @@ service UserService {
   rpc DeleteUser(DeleteUserRequest) returns (Empty);
   rpc StreamUsers(ListUsersRequest) returns (stream User);
   rpc CountUsers(stream GetUserRequest) returns (CountUsersResponse);
+  rpc Chat(stream GetUserRequest) returns (stream User);
 }
 
 message Product {

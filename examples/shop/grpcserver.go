@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"net"
 	"strings"
@@ -56,6 +57,21 @@ func (s *userServer) StreamUsers(req *shoppb.ListUsersRequest, stream grpc.Serve
 		}
 	}
 	return nil
+}
+
+func (s *userServer) Chat(stream shoppb.UserService_ChatServer) error {
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(&shoppb.User{Id: req.Id, Name: "echo"}); err != nil {
+			return err
+		}
+	}
 }
 
 func startGRPC(addr string) {
