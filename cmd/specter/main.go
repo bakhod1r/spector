@@ -29,7 +29,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	dirFlag := fs.String("dir", ".", "directory to scan")
 	configPath := fs.String("config", "", "JSON config file (default: specter.json in -dir, if present)")
-	adapter := fs.String("adapter", "", "framework adapter (gin, chi, echo, fiber, gorillamux, httprouter, stdlib); autodetected if empty")
+	adapter := fs.String("adapter", "", "framework adapter (gin, chi, echo, fiber, gorillamux, httprouter, bunrouter, stdlib); autodetected if empty")
 	title := fs.String("title", "", "API title (defaults to directory name)")
 	version := fs.String("version", "0.1.0", "API version")
 	out := fs.String("o", "", "output file (defaults to stdout)")
