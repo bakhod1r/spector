@@ -98,3 +98,53 @@ func g(paths []string){ _ = paths[0] }
 		t.Fatalf("index expression must not resolve")
 	}
 }
+
+func TestDiagnosticsSorted(t *testing.T) {
+	var d Diagnostics
+	d.Add(token.Position{Filename: "b.go", Line: 3}, "route", "range variable")
+	d.Add(token.Position{Filename: "a.go", Line: 9}, "group-prefix", "function call result")
+	d.Add(token.Position{Filename: "a.go", Line: 2}, "route", "non-literal expression")
+	got := d.List()
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	// Sorted by filename then line.
+	wantOrder := []struct{ file string; line int }{
+		{"a.go", 2}, {"a.go", 9}, {"b.go", 3},
+	}
+	for i, w := range wantOrder {
+		if got[i].Pos.Filename != w.file || got[i].Pos.Line != w.line {
+			t.Errorf("List()[%d] = %s:%d, want %s:%d", i, got[i].Pos.Filename, got[i].Pos.Line, w.file, w.line)
+		}
+	}
+}
+
+func TestDescribeExpr(t *testing.T) {
+	cases := map[string]string{
+		"package p; func f(xs []string){ _ = xs[0] }": "slice/map element",
+		"package p; func f(){ _ = g() }":              "function call result",
+		"package p; var _ = otherpkg.Path":            "identifier from another package",
+	}
+	for src, want := range cases {
+		f := parseFile(t, src)
+		var target ast.Expr
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch e := n.(type) {
+			case *ast.IndexExpr:
+				target = e
+			case *ast.CallExpr:
+				if _, isSel := e.Fun.(*ast.SelectorExpr); !isSel {
+					target = e
+				}
+			case *ast.SelectorExpr:
+				if target == nil {
+					target = e
+				}
+			}
+			return true
+		})
+		if got := DescribeExpr(target); got != want {
+			t.Errorf("DescribeExpr(%q) = %q, want %q", src, got, want)
+		}
+	}
+}

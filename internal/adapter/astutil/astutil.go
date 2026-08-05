@@ -147,6 +147,14 @@ func (l Locator) Of(pos token.Pos) *core.Source {
 	return SourceOf(l.Fset, l.Dir, pos)
 }
 
+// Position resolves a token.Pos to a file:line:col for diagnostics.
+func (l Locator) Position(pos token.Pos) token.Position {
+	if l.Fset == nil || !pos.IsValid() {
+		return token.Position{}
+	}
+	return l.Fset.Position(pos)
+}
+
 // Handler picks the best position for a route: the handler's declaration when
 // there is one, otherwise the registration call. A route registered with a
 // closure or a returned handler has no declaration to point at, and the line

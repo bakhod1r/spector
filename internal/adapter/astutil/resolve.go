@@ -3,6 +3,7 @@ package astutil
 import (
 	"go/ast"
 	"go/token"
+	"sort"
 	"strconv"
 )
 
@@ -97,4 +98,49 @@ func resolve(expr ast.Expr, consts map[string]string) (string, bool) {
 		return l + r, true
 	}
 	return "", false
+}
+
+// Diagnostic records a route site the scanner could not statically resolve.
+type Diagnostic struct {
+	Pos    token.Position
+	Kind   string // "route" | "group-prefix"
+	Reason string
+}
+
+// Diagnostics is an append-only collector; List returns them in source order.
+type Diagnostics struct {
+	items []Diagnostic
+}
+
+func (d *Diagnostics) Add(pos token.Position, kind, reason string) {
+	d.items = append(d.items, Diagnostic{Pos: pos, Kind: kind, Reason: reason})
+}
+
+func (d *Diagnostics) List() []Diagnostic {
+	out := append([]Diagnostic(nil), d.items...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Pos.Filename != out[j].Pos.Filename {
+			return out[i].Pos.Filename < out[j].Pos.Filename
+		}
+		return out[i].Pos.Line < out[j].Pos.Line
+	})
+	return out
+}
+
+// DescribeExpr names why an expression is not a static string, for diagnostics.
+func DescribeExpr(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.IndexExpr:
+		return "slice/map element"
+	case *ast.CallExpr:
+		return "function call result"
+	case *ast.SelectorExpr:
+		if _, ok := e.X.(*ast.Ident); ok {
+			return "identifier from another package"
+		}
+		return "field or method value"
+	case *ast.Ident:
+		return "variable value" // a local, or a name not in the const table
+	}
+	return "non-literal expression"
 }
