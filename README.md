@@ -942,7 +942,10 @@ catches a misreading of the protocol.
   A path that is genuinely dynamic — built in a loop, from a slice/map, or
   from a function return — is reported to stderr as a diagnostic instead of
   silently dropped. Pass `-strict-routes` to turn any such diagnostic into a
-  non-zero exit, for CI.
+  non-zero exit, for CI. Resolution is not scope-aware: a function-local
+  variable that shadows a same-named package-level const/var currently
+  resolves to the package-level value, so give local route-path variables
+  distinct names.
 - net/http grouping uses the sub-mux + `http.StripPrefix` idiom, and sub-muxes
   nest: a mux mounted on a mux mounted on the root composes every prefix and
   guard onto the leaf routes (the standard mux has no native groups).

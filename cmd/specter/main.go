@@ -462,8 +462,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	// regen builds the requested document and marshals it. It is a closure
 	// rather than straight-line code so -watch can re-run exactly what the
-	// first pass did, with the same flags applied.
+	// first pass did, with the same flags applied. Diagnostics are emitted
+	// here, inside the closure, so every regen — the first pass and every
+	// -watch re-run — reports dynamic routes, not just the first.
 	var routeDiags []specter.Diagnostic
+	emitRouteDiags := func() {
+		for _, d := range routeDiags {
+			fmt.Fprintf(stderr, "specter: %s: dynamic %s, cannot infer path (%s)\n", d.Pos, d.Kind, d.Reason)
+		}
+		if n := len(routeDiags); n > 0 {
+			fmt.Fprintf(stderr, "specter: %d route(s) could not be statically resolved\n", n)
+		}
+	}
 	regen := func() ([]byte, error) {
 		var v any
 		switch {
@@ -494,6 +504,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 				warnEmpty("routes", *dirFlag)
 			}
 			routeDiags = doc.Diagnostics
+			emitRouteDiags()
 			v = doc
 			// 3.1 is a conversion of the same document, not a second generator, so
 			// everything upstream — adapters, config, middleware — is untouched.
@@ -522,14 +533,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 
-	for _, d := range routeDiags {
-		fmt.Fprintf(stderr, "specter: %s: dynamic %s, cannot infer path (%s)\n", d.Pos, d.Kind, d.Reason)
-	}
-	if n := len(routeDiags); n > 0 {
-		fmt.Fprintf(stderr, "specter: %d route(s) could not be statically resolved\n", n)
-		if *strictRoutes {
-			return 1
-		}
+	if len(routeDiags) > 0 && *strictRoutes {
+		return 1
 	}
 
 	if *out == "" {
