@@ -19,7 +19,6 @@ type Config struct {
 	DB        string `env:"SHOP_DB" default:"shop.db" desc:"SQLite database path (:memory: for ephemeral)"`
 	BasePath  string `env:"SPECTER_BASE_PATH" desc:"where the console mounts; empty means /docs"`
 	AccessKey string `env:"SPECTER_KEY,secret" desc:"gate the console behind ?key=; empty leaves it open"`
-	AdminURL  string `env:"ADMIN_URL" desc:"admin panel URL; adds an Admin button to the console"`
 }
 
 // loadConfig reads .env (then .env.local, which wins) and the process

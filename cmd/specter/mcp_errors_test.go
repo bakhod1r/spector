@@ -22,8 +22,6 @@ func TestMCPHandlersReportConfigAndScanErrors(t *testing.T) {
 		"generate_graphql": handleGenerateGraphql,
 		"scan_routes":      handleScanRoutes,
 		"lint_routes":      handleLintRoutes,
-		"generate_admin":   handleGenerateAdmin,
-		"admin_model":      handleAdminModel,
 	}
 	for name, h := range handlers {
 		t.Run(name+"/bad_config", func(t *testing.T) {

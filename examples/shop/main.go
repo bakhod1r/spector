@@ -1428,9 +1428,6 @@ func router() *gin.Engine {
 		// Both default when unset: the console lives at /docs and is open.
 		BasePath:  cfg.BasePath,
 		AccessKey: cfg.AccessKey,
-		// Adds the "Admin panel" button to the console. The panel runs as its
-		// own process (examples/shop/admin), so this is only a link.
-		AdminURL: cfg.AdminURL,
 
 		// Neither can be read from source, so they are declared here.
 		Servers: []specter.Server{

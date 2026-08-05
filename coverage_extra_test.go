@@ -1,14 +1,11 @@
 package specter
 
 import (
-	"bytes"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/ui"
 )
 
 const fiberSrc = `package app
@@ -121,36 +118,6 @@ func TestServeMockBadAddrErrors(t *testing.T) {
 	}
 }
 
-func TestGenerateAdmin(t *testing.T) {
-	dir := writeTree(t, map[string]string{"main.go": ginSrc})
-	files, err := GenerateAdmin(Config{Dir: dir}, AdminOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) == 0 {
-		t.Error("GenerateAdmin produced no files")
-	}
-}
-
-func TestGenerateAdminMissingDirErrors(t *testing.T) {
-	if _, err := GenerateAdmin(Config{Dir: filepath.Join(t.TempDir(), "nope")}, AdminOptions{}); err == nil {
-		t.Error("GenerateAdmin on a missing dir returned no error")
-	}
-}
-
-func TestAdminModel(t *testing.T) {
-	dir := writeTree(t, map[string]string{"main.go": ginSrc})
-	if _, err := AdminModel(Config{Dir: dir}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestAdminModelMissingDirErrors(t *testing.T) {
-	if _, err := AdminModel(Config{Dir: filepath.Join(t.TempDir(), "nope")}); err == nil {
-		t.Error("AdminModel on a missing dir returned no error")
-	}
-}
-
 func TestApplyInferredSchemes(t *testing.T) {
 	route := func(scheme string) core.Route {
 		return core.Route{Middleware: []core.Middleware{{Name: "mw", Scheme: scheme}}}
@@ -185,29 +152,3 @@ func TestApplyInferredSchemes(t *testing.T) {
 	})
 }
 
-func TestPageWith(t *testing.T) {
-	t.Run("no admin url serves the page unchanged", func(t *testing.T) {
-		if got := pageWith(Config{}); !bytes.Equal(got, ui.Page) {
-			t.Error("page was rewritten without an AdminURL")
-		}
-	})
-
-	t.Run("admin url is injected before </head>", func(t *testing.T) {
-		got := string(pageWith(Config{AdminURL: "http://admin.example"}))
-		if !strings.Contains(got, `window.__specter={"adminUrl":"http://admin.example"}`) {
-			t.Errorf("config script missing from page")
-		}
-		if !strings.Contains(got, "</head>") {
-			t.Error("</head> lost during injection")
-		}
-	})
-
-	t.Run("page without head is served unchanged", func(t *testing.T) {
-		orig := ui.Page
-		defer func() { ui.Page = orig }()
-		ui.Page = []byte("<body>no head</body>")
-		if got := pageWith(Config{AdminURL: "x"}); !bytes.Equal(got, ui.Page) {
-			t.Errorf("page = %q, want it unchanged when </head> is absent", got)
-		}
-	})
-}
