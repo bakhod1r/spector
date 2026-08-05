@@ -22,6 +22,7 @@ import (
 	"github.com/user/specter/internal/testgen"
 	"gopkg.in/yaml.v3"
 
+	bunrouteradapter "github.com/user/specter/internal/adapter/bunrouter"
 	chiadapter "github.com/user/specter/internal/adapter/chi"
 	echoadapter "github.com/user/specter/internal/adapter/echo"
 	fiberadapter "github.com/user/specter/internal/adapter/fiber"
@@ -197,6 +198,8 @@ func adapterFor(cfg Config) core.Adapter {
 		return &gorillamuxadapter.Adapter{}
 	case "httprouter":
 		return &httprouteradapter.Adapter{}
+	case "bunrouter":
+		return &bunrouteradapter.Adapter{}
 	case "stdlib":
 		return &stdlibadapter.Adapter{}
 	default:
@@ -227,6 +230,8 @@ func detect(dir string) string {
 					return "gorillamux"
 				case strings.Contains(p, "julienschmidt/httprouter"):
 					return "httprouter"
+				case strings.Contains(p, "uptrace/bunrouter"):
+					return "bunrouter"
 				}
 			}
 		}
