@@ -936,8 +936,13 @@ catches a misreading of the protocol.
 
 ## Limitations
 
-- REST inference is AST-based; dynamically registered routes or params built
-  from non-literal values are not detected.
+- REST inference is AST-based. Route paths and group prefixes built from
+  package-level string constants/vars and `+` concatenations resolve just
+  like literals; function-local `:=` short variables do not yet resolve.
+  A path that is genuinely dynamic — built in a loop, from a slice/map, or
+  from a function return — is reported to stderr as a diagnostic instead of
+  silently dropped. Pass `-strict-routes` to turn any such diagnostic into a
+  non-zero exit, for CI.
 - net/http grouping uses the sub-mux + `http.StripPrefix` idiom, and sub-muxes
   nest: a mux mounted on a mux mounted on the root composes every prefix and
   guard onto the leaf routes (the standard mux has no native groups).
