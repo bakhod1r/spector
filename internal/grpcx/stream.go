@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/fullstorydev/grpcurl"
 	"github.com/golang/protobuf/proto"
@@ -108,14 +109,18 @@ func Stream(protoDir string, conn *websocket.Conn) error {
 	go func() {
 		defer close(writerDone)
 		for f := range sendCh {
+			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := conn.WriteJSON(f); err != nil {
+				cancel()
 				return
 			}
 		}
 	}()
 	send := func(f outFrame) {
-		defer func() { recover() }() // sendCh may be closed on teardown
-		sendCh <- f
+		select {
+		case sendCh <- f:
+		case <-ctx.Done():
+		}
 	}
 
 	var headers []string
