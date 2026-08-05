@@ -1006,7 +1006,8 @@ catches a misreading of the protocol.
   (the standard mux has no native groups).
 - gRPC client-streaming and bidirectional RPCs are documented but not
   interactively invocable from the console.
-- `.pb.go` enums surface as integers; `.proto` enums surface their names.
+- `.pb.go` enums surface their names, read from the generated `Xxx_name` map;
+  `.proto` enums surface their names directly.
 - The Go (gqlgen) GraphQL fallback reports Go type names and loses
   non-null/enum detail, since the SDL is not present to map them. Reading the
   `.graphql` SDL directly keeps that detail.

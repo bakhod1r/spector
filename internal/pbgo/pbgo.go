@@ -10,6 +10,8 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/user/specter/internal/adapter/astutil"
@@ -29,10 +31,12 @@ func Scan(dir string) (*core.GrpcDoc, error) {
 	scanner := core.NewStructScanner()
 	ifaces := map[string]serverIface{} // interface name -> parsed methods
 	descs := []serviceDesc{}
+	enumNames := map[string][]string{} // enum type -> value names, in wire order
 	for _, file := range files {
 		scanner.Collect(file)
 		collectInterfaces(file, ifaces)
 		descs = append(descs, collectServiceDescs(file)...)
+		collectEnumNames(file, enumNames)
 	}
 
 	doc := core.NewGrpcDoc()
@@ -61,7 +65,106 @@ func Scan(dir string) (*core.GrpcDoc, error) {
 			doc.Messages[name] = s
 		}
 	}
+	applyEnumNames(doc.Messages, enumNames)
 	return doc, nil
+}
+
+// collectEnumNames records the value names of every generated proto enum in the
+// file. protoc-gen-go emits, for `enum Status`, a `type Status int32` plus a
+//
+//	var Status_name = map[int32]string{0: "STATUS_UNSPECIFIED", 1: "PENDING"}
+//
+// which is the only place the symbolic names survive: the const block and the
+// struct fields carry the integer, so without this map the enum documents as a
+// bare integer. Names are ordered by their wire number.
+func collectEnumNames(file *ast.File, out map[string][]string) {
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok || len(vs.Names) != 1 || len(vs.Values) != 1 {
+				continue
+			}
+			typ := strings.TrimSuffix(vs.Names[0].Name, "_name")
+			if typ == vs.Names[0].Name {
+				continue // not an X_name var
+			}
+			lit, ok := vs.Values[0].(*ast.CompositeLit)
+			if !ok || !isInt32StringMap(lit.Type) {
+				continue
+			}
+			out[typ] = orderedMapValues(lit)
+		}
+	}
+}
+
+// isInt32StringMap reports whether t is map[int32]string, the type of a
+// generated enum's _name map (as opposed to _value, which is map[string]int32).
+func isInt32StringMap(t ast.Expr) bool {
+	mt, ok := t.(*ast.MapType)
+	if !ok {
+		return false
+	}
+	key, kok := mt.Key.(*ast.Ident)
+	val, vok := mt.Value.(*ast.Ident)
+	return kok && vok && key.Name == "int32" && val.Name == "string"
+}
+
+// orderedMapValues returns the string values of a map literal ordered by their
+// integer key, so the enum list matches the wire numbers.
+func orderedMapValues(lit *ast.CompositeLit) []string {
+	type kv struct {
+		key int
+		val string
+	}
+	var pairs []kv
+	for _, e := range lit.Elts {
+		kve, ok := e.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		keyLit, kok := kve.Key.(*ast.BasicLit)
+		valLit, vok := kve.Value.(*ast.BasicLit)
+		if !kok || !vok || keyLit.Kind != token.INT || valLit.Kind != token.STRING {
+			continue
+		}
+		n, err := strconv.Atoi(keyLit.Value)
+		if err != nil {
+			continue
+		}
+		v, err := strconv.Unquote(valLit.Value)
+		if err != nil {
+			continue
+		}
+		pairs = append(pairs, kv{n, v})
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].key < pairs[j].key })
+	out := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		out = append(out, p.val)
+	}
+	return out
+}
+
+// applyEnumNames rewrites each enum message schema from the integer form the
+// struct scanner produces (type integer, an enum list of numbers) into a string
+// schema listing the symbolic names, so a $ref to it documents the names a
+// caller actually sends.
+func applyEnumNames(messages map[string]*core.Schema, enumNames map[string][]string) {
+	for typ, names := range enumNames {
+		s := messages[typ]
+		if s == nil || len(names) == 0 {
+			continue
+		}
+		s.Type = "string"
+		s.Enum = make([]any, len(names))
+		for i, n := range names {
+			s.Enum[i] = n
+		}
+	}
 }
 
 func parseFiles(dir string) ([]*ast.File, error) {
