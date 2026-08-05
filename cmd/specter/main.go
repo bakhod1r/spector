@@ -77,6 +77,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	testPkg := fs.String("test-package", "", "package name for the generated test file (default: apitest)")
 	coverageFlag := fs.Bool("coverage", false, "report documentation coverage instead of a document")
 	coverageMin := fs.Float64("coverage-min", 0, "exit 1 when coverage is below this percent (implies -coverage)")
+	strictRoutes := fs.Bool("strict-routes", false, "exit non-zero if any route path cannot be statically resolved")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -462,6 +463,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// regen builds the requested document and marshals it. It is a closure
 	// rather than straight-line code so -watch can re-run exactly what the
 	// first pass did, with the same flags applied.
+	var routeDiags []specter.Diagnostic
 	regen := func() ([]byte, error) {
 		var v any
 		switch {
@@ -491,6 +493,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			if len(doc.Paths) == 0 {
 				warnEmpty("routes", *dirFlag)
 			}
+			routeDiags = doc.Diagnostics
 			v = doc
 			// 3.1 is a conversion of the same document, not a second generator, so
 			// everything upstream — adapters, config, middleware — is untouched.
@@ -517,6 +520,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	data, err := regen()
 	if err != nil {
 		return fail(err)
+	}
+
+	for _, d := range routeDiags {
+		fmt.Fprintf(stderr, "specter: %s: dynamic %s, cannot infer path (%s)\n", d.Pos, d.Kind, d.Reason)
+	}
+	if n := len(routeDiags); n > 0 {
+		fmt.Fprintf(stderr, "specter: %d route(s) could not be statically resolved\n", n)
+		if *strictRoutes {
+			return 1
+		}
 	}
 
 	if *out == "" {

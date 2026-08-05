@@ -66,6 +66,10 @@ type (
 	GraphqlDoc = core.GraphqlDoc
 	Schema     = core.Schema
 	Operation  = core.Operation
+
+	// Diagnostic reports a route whose path could not be statically
+	// resolved. Generate attaches these to Document.Diagnostics.
+	Diagnostic = core.Diagnostic
 )
 
 type Config struct {
