@@ -73,6 +73,7 @@ specter -graphql -dir ./graph -o graphql.json
 | `-postman-env` | Export a Postman environment (`baseUrl` and auth placeholders) instead of the collection |
 | `-markdown`   | Export static Markdown API docs                            |
 | `-har`        | Export a HAR 1.2 archive of example calls (one entry per operation) |
+| `-asyncapi`   | Export an AsyncAPI 2.6 document of the WebSocket and SSE endpoints |
 | `-sdk`        | Generate a typed client instead of a document: `go`, `ts`, `python`, `js`, `ruby`, `php`, `csharp`, `rust`, `kotlin`, `java` |
 | `-sdk-out`    | Directory the client is written into (default `./sdk`)     |
 | `-sdk-package` | Package name for the generated Go client (default `client`) |
@@ -925,6 +926,25 @@ type the URL.
   `protocol websockets`).
 
 `examples/shop` serves `/events` and `/ws` so the tab has something to talk to.
+
+### AsyncAPI export
+
+The scanner already recognises WebSocket and SSE handlers — an upgrade call or
+an `text/event-stream` content type — and marks the operation. OpenAPI has no
+vocabulary for these channels, so `-asyncapi` exports them as an
+[AsyncAPI 2.6](https://www.asyncapi.com/) document instead:
+
+```sh
+specter -asyncapi -dir . -o asyncapi.json
+```
+
+Each realtime endpoint becomes a channel keyed by its path. A WebSocket is
+bidirectional, so it carries both `subscribe` and `publish` operations with a
+`ws` binding; SSE streams server-to-client only, so it carries `subscribe`
+alone. The message payload comes from the handler's first documented JSON
+response, and the referenced schemas are carried into `components` so the
+`$ref`s resolve. Server protocols are inferred from the URL scheme (`https` →
+`wss`). Ordinary REST operations stay in the OpenAPI document.
 
 ## Architecture
 
