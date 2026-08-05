@@ -248,3 +248,19 @@ func keys[V any](m map[string]V) []string {
 	}
 	return out
 }
+
+func TestEchoReportsDynamicRoute(t *testing.T) {
+	_, _, diags, err := (&Adapter{}).Scan("testdata/dynroute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 1 {
+		t.Fatalf("diags = %d, want 1: %+v", len(diags), diags)
+	}
+	if diags[0].Kind != "route" {
+		t.Errorf("kind = %q, want route", diags[0].Kind)
+	}
+	if diags[0].Pos.Line == 0 || diags[0].Pos.Filename == "" {
+		t.Errorf("diagnostic has no source position: %+v", diags[0])
+	}
+}
