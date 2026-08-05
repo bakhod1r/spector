@@ -763,6 +763,12 @@ func ExportHAR(doc *Document) ([]byte, error) {
 	return export.HAR(doc)
 }
 
+// ExportAsyncAPI renders the document's WebSocket and SSE endpoints as an
+// AsyncAPI 2.6 document — the channels OpenAPI has no vocabulary for.
+func ExportAsyncAPI(doc *Document) ([]byte, error) {
+	return export.AsyncAPI(doc)
+}
+
 // ExportMarkdown renders the document as a static Markdown API reference,
 // suitable for a README or a docs site.
 func ExportMarkdown(doc *Document) []byte {
