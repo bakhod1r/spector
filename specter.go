@@ -106,6 +106,15 @@ type Config struct {
 	// same access as anyone else, and the console can invoke your gRPC methods,
 	// so treat it as a deployment secret rather than a login.
 	AccessKey string
+
+	// Mock mounts the documented API on the console's own origin: a request to
+	// a documented path is answered with a shaped mock body instead of falling
+	// through to the console page. This makes the console's "Send" button return
+	// a real response during a demo without a second process or CORS, and the
+	// page shows a MOCK badge so a body is never mistaken for a live one. The
+	// mock is shape, not state (see MockHandler). Empty (the default) keeps the
+	// console a pure documentation viewer.
+	Mock bool
 }
 
 // DefaultBasePath is where the console lives unless Config says otherwise.
@@ -803,10 +812,32 @@ func Handler(cfg Config) http.Handler {
 		gerr error
 		qerr error
 	)
+	var mockHandler http.Handler
 	build := func() {
 		doc, err = Generate(cfg)
 		gdoc, gerr = GenerateGrpc(cfg)
 		qdoc, qerr = GenerateGraphql(cfg)
+		if cfg.Mock && err == nil {
+			mockHandler = MockHandler(doc, MockOptions{})
+		}
+	}
+
+	// consolePath reports whether a request is for the console page (or its own
+	// JSON endpoints) rather than the documented API. In mock mode everything
+	// else is served by the mock, so the two must not overlap: the page and its
+	// fetches live under the mount point (and the bare origin), the API does not.
+	basePath := cfg.BasePathOrDefault()
+	consolePath := func(p string) bool {
+		return p == "/" || p == basePath || strings.HasPrefix(p, basePath+"/")
+	}
+
+	// page is the embedded console, with the mock flag flipped on when mounted
+	// so the header can show its badge. Precomputed once; ui.Page is never
+	// mutated.
+	page := ui.Page
+	if cfg.Mock {
+		page = []byte(strings.Replace(string(ui.Page),
+			"window.__MOCK__=false", "window.__MOCK__=true", 1))
 	}
 
 	writeJSON := func(w http.ResponseWriter, v interface{}) {
@@ -940,7 +971,14 @@ func Handler(cfg Config) http.Handler {
 			writeJSON(w, doc)
 			return
 		}
+		// In mock mode, anything that is not the console page is a call to the
+		// documented API: answer it from the mock so the console's Send returns
+		// a real body on the same origin.
+		if mockHandler != nil && !consolePath(r.URL.Path) {
+			mockHandler.ServeHTTP(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(ui.Page)
+		w.Write(page)
 	})
 }
