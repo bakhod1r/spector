@@ -181,6 +181,22 @@ func TestMiddlewareInferred(t *testing.T) {
 	}
 }
 
+// A function-local variable used as a path prefix must resolve via the
+// scope-aware astutil.Resolver, not just package-level consts.
+func TestFiberLocalPrefix(t *testing.T) {
+	routes, _, diags, err := (&Adapter{}).Scan("testdata/localprefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 0 {
+		t.Errorf("diagnostics = %v, want none", diags)
+	}
+	m := routeMap(routes)
+	if _, ok := m["get /v1/categories"]; !ok {
+		t.Errorf("route missing; got %v", keys(m))
+	}
+}
+
 func TestScanMissingDirErrors(t *testing.T) {
 	if _, _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
 		t.Error("expected an error for a missing dir")

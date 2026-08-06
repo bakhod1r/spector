@@ -77,6 +77,20 @@ func TestGinResolvesConstAndConcatRoutes(t *testing.T) {
 	}
 }
 
+func TestGinLocalPrefix(t *testing.T) {
+	routes, _, diags, err := (&Adapter{}).Scan("testdata/localprefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 0 {
+		t.Fatalf("diags = %d, want 0: %+v", len(diags), diags)
+	}
+	m := routeMap(routes)
+	if _, ok := m["get /v1/categories"]; !ok {
+		t.Fatalf("missing get /v1/categories; got %v", m)
+	}
+}
+
 func TestGinReportsDynamicRoute(t *testing.T) {
 	_, _, diags, err := (&Adapter{}).Scan("testdata/dynroute")
 	if err != nil {

@@ -60,9 +60,9 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	consts := astutil.StringConsts(files)
+	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
-	mounts := collectMounts(files, consts, loc, &diags)
+	mounts := collectMounts(files, res, loc, &diags)
 	served := collectServed(files)
 
 	var routes []core.Route
@@ -82,7 +82,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 			if len(call.Args) != 2 {
 				return true
 			}
-			pattern, ok := astutil.ResolveString(call.Args[0], consts)
+			pattern, ok := res.Resolve(call.Args[0])
 			if !ok {
 				diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 				return true
@@ -182,7 +182,7 @@ type mount struct {
 // for mux.Handle("/v1/", <handler referencing the sub-mux>) calls. The handler
 // argument may be the sub-mux directly or wrapped in http.StripPrefix(...) and
 // middleware; the wrapping is peeled off to find it.
-func collectMounts(files []*ast.File, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) map[string]mount {
+func collectMounts(files []*ast.File, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) map[string]mount {
 	mounts := map[string]mount{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -194,7 +194,7 @@ func collectMounts(files []*ast.File, consts map[string]string, loc astutil.Loca
 			if !ok || sel.Sel.Name != "Handle" || len(call.Args) != 2 {
 				return true
 			}
-			prefix, ok := astutil.ResolveString(call.Args[0], consts)
+			prefix, ok := res.Resolve(call.Args[0])
 			if !ok {
 				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 				return true

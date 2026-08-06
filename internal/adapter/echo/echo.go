@@ -61,19 +61,19 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	consts := astutil.StringConsts(files)
+	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
-	groups := collectGroups(files, consts, loc, &diags)
+	groups := collectGroups(files, res, loc, &diags)
 
 	var routes []core.Route
 	for _, file := range files {
-		collectRoutes(file, groups, handlers, &routes, loc, index, mw, consts, &diags)
+		collectRoutes(file, groups, handlers, &routes, loc, index, mw, res, &diags)
 	}
 
 	return routes, scanner.Schemas, diags.List(), nil
 }
 
-func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index, consts map[string]string, diags *astutil.Diagnostics) {
+func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index, res *astutil.Resolver, diags *astutil.Diagnostics) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -87,7 +87,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		// e.Any("/x", h) registers every method; report the common ones so the
 		// endpoint is not silently missing from the document.
 		if sel.Sel.Name == "Any" && len(call.Args) >= 2 {
-			if path, ok := astutil.ResolveString(call.Args[0], consts); ok {
+			if path, ok := res.Resolve(call.Args[0]); ok {
 				for _, m := range []string{"get", "post", "put", "patch", "delete"} {
 					addRoute(m, path, call.Args[1], call.Args[2:], sel, call, groups, handlers, routes, loc, index, mw)
 				}
@@ -99,7 +99,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 
 		// e.Match([]string{"GET","POST"}, "/x", h)
 		if sel.Sel.Name == "Match" && len(call.Args) >= 3 {
-			if path, ok := astutil.ResolveString(call.Args[1], consts); ok {
+			if path, ok := res.Resolve(call.Args[1]); ok {
 				for _, m := range matchMethods(call.Args[0]) {
 					addRoute(m, path, call.Args[2], call.Args[3:], sel, call, groups, handlers, routes, loc, index, mw)
 				}
@@ -113,7 +113,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		if !ok || len(call.Args) < 2 {
 			return true
 		}
-		path, ok := astutil.ResolveString(call.Args[0], consts)
+		path, ok := res.Resolve(call.Args[0])
 		if !ok {
 			diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			return true
@@ -187,7 +187,7 @@ type groupDef struct {
 
 // collectGroups records `v := e.Group("/prefix")` so routes registered on v
 // resolve to the full path. Groups nest, so each one remembers its receiver.
-func collectGroups(files []*ast.File, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) map[string]groupDef {
+func collectGroups(files []*ast.File, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) map[string]groupDef {
 	groups := map[string]groupDef{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -207,7 +207,7 @@ func collectGroups(files []*ast.File, consts map[string]string, loc astutil.Loca
 			if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
 				return true
 			}
-			prefix, ok := astutil.ResolveString(call.Args[0], consts)
+			prefix, ok := res.Resolve(call.Args[0])
 			if !ok {
 				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 				return true

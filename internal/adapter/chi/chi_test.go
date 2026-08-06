@@ -6,6 +6,15 @@ import (
 	"github.com/user/specter/internal/core"
 )
 
+func hasRoute(rs []core.Route, method, path string) bool {
+	for _, r := range rs {
+		if r.Method == method && r.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 func routeMap(routes []core.Route) map[string]core.Route {
 	m := map[string]core.Route{}
 	for _, r := range routes {
@@ -135,5 +144,19 @@ func TestChiReportsDynamicRoute(t *testing.T) {
 	}
 	if diags[0].Pos.Line == 0 || diags[0].Pos.Filename == "" {
 		t.Errorf("diagnostic has no source position: %+v", diags[0])
+	}
+}
+
+func TestChiLocalPrefix(t *testing.T) {
+	a := &Adapter{}
+	routes, _, diags, err := a.Scan("testdata/localprefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if !hasRoute(routes, "get", "/v1/categories") {
+		t.Fatalf("route /v1/categories not resolved; got %v", routes)
 	}
 }

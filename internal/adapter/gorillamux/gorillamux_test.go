@@ -6,6 +6,15 @@ import (
 	"github.com/user/specter/internal/core"
 )
 
+func hasRoute(rs []core.Route, method, path string) bool {
+	for _, r := range rs {
+		if r.Method == method && r.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 func routeMap(routes []core.Route) map[string]core.Route {
 	m := map[string]core.Route{}
 	for _, r := range routes {

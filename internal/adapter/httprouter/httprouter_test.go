@@ -1,6 +1,7 @@
 package httprouter
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/user/specter/internal/core"
@@ -61,6 +62,30 @@ func TestName(t *testing.T) {
 func TestScanBadDir(t *testing.T) {
 	if _, _, _, err := (&Adapter{}).Scan("testdata/does-not-exist"); err == nil {
 		t.Skip("missing dir parses as empty on this toolchain")
+	}
+}
+
+func hasRoute(routes []core.Route, method, path string) bool {
+	for _, r := range routes {
+		if strings.EqualFold(r.Method, method) && r.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+// A base path built from a function-local variable still resolves, scoped to
+// the function it's declared in.
+func TestHTTPRouterLocalPrefix(t *testing.T) {
+	routes, _, diags, err := (&Adapter{}).Scan("testdata/localprefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 0 {
+		t.Errorf("diags = %v, want none", diags)
+	}
+	if !hasRoute(routes, "GET", "/v1/categories") {
+		t.Errorf("missing route GET /v1/categories; have %v", routes)
 	}
 }
 

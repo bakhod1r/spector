@@ -59,9 +59,9 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	consts := astutil.StringConsts(files)
+	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
-	w := &walker{handlers: handlers, loc: loc, index: index, mw: mw, consts: consts, diags: &diags}
+	w := &walker{handlers: handlers, loc: loc, index: index, mw: mw, res: res, diags: &diags}
 	for _, file := range files {
 		w.collect(file, "", nil)
 	}
@@ -77,7 +77,7 @@ type walker struct {
 	index    *calls.Index
 	mw       *middleware.Index
 	routes   []core.Route
-	consts   map[string]string
+	res      *astutil.Resolver
 	diags    *astutil.Diagnostics
 }
 
@@ -110,7 +110,7 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 		// Groups: r.Route("/api", func(r chi.Router){...}) with a prefix, and
 		// r.Group(func(r chi.Router){...}) without one — the latter exists
 		// precisely to scope middleware.
-		if body, p, ok := groupBody(sel, call, w.consts, w.loc, w.diags); ok {
+		if body, p, ok := groupBody(sel, call, w.res, w.loc, w.diags); ok {
 			w.collect(body, prefix+p, scope)
 			return false // inner routes already handled with the prefix
 		}
@@ -119,7 +119,7 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 		if !ok || len(call.Args) != 2 {
 			return true
 		}
-		path, ok := astutil.ResolveString(call.Args[0], w.consts)
+		path, ok := w.res.Resolve(call.Args[0])
 		if !ok {
 			w.diags.Add(w.loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			return true
@@ -149,10 +149,10 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 
 // groupBody reports the closure a chi group runs, and the prefix it adds.
 // Route carries a path; Group carries none and exists to scope middleware.
-func groupBody(sel *ast.SelectorExpr, call *ast.CallExpr, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) (body *ast.BlockStmt, prefix string, ok bool) {
+func groupBody(sel *ast.SelectorExpr, call *ast.CallExpr, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) (body *ast.BlockStmt, prefix string, ok bool) {
 	switch {
 	case sel.Sel.Name == "Route" && len(call.Args) == 2:
-		p, ok := astutil.ResolveString(call.Args[0], consts)
+		p, ok := res.Resolve(call.Args[0])
 		if !ok {
 			diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 			return nil, "", false
