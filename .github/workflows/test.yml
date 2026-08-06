@@ -1,0 +1,71 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit + race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (race + coverage)
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage floor
+        run: |
+          total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}' | tr -d '%')"
+          echo "total coverage: ${total}%"
+          # Guards against a large regression, not against every percentage
+          # point — raise it deliberately, never lower it to make CI green.
+          if [ "$(echo "$total < 90" | bc -l)" -eq 1 ]; then
+            echo "coverage ${total}% is below the 90% floor"
+            exit 1
+          fi
+
+  integration:
+    name: Integration (CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Drives the compiled CLI against the example API. Gated behind the
+      # `integration` tag so it never runs in the default unit job.
+      - name: Integration tests
+        run: go test -tags integration ./tests/
+
+  bench:
+    name: Benchmarks (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # -benchtime=1x runs each benchmark once: this proves they still compile
+      # and run, without spending CI minutes on stable timing numbers.
+      - name: Run benchmarks once
+        run: go test -run '^$' -bench . -benchtime=1x -benchmem ./benchmarks/
