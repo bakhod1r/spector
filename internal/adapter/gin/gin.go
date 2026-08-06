@@ -82,10 +82,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 		}
 	}
 
-	consts := astutil.StringConsts(files)
+	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	groups := collectGroups(files, consts, &diags, loc)
+	groups := collectGroups(files, res, &diags, loc)
 	// Handlers that return a value from a store or service — the normal shape
 	// in real code — need the package's function result types to be
 	// documentable at all.
@@ -106,7 +106,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 			if !ok || len(call.Args) < 2 {
 				return true
 			}
-			path, ok := astutil.ResolveString(call.Args[0], consts)
+			path, ok := res.Resolve(call.Args[0])
 			if !ok {
 				diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 				return true
@@ -149,7 +149,7 @@ type groupDef struct {
 	prefix string
 }
 
-func collectGroups(files []*ast.File, consts map[string]string, diags *astutil.Diagnostics, loc astutil.Locator) map[string]groupDef {
+func collectGroups(files []*ast.File, res *astutil.Resolver, diags *astutil.Diagnostics, loc astutil.Locator) map[string]groupDef {
 	groups := map[string]groupDef{}
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -169,7 +169,7 @@ func collectGroups(files []*ast.File, consts map[string]string, diags *astutil.D
 			if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
 				return true
 			}
-			prefix, ok := astutil.ResolveString(call.Args[0], consts)
+			prefix, ok := res.Resolve(call.Args[0])
 			if !ok {
 				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
 				return true
