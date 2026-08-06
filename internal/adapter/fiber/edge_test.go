@@ -29,19 +29,26 @@ func TestEdgeCases(t *testing.T) {
 	if r, ok := rs["post /added-sel"]; !ok || r.HandlerName != "addedSel" {
 		t.Errorf("post /added-sel = %+v, %v", r, ok)
 	}
-	// Unknown, variable-named and dynamic-path Add calls are skipped.
-	for _, k := range []string{"trace /nope", "get /var-method", "get /dyn"} {
+	// Unknown method and variable-named method Add calls are skipped; the
+	// method name itself isn't scope-resolved, only the path is.
+	for _, k := range []string{"trace /nope", "get /var-method"} {
 		if _, ok := rs[k]; ok {
 			t.Errorf("%s registered", k)
 		}
+	}
+	// A function-local string var used as a path resolves via the
+	// scope-aware Resolver, so it's no longer a "dynamic" path.
+	if _, ok := rs["get /dyn"]; !ok {
+		t.Error("local-var path route missing")
 	}
 	// The self-assigned group keeps its last prefix without looping.
 	if _, ok := rs["get /again/nested"]; !ok {
 		t.Errorf("nested group route missing; got %v", keys(rs))
 	}
-	// Non-literal group prefix and call-receiver registrations keep bare paths.
-	if _, ok := rs["get /x"]; !ok {
-		t.Error("dynamic-prefix group route missing")
+	// A group prefix built from a function-local var now resolves too, so
+	// the route carries the full prefix rather than a bare path.
+	if _, ok := rs["get /dyn/x"]; !ok {
+		t.Error("local-var group prefix route missing")
 	}
 	if _, ok := rs["get /y"]; !ok {
 		t.Error("call-receiver route missing")
