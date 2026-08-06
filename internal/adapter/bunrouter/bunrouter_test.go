@@ -51,6 +51,28 @@ func TestScanRoutes(t *testing.T) {
 	}
 }
 
+func hasRoute(routes []core.Route, method, path string) bool {
+	for _, r := range routes {
+		if r.Method == method && r.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBunrouterLocalPrefix(t *testing.T) {
+	routes, _, diags, err := (&Adapter{}).Scan("testdata/localprefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 0 {
+		t.Errorf("diags = %v, want none", diags)
+	}
+	if !hasRoute(routes, "get", "/v1/categories") {
+		t.Errorf("missing route get /v1/categories; have %v", routes)
+	}
+}
+
 func TestName(t *testing.T) {
 	if (&Adapter{}).Name() != "bunrouter" {
 		t.Errorf("name = %q", (&Adapter{}).Name())
