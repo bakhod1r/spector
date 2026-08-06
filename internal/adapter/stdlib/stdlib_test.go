@@ -144,6 +144,23 @@ func TestStdlibResolvesConstAndConcatRoutes(t *testing.T) {
 	}
 }
 
+func TestStdlibLocalPrefix(t *testing.T) {
+	routes, _, diags, err := (&Adapter{}).Scan("testdata/localprefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 0 {
+		t.Fatalf("diags = %+v, want none", diags)
+	}
+	got := map[string]bool{}
+	for _, r := range routes {
+		got[r.Method+" "+r.Path] = true
+	}
+	if !got["get /v1/categories"] {
+		t.Errorf("missing route get /v1/categories; got %v", got)
+	}
+}
+
 func TestStdlibReportsDynamicRoute(t *testing.T) {
 	_, _, diags, err := (&Adapter{}).Scan("testdata/dynroute")
 	if err != nil {
