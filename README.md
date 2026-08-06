@@ -937,15 +937,17 @@ catches a misreading of the protocol.
 ## Limitations
 
 - REST inference is AST-based. Route paths and group prefixes built from
-  package-level string constants/vars and `+` concatenations resolve just
-  like literals; function-local `:=` short variables do not yet resolve.
-  A path that is genuinely dynamic — built in a loop, from a slice/map, or
-  from a function return — is reported to stderr as a diagnostic instead of
-  silently dropped. Pass `-strict-routes` to turn any such diagnostic into a
-  non-zero exit, for CI. Resolution is not scope-aware: a function-local
-  variable that shadows a same-named package-level const/var currently
-  resolves to the package-level value, so give local route-path variables
-  distinct names.
+  package-level string constants/vars, function-local `:=` short variables,
+  and `+` concatenations of those resolve just like literals. Resolution is
+  scope-aware: a function-local variable that shadows a same-named
+  package-level const/var resolves to the local value, not the package one.
+  If a local variable cannot be resolved statically, it is not silently
+  filled in from a same-named package const — it is reported to stderr as a
+  dynamic-route diagnostic, same as any other unresolved path. A path that is
+  genuinely dynamic — built in a loop, from a slice/map, from a function
+  return, or from a parameter — is likewise reported to stderr as a
+  diagnostic instead of silently dropped. Pass `-strict-routes` to turn any
+  such diagnostic into a non-zero exit, for CI.
 - net/http grouping uses the sub-mux + `http.StripPrefix` idiom, and sub-muxes
   nest: a mux mounted on a mux mounted on the root composes every prefix and
   guard onto the leaf routes (the standard mux has no native groups).
