@@ -55,6 +55,22 @@ func TestEdgeCases(t *testing.T) {
 	}
 }
 
+func TestFiberReportsDynamicRoute(t *testing.T) {
+	_, _, diags, err := (&Adapter{}).Scan("testdata/edge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags) != 1 {
+		t.Fatalf("diags = %d, want 1: %+v", len(diags), diags)
+	}
+	if diags[0].Kind != "route" {
+		t.Errorf("kind = %q, want route", diags[0].Kind)
+	}
+	if diags[0].Pos.Line == 0 || diags[0].Pos.Filename == "" {
+		t.Errorf("diagnostic has no source position: %+v", diags[0])
+	}
+}
+
 func TestSplitHandlersEmpty(t *testing.T) {
 	if h, inline := splitHandlers(nil); h != nil || inline != nil {
 		t.Errorf("empty args: %v, %v", h, inline)

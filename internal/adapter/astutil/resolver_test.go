@@ -138,3 +138,25 @@ const base = "/v1"
 func routes() { use(base+"/x") }
 func use(string) {}`, "use", "/v1/x")
 }
+
+func TestResolverBlockScopedShadowMasked(t *testing.T) {
+	// A block-local ":=" shadowing a package const must NOT leak into the
+	// function-level use of the name: it must mask, not resolve to either
+	// the block value or the package value.
+	mustMask(t, `package p
+const base = "/admin"
+func routes(cond bool) {
+	if cond {
+		base := "/v1"
+		_ = base
+	}
+	use(base+"/x")
+}
+func use(string) {}`, "use")
+}
+
+func TestResolverTopLevelLocalStillResolves(t *testing.T) {
+	mustResolve(t, `package p
+func routes() { base := "/v1"; use(base+"/x") }
+func use(string) {}`, "use", "/v1/x")
+}

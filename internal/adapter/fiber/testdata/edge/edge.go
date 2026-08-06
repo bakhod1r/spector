@@ -15,12 +15,12 @@ func authMW(c *Ctx) error     { return nil }
 
 type app struct{}
 
-func (a *app) Get(path string, h ...func(*Ctx) error)              {}
-func (a *app) Post(path string, h ...func(*Ctx) error)             {}
-func (a *app) All(path string, h ...func(*Ctx) error)              {}
-func (a *app) Add(m, path string, h ...func(*Ctx) error)           {}
-func (a *app) Group(prefix string, h ...func(*Ctx) error) *app     { return a }
-func (a *app) Use(h ...func(*Ctx) error)                           {}
+func (a *app) Get(path string, h ...func(*Ctx) error)          {}
+func (a *app) Post(path string, h ...func(*Ctx) error)         {}
+func (a *app) All(path string, h ...func(*Ctx) error)          {}
+func (a *app) Add(m, path string, h ...func(*Ctx) error)       {}
+func (a *app) Group(prefix string, h ...func(*Ctx) error) *app { return a }
+func (a *app) Use(h ...func(*Ctx) error)                       {}
 
 func newApp() *app { return &app{} }
 
@@ -33,11 +33,18 @@ func routes() {
 	app.Get("/opt/:id?", getUser)
 	// Inline middleware before the handler.
 	app.Post("/users", authMW, createUser)
-	// Non-literal path is skipped.
+	// Function-local var path resolves via the scope-aware Resolver.
 	dyn := "/dyn"
 	app.Get(dyn, listUsers)
 	// Fewer than two args is skipped.
 	app.Get("/half")
+
+	// Genuinely dynamic: a range-loop variable can't be statically
+	// resolved and must be masked (reported as a dynamic-route diagnostic).
+	dynPaths := []string{"/loop-a", "/loop-b"}
+	for _, lp := range dynPaths {
+		app.Get(lp, listUsers)
+	}
 
 	// All registers the common methods.
 	app.All("/any", anything)
@@ -57,8 +64,9 @@ func routes() {
 	v1.Get("/nested", nested)
 	v1 = v1.Group("/again")
 
-	// Group with a non-literal prefix, a non-ident receiver, and a
-	// multi-assign are all skipped.
+	// Group with a prefix built from a function-local var now resolves too
+	// (via the scope-aware Resolver); the non-ident receiver and
+	// multi-assign below are still skipped.
 	bad := app.Group(dyn)
 	bad.Get("/x", listUsers)
 	newApp().Group("/call").Get("/y", listUsers)

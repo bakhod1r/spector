@@ -133,6 +133,71 @@ func (r *Resolver) applyLocalBindings(body *ast.BlockStmt, env map[string]bindin
 		maskedNames[name] = true
 	}
 
+	// nestedDeclared collects names that are DECLARED (":=" / var) anywhere
+	// below the function's own top-level statement list. Such a name is
+	// lexically scoped to that nested block and must never be treated as a
+	// function-level binding: a bare reference to the name outside/after
+	// that block may lexically resolve to an outer/package binding of the
+	// same name instead, and we cannot tell without full positional scope
+	// tracking. Conservative fix: mask it, never resolve it.
+	nestedDeclared := map[string]bool{}
+	var walkNested func(n ast.Node)
+	walkNested = func(n ast.Node) {
+		ast.Inspect(n, func(n ast.Node) bool {
+			switch s := n.(type) {
+			case *ast.FuncLit:
+				return false // nested func is its own scope entirely
+			case *ast.RangeStmt:
+				if id, ok := s.Key.(*ast.Ident); ok && id.Name != "_" {
+					nestedDeclared[id.Name] = true
+				}
+				if id, ok := s.Value.(*ast.Ident); ok && id.Name != "_" {
+					nestedDeclared[id.Name] = true
+				}
+			case *ast.AssignStmt:
+				if s.Tok.String() == ":=" {
+					for _, lhs := range s.Lhs {
+						if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+							nestedDeclared[id.Name] = true
+						}
+					}
+				}
+			case *ast.DeclStmt:
+				gd, ok := s.Decl.(*ast.GenDecl)
+				if !ok {
+					return true
+				}
+				for _, spec := range gd.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, name := range vs.Names {
+						if name.Name != "_" {
+							nestedDeclared[name.Name] = true
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+	for _, stmt := range body.List {
+		// Any statement that is itself a nested block (if/for/switch/select/
+		// bare block/etc.) may contain declarations lexically scoped to it.
+		// Walk everything below the top-level statement itself (but not the
+		// statement's own top-level init/assign, handled below) to collect
+		// those nested names.
+		switch stmt.(type) {
+		case *ast.AssignStmt, *ast.DeclStmt:
+			// handled as a top-level candidate below; nothing nested here
+			// (a plain top-level := / var has no sub-block to recurse into
+			// for declarations).
+		default:
+			walkNested(stmt)
+		}
+	}
+
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch s := n.(type) {
 		case *ast.FuncLit:
@@ -188,6 +253,15 @@ func (r *Resolver) applyLocalBindings(body *ast.BlockStmt, env map[string]bindin
 		}
 		return true
 	})
+
+	// Any name declared in a nested block is forced to masked, regardless
+	// of whether a same-named top-level candidate also exists (the top-level
+	// candidate and the nested one are different lexical bindings; we can't
+	// safely tell which one a given use-site sees without positional scope
+	// tracking, so mask conservatively).
+	for name := range nestedDeclared {
+		mask(name)
+	}
 
 	// Group candidates per name to detect conflicting resolutions.
 	byName := map[string][]ast.Expr{}
