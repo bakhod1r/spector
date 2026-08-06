@@ -63,9 +63,9 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	consts := astutil.StringConsts(files)
+	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
-	w := &walker{handlers: handlers, loc: loc, index: index, consts: consts, diags: &diags}
+	w := &walker{handlers: handlers, loc: loc, index: index, res: res, diags: &diags}
 	for _, file := range files {
 		w.collect(file)
 	}
@@ -77,7 +77,7 @@ type walker struct {
 	loc      astutil.Locator
 	index    *calls.Index
 	routes   []core.Route
-	consts   map[string]string
+	res      *astutil.Resolver
 	diags    *astutil.Diagnostics
 }
 
@@ -92,7 +92,7 @@ func (w *walker) collect(node ast.Node) {
 			return true
 		}
 
-		method, path, handler, ok := routingCall(sel, call, w.consts, w.loc, w.diags)
+		method, path, handler, ok := routingCall(sel, call, w.res, w.loc, w.diags)
 		if !ok {
 			return true
 		}
@@ -106,9 +106,9 @@ func (w *walker) collect(node ast.Node) {
 //
 //	r.GET("/users", handle)          — method from the selector
 //	r.Handle("GET", "/users", handle) — method from the first argument
-func routingCall(sel *ast.SelectorExpr, call *ast.CallExpr, consts map[string]string, loc astutil.Locator, diags *astutil.Diagnostics) (method, path string, handler ast.Expr, ok bool) {
+func routingCall(sel *ast.SelectorExpr, call *ast.CallExpr, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) (method, path string, handler ast.Expr, ok bool) {
 	if m, isMethod := methods[sel.Sel.Name]; isMethod && len(call.Args) == 2 {
-		if p, ok := astutil.ResolveString(call.Args[0], consts); ok {
+		if p, ok := res.Resolve(call.Args[0]); ok {
 			return m, p, call.Args[1], true
 		}
 		diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
@@ -116,7 +116,7 @@ func routingCall(sel *ast.SelectorExpr, call *ast.CallExpr, consts map[string]st
 	}
 	if sel.Sel.Name == "Handle" && len(call.Args) == 3 {
 		verb, ok1 := astutil.StringLit(call.Args[0])
-		p, ok2 := astutil.ResolveString(call.Args[1], consts)
+		p, ok2 := res.Resolve(call.Args[1])
 		m, known := methods[strings.ToUpper(verb)]
 		if ok1 && ok2 && known {
 			return m, p, call.Args[2], true
