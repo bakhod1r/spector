@@ -1,0 +1,35 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Static route resolution: route paths and group prefixes built from
+  package-level string `const`/`var` and `+` concatenation are resolved across
+  all router adapters, not just string literals.
+- `-strict-routes`: exit non-zero when a genuinely dynamic route
+  (loop/slice/map/function-return) cannot be resolved statically. Such routes
+  otherwise emit a diagnostic to stderr.
+- Interactive gRPC streaming console: a WebSocket-backed session panel
+  (Connect / Send / Half-close / Cancel) for all four method kinds, auth and
+  same-origin gated.
+- Router adapters: `httprouter`, `bunrouter` (in addition to gin, chi, echo,
+  fiber, gorillamux, stdlib).
+- Exports: AsyncAPI 2.6 (`-asyncapi`), HAR 1.2 (`-har`), and Postman collection
+  enrichment (variables, environments, test scripts, examples).
+
+### Changed
+- `Adapter.Scan` returns `[]core.Diagnostic` alongside routes and schemas so
+  unresolved-route reporting is uniform across adapters.
+
+## [0.1.0]
+
+Initial public baseline: zero-config OpenAPI generation from Go router source,
+a browser console, mock and verifying-proxy modes, and typed client SDKs.
+
+[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/bakhod1r/spector/releases/tag/v0.1.0
