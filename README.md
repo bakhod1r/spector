@@ -1,6 +1,6 @@
 # Specter
 
-<img src="docs/assets/specter.png" alt="Specter" width="420">
+<img src="assets/specter.png" alt="Specter" width="420">
 
 Specter generates OpenAPI 3.0 documents and a browsable API console straight
 from your Go source — no annotations, no code generation step, no runtime
