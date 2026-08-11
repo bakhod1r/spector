@@ -231,6 +231,13 @@
   .run-name { font-family:ui-monospace,monospace; font-size:13px; flex:1; }
   .run-meta { color:var(--muted); font-size:12px; }
   .run-reasons { margin-top:6px; font-size:12px; color:#f87171; font-family:ui-monospace,monospace; white-space:pre-wrap; }
+  .run-chev { width:12px; color:var(--muted); font-size:10px; user-select:none; }
+  .run-chev.off { visibility:hidden; }
+  .run-detail { display:none; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+  .run-detail.on { display:block; }
+  .run-detail h4 { margin:6px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+  .run-kv { font-family:ui-monospace,monospace; font-size:12px; color:var(--text); word-break:break-all; }
+  .run-detail pre { margin:4px 0 0; padding:8px; background:var(--code-bg); border-radius:6px; font-size:12px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
 </style>
 </head>
 <body>
@@ -2739,6 +2746,9 @@ async function runOneRest(spec, req, op) {
   const t0 = performance.now();
   const res = await fetch(url, opts);
   const text = await res.text();
+  const detail = makeDetail(
+    { title: opts.method + " " + url, meta: opts.headers, body: opts.body },
+    { status: res.status, body: text });
   const ms = Math.round(performance.now() - t0);
   let json = null; try { json = JSON.parse(text); } catch (e) {}
   // Chaining: feed extracted values back into the environment for later calls.
@@ -2762,7 +2772,41 @@ async function runOneRest(spec, req, op) {
       }
     }
   }
-  return { label: req.method.toUpperCase() + " " + req.path, status: res.status, ms, pass, reasons };
+  return { label: req.method.toUpperCase() + " " + req.path, status: res.status, ms, pass, reasons, detail };
+}
+
+// RUN_BODY_CAP bounds how much of a request/response body the detail panel
+// shows, so one large body cannot swamp the modal. Truncation is display-only.
+const RUN_BODY_CAP = 4000;
+
+// renderBody returns display text for a body string: pretty-printed when it
+// parses as JSON, verbatim otherwise, truncated past the cap with a count.
+function renderBody(str) {
+  if (str == null || str === "") return "";
+  let out = str;
+  try { out = JSON.stringify(JSON.parse(str), null, 2); } catch (e) {}
+  if (out.length > RUN_BODY_CAP) out = out.slice(0, RUN_BODY_CAP) + "\n… (" + (out.length - RUN_BODY_CAP) + " more characters)";
+  return out;
+}
+
+// makeDetail normalizes a runner's captured request/response into the shape
+// addRunRow renders, dropping empty pieces so a partial capture (e.g. an error
+// before any response) still renders what it has.
+function makeDetail(request, response) {
+  const d = {};
+  if (request) {
+    const req = { title: request.title || "" };
+    if (request.meta && Object.keys(request.meta).length) req.meta = request.meta;
+    if (request.body) req.body = request.body;
+    d.request = req;
+  }
+  if (response) {
+    const res = {};
+    if (response.status != null) res.status = response.status;
+    if (response.body) res.body = response.body;
+    d.response = res;
+  }
+  return d;
 }
 
 function openRunModal(title) {
@@ -2774,14 +2818,50 @@ function openRunModal(title) {
 }
 function addRunRow(tb, r) {
   const row = document.createElement("div"); row.className = "run-row " + (r.pass ? "pass" : "fail");
+  const hasDetail = !!(r.detail && (r.detail.request || r.detail.response));
   const line = document.createElement("div"); line.className = "run-line";
-  line.innerHTML = `<span class="run-badge ${r.pass ? "ok" : "bad"}">${r.pass ? "PASS" : "FAIL"}</span>`
+  line.innerHTML = (hasDetail ? `<span class="run-chev">▶</span>` : `<span class="run-chev off"></span>`)
+    + `<span class="run-badge ${r.pass ? "ok" : "bad"}">${r.pass ? "PASS" : "FAIL"}</span>`
     + `<span class="run-name"></span>`
     + `<span class="run-meta">${r.status != null ? r.status : ""}${r.ms != null ? " · " + r.ms + " ms" : ""}</span>`;
   line.querySelector(".run-name").textContent = r.label;
   row.appendChild(line);
   if (r.reasons && r.reasons.length) { const p = document.createElement("div"); p.className = "run-reasons"; p.textContent = r.reasons.join("\n"); row.appendChild(p); }
+  if (hasDetail) {
+    line.style.cursor = "pointer";
+    const panel = runDetailPanel(r.detail); // hidden until toggled
+    row.appendChild(panel);
+    line.onclick = () => {
+      const open = panel.classList.toggle("on");
+      line.querySelector(".run-chev").textContent = open ? "▼" : "▶";
+    };
+  }
   tb.appendChild(row);
+}
+
+// runDetailPanel builds the collapsed Request/Response panel for one row. All
+// captured text is inserted as text, never markup, so a response body cannot
+// inject into the console.
+function runDetailPanel(detail) {
+  const panel = document.createElement("div"); panel.className = "run-detail";
+  const block = (heading) => { const h = document.createElement("h4"); h.textContent = heading; panel.appendChild(h); };
+  const pre = (text) => { const p = document.createElement("pre"); p.textContent = text; panel.appendChild(p); };
+  if (detail.request) {
+    block("Request");
+    if (detail.request.title) { const t = document.createElement("div"); t.className = "run-kv"; t.textContent = detail.request.title; panel.appendChild(t); }
+    for (const k in (detail.request.meta || {})) {
+      const kv = document.createElement("div"); kv.className = "run-kv";
+      kv.textContent = k + ": " + detail.request.meta[k];
+      panel.appendChild(kv);
+    }
+    const rb = renderBody(detail.request.body); if (rb) pre(rb);
+  }
+  if (detail.response) {
+    block("Response");
+    if (detail.response.status != null) { const s = document.createElement("div"); s.className = "run-kv"; s.textContent = "status: " + detail.response.status; panel.appendChild(s); }
+    const rb = renderBody(detail.response.body); if (rb) pre(rb);
+  }
+  return panel;
 }
 function setRunSummary(pass, total, done) {
   const el = document.getElementById("runSummary");
@@ -2857,13 +2937,14 @@ async function runAllGrpc() {
   const env = activeEnv();
   for (const { svc, m } of list) {
     const label = svc.name + "/" + m.name;
-    const reasons = []; let ok = true, status = null, ms = null;
+    const reasons = []; let ok = true, status = null, ms = null, detail = null;
     try {
       const target = interpolate(env.vars[grpcHostVar(svc.name)] || env.vars.grpcHost || "localhost:50051", env);
       const data = interpolate(JSON.stringify(sample(gs, { $ref: "#/components/schemas/" + m.inputType })), env);
       const t0 = performance.now();
       const res = await fetch("grpc/invoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, symbol: svc.fullName + "/" + m.name, data }) });
       const text = await res.text(); ms = Math.round(performance.now() - t0); status = res.status;
+      detail = makeDetail({ title: target + "  " + svc.fullName + "/" + m.name, body: data }, { status, body: text });
       let json = null; try { json = JSON.parse(text); } catch (e) {}
       if (!res.ok) { ok = false; reasons.push("HTTP " + res.status); }
       else if (json && json.error) { ok = false; reasons.push(json.error); }
@@ -2879,7 +2960,7 @@ async function runAllGrpc() {
       }
     } catch (e) { ok = false; reasons.push(String(e)); }
     if (ok) pass++; done++;
-    addRunRow(tb, { label, status, ms, pass: ok, reasons }); setRunSummary(pass, list.length, done);
+    addRunRow(tb, { label, status, ms, pass: ok, reasons, detail }); setRunSummary(pass, list.length, done);
   }
   if (!list.length) tb.innerHTML = '<div class="hint">No gRPC methods to run.</div>';
 }
@@ -2899,7 +2980,7 @@ async function runAllGraphql() {
   let pass = 0, done = 0;
   for (const { g, f } of list) {
     const label = g + " " + f.name;
-    const reasons = []; let ok = true, status = null, ms = null;
+    const reasons = []; let ok = true, status = null, ms = null, detail = null;
     try {
       const query = buildGraphqlOperation(gs, g, f);
       const variables = graphqlVarSample(gs, f);
@@ -2908,6 +2989,7 @@ async function runAllGraphql() {
       const t0 = performance.now();
       const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ query, variables }) });
       const text = await res.text(); ms = Math.round(performance.now() - t0); status = res.status;
+      detail = makeDetail({ title: "POST " + url, meta: { variables: JSON.stringify(variables) }, body: query }, { status, body: text });
       let json = null; try { json = JSON.parse(text); } catch (e) {}
       // GraphQL returns 200 with an errors[] on failure, so status is not enough.
       if (!res.ok) { ok = false; reasons.push("HTTP " + res.status); }
@@ -2915,7 +2997,7 @@ async function runAllGraphql() {
       else if (!json || !json.data || json.data[f.name] === undefined) { ok = false; reasons.push("no data." + f.name + " in response"); }
     } catch (e) { ok = false; reasons.push(String(e)); }
     if (ok) pass++; done++;
-    addRunRow(tb, { label, status, ms, pass: ok, reasons }); setRunSummary(pass, list.length, done);
+    addRunRow(tb, { label, status, ms, pass: ok, reasons, detail }); setRunSummary(pass, list.length, done);
   }
   if (!list.length) tb.innerHTML = '<div class="hint">No GraphQL operations to run.</div>';
 }
