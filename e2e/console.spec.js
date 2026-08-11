@@ -351,6 +351,27 @@ module.exports = async function run(BASE) {
   check('plain $.id regression via pickOne', jpResults.plainId === 1, String(jpResults.plainId));
   check('plain $.id regression via pick (array)', JSON.stringify(jpResults.plainIdArr) === JSON.stringify([1]), JSON.stringify(jpResults.plainIdArr));
 
+  // ---- 11. Run all shows request & response per row ----
+  // Each Run all row expands to the request that was sent and the response that
+  // came back. The write-guard confirm is dismissed so only read-only requests
+  // run — nothing on the example server is mutated.
+  c.section('[11] Run all request/response');
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  page.once('dialog', d => d.dismiss()); // write-guard → run read-only only
+  await page.click('#runAllBtn');
+  await page.waitForSelector('#runBody .run-row', { timeout: 10000 });
+  const rowLine = await page.$('#runBody .run-row .run-line');
+  check('a run row rendered', !!rowLine);
+  await rowLine.click();
+  const detail = await page.waitForSelector('#runBody .run-detail.on', { timeout: 5000 });
+  const detailText = await detail.innerText();
+  // The block headings are uppercased by CSS, so innerText returns REQUEST /
+  // RESPONSE — match case-insensitively.
+  check('row expands to a Request block', /request/i.test(detailText), detailText.slice(0, 80));
+  check('row shows the request line', /GET\s/.test(detailText), detailText.slice(0, 120));
+  check('row expands to a Response block', /response/i.test(detailText), detailText.slice(0, 120));
+  check('row shows the response status', /status:\s*\d/.test(detailText), detailText.slice(0, 120));
+
   console.log('\n[JS errors]', jsErrors.length ? jsErrors : 'none');
   check('no uncaught JS errors', jsErrors.length === 0, jsErrors.join('; '));
 

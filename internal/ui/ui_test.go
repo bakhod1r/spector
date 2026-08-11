@@ -67,6 +67,23 @@ func TestExportFormatConstants(t *testing.T) {
 	}
 }
 
+// Run all rows expand to show the request and response. The renderer and the
+// per-row detail machinery are referenced by name across the three runners, so
+// a rename that missed one would silently drop the panel — pin the contract.
+func TestRunAllDetailContract(t *testing.T) {
+	page := string(Page)
+	for _, want := range []string{
+		"function makeDetail(",
+		"function renderBody(",
+		"RUN_BODY_CAP",
+		"run-detail",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Run all detail view missing %s", want)
+		}
+	}
+}
+
 // The page fetches these from the handler; the handler must keep serving them.
 func TestFetchedEndpoints(t *testing.T) {
 	page := string(Page)
