@@ -74,6 +74,9 @@ specter -graphql -dir ./graph -o graphql.json
 | `-sdk-package` | Package name for the generated Go client (default `client`) |
 | `-openapi`    | Generate the `-sdk` client from this OpenAPI file (`.json`/`.yaml`) instead of scanning source |
 | `-watch`      | Stay running and regenerate whenever the scanned sources change |
+| `-serve`      | Serve the interactive console on an address, e.g. `:8099`, until stopped |
+| `-serve-mock` | With `-serve`, answer documented paths from the built-in mock on the console origin (shows a MOCK badge) |
+| `-prod`       | Production mode: hide the scanned source (no file paths, line numbers, or **View source**) from the document and console |
 
 ### Client SDKs — ten languages
 

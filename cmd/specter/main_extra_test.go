@@ -226,3 +226,39 @@ func TestConfigFileSetsAdapter(t *testing.T) {
 		t.Errorf("stdout does not contain the route:\n%s", stdout)
 	}
 }
+
+func TestProdFlagHidesSource(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+
+	// Control: without -prod the document carries source references.
+	code, stdout, stderr := exec(t, "-dir", dir)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "x-specter-source") {
+		t.Fatalf("dev document has no x-specter-source to hide:\n%s", stdout)
+	}
+
+	// -prod strips it.
+	code, stdout, stderr = exec(t, "-dir", dir, "-prod")
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	if strings.Contains(stdout, "x-specter-source") {
+		t.Errorf("-prod document still contains x-specter-source:\n%s", stdout)
+	}
+}
+
+func TestConfigFileSetsProduction(t *testing.T) {
+	dir := writeTree(t, map[string]string{
+		"main.go":      ginSrc,
+		"specter.json": `{"production": true}`,
+	})
+	code, stdout, stderr := exec(t, "-dir", dir)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	if strings.Contains(stdout, "x-specter-source") {
+		t.Errorf("production config file did not hide source:\n%s", stdout)
+	}
+}

@@ -80,6 +80,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	strictRoutes := fs.Bool("strict-routes", false, "exit non-zero if any route path cannot be statically resolved")
 	serveAddr := fs.String("serve", "", "serve the interactive console on this address (e.g. :8099) until stopped")
 	serveMock := fs.Bool("serve-mock", false, "with -serve, answer documented paths from the built-in mock on the console origin (adds a MOCK badge)")
+	prod := fs.Bool("prod", false, "production mode: hide the scanned source (no file paths, line numbers, or View source) from the document and console")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -107,6 +108,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// document and the console's disagree about the same API.
 	if err := applyConfigFile(&cfg, fs, *configPath, *dirFlag); err != nil {
 		return fail(err)
+	}
+	// A passed -prod always wins; the config file can turn it on by default.
+	if *prod {
+		cfg.Production = true
 	}
 
 	// -serve is a long-lived mode: it runs the console until the process is
@@ -650,6 +655,9 @@ type fileConfig struct {
 	// AccessKey gates the console. It is read here so one file describes the
 	// whole deployment, but it has no effect on the document the CLI writes.
 	AccessKey string `json:"accessKey"`
+	// Production hides the scanned source from the document and console. A
+	// passed -prod flag still wins over the file.
+	Production bool `json:"production"`
 }
 
 // applyConfigFile fills cfg from a JSON file, leaving anything the user typed
@@ -695,6 +703,7 @@ func applyConfigFile(cfg *specter.Config, fs *flag.FlagSet, path, dir string) er
 	cfg.Security = fc.Security
 	cfg.BasePath = fc.BasePath
 	cfg.AccessKey = fc.AccessKey
+	cfg.Production = fc.Production
 	return nil
 }
 
