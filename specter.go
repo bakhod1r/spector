@@ -115,6 +115,14 @@ type Config struct {
 	// mock is shape, not state (see MockHandler). Empty (the default) keeps the
 	// console a pure documentation viewer.
 	Mock bool
+
+	// Production hardens the console for an internet-facing deployment. Today it
+	// hides the scanned application's source: every operation's Source is cleared
+	// from the document (so no file paths, line numbers, or "View source" button
+	// reach a client) and the console's source endpoint is refused. It is the
+	// seam for future hardening; empty (the default) keeps the full developer
+	// experience, source view included.
+	Production bool
 }
 
 // DefaultBasePath is where the console lives unless Config says otherwise.
@@ -558,7 +566,22 @@ func Generate(cfg Config) (*core.Document, error) {
 	applyInferredSchemes(doc, routes)
 	applyDeclared(doc, cfg)
 	applyAdvice(doc)
+	if cfg.Production {
+		stripSource(doc)
+	}
 	return doc, nil
+}
+
+// stripSource clears every operation's Source so the document carries no file
+// paths or line numbers. The field is json:"x-specter-source,omitempty", so
+// the extension then disappears from the emitted JSON and the console's
+// source-view button, which is gated on it, never renders.
+func stripSource(doc *core.Document) {
+	for _, methods := range doc.Paths {
+		for _, op := range methods {
+			op.Source = nil
+		}
+	}
 }
 
 // applyAdvice attaches standards recommendations to each operation. They are
@@ -914,6 +937,12 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "source") {
+			if cfg.Production {
+				// Source is hidden in production: refuse even a hand-crafted
+				// request, matching the "not available" the UI already handles.
+				http.Error(w, "not available", http.StatusNotFound)
+				return
+			}
 			line, _ := strconv.Atoi(r.URL.Query().Get("line"))
 			snip, serr := source.Read(cfg.withDefaults().Dir, r.URL.Query().Get("file"), line)
 			if serr != nil {
