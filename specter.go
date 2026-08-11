@@ -289,6 +289,15 @@ func ServeMock(addr string, doc *Document, opts MockOptions) error {
 	return http.ListenAndServe(addr, MockHandler(doc, opts))
 }
 
+// ServeConsole runs the interactive console on addr until the process stops.
+// It is the supported way to keep the console up — a real, long-lived process
+// the operator owns — rather than an ad-hoc runner. The document is built from
+// cfg lazily on the first request (see Handler), so a scan error surfaces as a
+// 500 on that request rather than preventing the server from starting.
+func ServeConsole(addr string, cfg Config) error {
+	return http.ListenAndServe(addr, Handler(cfg))
+}
+
 // ProxyOptions configures the traffic-verifying proxy.
 type ProxyOptions = proxy.Options
 

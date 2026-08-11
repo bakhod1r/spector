@@ -78,6 +78,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	coverageFlag := fs.Bool("coverage", false, "report documentation coverage instead of a document")
 	coverageMin := fs.Float64("coverage-min", 0, "exit 1 when coverage is below this percent (implies -coverage)")
 	strictRoutes := fs.Bool("strict-routes", false, "exit non-zero if any route path cannot be statically resolved")
+	serveAddr := fs.String("serve", "", "serve the interactive console on this address (e.g. :8099) until stopped")
+	serveMock := fs.Bool("serve-mock", false, "with -serve, answer documented paths from the built-in mock on the console origin (adds a MOCK badge)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -105,6 +107,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// document and the console's disagree about the same API.
 	if err := applyConfigFile(&cfg, fs, *configPath, *dirFlag); err != nil {
 		return fail(err)
+	}
+
+	// -serve is a long-lived mode: it runs the console until the process is
+	// stopped, so it must not fall through to the one-shot generation path.
+	if *serveAddr != "" {
+		cfg.Mock = *serveMock
+		fmt.Fprintf(stderr, "specter: console on http://localhost%s%s/\n", *serveAddr, cfg.BasePathOrDefault())
+		if serr := specter.ServeConsole(*serveAddr, cfg); serr != nil {
+			return fail(serr)
+		}
+		return 0
 	}
 	// An empty result is not an error: the scan ran, it just found nothing.
 	// A warning names the directory so the cause is obvious.
