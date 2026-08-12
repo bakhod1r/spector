@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `-gateway` (`specter.GenerateGateway`): build a REST OpenAPI document from the
+  `google.api.http` annotations in `.proto` sources — methods, path templates,
+  `body` mappings, `additional_bindings` and `custom` kinds. Unannotated RPCs
+  are left out; server-streaming bindings are marked `x-specter-realtime`.
+
 ### Added
 - `-format yaml`: emit the OpenAPI, gRPC or GraphQL document as YAML instead of
   JSON, in the document's own key order. An `-o` ending in `.yaml`/`.yml`

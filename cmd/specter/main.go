@@ -81,6 +81,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	testPkg := fs.String("test-package", "", "package name for the generated test file (default: apitest)")
 	coverageFlag := fs.Bool("coverage", false, "report documentation coverage instead of a document")
 	coverageMin := fs.Float64("coverage-min", 0, "exit 1 when coverage is below this percent (implies -coverage)")
+	gateway := fs.Bool("gateway", false, "export a REST document built from google.api.http annotations in .proto sources (gRPC-Gateway)")
 	format := fs.String("format", "", "document output format: json (default) or yaml; inferred from -o's extension when empty")
 	strictRoutes := fs.Bool("strict-routes", false, "exit non-zero if any route path cannot be statically resolved")
 	serveAddr := fs.String("serve", "", "serve the interactive console on this address (e.g. :8099) until stopped")
@@ -519,6 +520,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 				warnEmpty("gRPC services", orDir(*protoDir))
 			}
 			v = gdoc
+		case *gateway:
+			gwdoc, err := specter.GenerateGateway(cfg)
+			if err != nil {
+				return nil, err
+			}
+			if len(gwdoc.Paths) == 0 {
+				warnEmpty("google.api.http annotations", orDir(*protoDir))
+			}
+			v = gwdoc
 		case *graphql:
 			qdoc, err := specter.GenerateGraphql(cfg)
 			if err != nil {
