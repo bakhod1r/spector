@@ -40,7 +40,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	graphqlDir := fs.String("graphqlDir", "", "directory to scan for GraphQL sources (defaults to -dir)")
 	lintOnly := fs.Bool("lint", false, "report routing problems instead of a document; exits 1 if any are found")
 	all := fs.Bool("all", false, "write openapi.json, grpc.json and graphql.json into -o (a directory)")
-	sdkLang := fs.String("sdk", "","generate a typed client instead of a document: go, ts, python, js, ruby, php, csharp, rust, kotlin, java")
+	sdkLang := fs.String("sdk", "", "generate a typed client instead of a document: go, ts, python, js, ruby, php, csharp, rust, kotlin, java")
 	sdkOut := fs.String("sdk-out", "", "directory the generated client is written into (default ./sdk)")
 	sdkPkg := fs.String("sdk-package", "", "package name for the generated Go client (default: client)")
 	openapiIn := fs.String("openapi", "", "generate the -sdk client from this OpenAPI file (.json/.yaml) instead of scanning source")
