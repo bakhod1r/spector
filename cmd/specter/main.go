@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/user/specter"
+	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -28,7 +29,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("specter", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dirFlag := fs.String("dir", ".", "directory to scan")
-	configPath := fs.String("config", "", "JSON config file (default: specter.json in -dir, if present)")
+	configPath := fs.String("config", "", "config file, JSON or YAML by extension (default: specter.json, .yaml or .yml in -dir, if present)")
 	adapter := fs.String("adapter", "", "framework adapter (gin, chi, echo, fiber, gorillamux, httprouter, bunrouter, stdlib); autodetected if empty")
 	title := fs.String("title", "", "API title (defaults to directory name)")
 	version := fs.String("version", "0.1.0", "API version")
@@ -662,18 +663,35 @@ func fingerprint(dir string) string {
 // Config is public API, and giving it JSON tags would turn it into a
 // serialization contract that could not be changed afterwards.
 type fileConfig struct {
-	Title    string                            `json:"title"`
-	Version  string                            `json:"version"`
-	Adapter  string                            `json:"adapter"`
-	Servers  []specter.Server                  `json:"servers"`
-	Security map[string]specter.SecurityScheme `json:"security"`
-	BasePath string                            `json:"basePath"`
+	Title    string                            `json:"title" yaml:"title"`
+	Version  string                            `json:"version" yaml:"version"`
+	Adapter  string                            `json:"adapter" yaml:"adapter"`
+	Servers  []specter.Server                  `json:"servers" yaml:"servers"`
+	Security map[string]specter.SecurityScheme `json:"security" yaml:"security"`
+	BasePath string                            `json:"basePath" yaml:"basePath"`
 	// AccessKey gates the console. It is read here so one file describes the
 	// whole deployment, but it has no effect on the document the CLI writes.
-	AccessKey string `json:"accessKey"`
+	AccessKey string `json:"accessKey" yaml:"accessKey"`
 	// Production hides the scanned source from the document and console. A
 	// passed -prod flag still wins over the file.
-	Production bool `json:"production"`
+	Production bool `json:"production" yaml:"production"`
+}
+
+// configNames is the set of filenames applyConfigFile looks for in the scanned
+// directory when no -config is given, in order. JSON is first so an existing
+// specter.json is never silently overridden by a YAML file beside it.
+var configNames = []string{"specter.json", "specter.yaml", "specter.yml"}
+
+// decodeConfig unmarshals config bytes into fc, choosing the format by the
+// file's extension: .yaml/.yml is YAML, anything else (including .json and no
+// extension) is JSON.
+func decodeConfig(path string, data []byte, fc *fileConfig) error {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return yaml.Unmarshal(data, fc)
+	default:
+		return json.Unmarshal(data, fc)
+	}
 }
 
 // applyConfigFile fills cfg from a JSON file, leaving anything the user typed
@@ -681,25 +699,41 @@ type fileConfig struct {
 // that was actually passed always wins, which cannot be decided by looking at
 // values because -version has a non-empty default of its own.
 //
-// path names a file explicitly and must exist. With no -config, a specter.json
-// next to the scanned source is used if there is one, so the console and the
-// CLI agree by default rather than by discipline.
+// path names a file explicitly and must exist; its format is chosen by
+// extension (.yaml/.yml is YAML, otherwise JSON). With no -config, the scanned
+// source is checked for specter.json, then specter.yaml, then specter.yml — the
+// first found wins — so the console and the CLI agree by default rather than by
+// discipline.
 func applyConfigFile(cfg *specter.Config, fs *flag.FlagSet, path, dir string) error {
 	explicit := path != ""
-	if !explicit {
-		path = filepath.Join(dir, "specter.json")
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if !explicit && os.IsNotExist(err) {
+	var data []byte
+	if explicit {
+		d, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		data = d
+	} else {
+		// Try each default name in order; the first that exists wins. A directory
+		// with no config at all is not an error.
+		for _, name := range configNames {
+			candidate := filepath.Join(dir, name)
+			d, err := os.ReadFile(candidate)
+			if err == nil {
+				path, data = candidate, d
+				break
+			}
+			if !os.IsNotExist(err) {
+				return err
+			}
+		}
+		if data == nil {
 			return nil
 		}
-		return err
 	}
 
 	var fc fileConfig
-	if err := json.Unmarshal(data, &fc); err != nil {
+	if err := decodeConfig(path, data, &fc); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 
