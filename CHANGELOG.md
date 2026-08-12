@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-12
+
+### Added
 - `-gateway` (`specter.GenerateGateway`): build a REST OpenAPI document from the
   `google.api.http` annotations in `.proto` sources — methods, path templates,
   `body` mappings, `additional_bindings` and `custom` kinds. Unannotated RPCs
   are left out; server-streaming bindings are marked `x-specter-realtime`.
-
-### Added
 - `-format yaml`: emit the OpenAPI, gRPC or GraphQL document as YAML instead of
   JSON, in the document's own key order. An `-o` ending in `.yaml`/`.yml`
   implies it; an explicit `-format` wins. `-all` writes the `.yaml` names.
@@ -35,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exports: AsyncAPI 2.6 (`-asyncapi`), HAR 1.2 (`-har`), and Postman collection
   enrichment (variables, environments, test scripts, examples).
 
+### Fixed
+- A label no longer hides a route prefix: a `LabeledStmt` wrapping a top-level
+  `:=` was treated as a nested-block declaration and masked, producing a
+  false-positive dynamic-route diagnostic.
+
 ### Changed
 - `Adapter.Scan` returns `[]core.Diagnostic` alongside routes and schemas so
   unresolved-route reporting is uniform across adapters.
@@ -44,5 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public baseline: zero-config OpenAPI generation from Go router source,
 a browser console, mock and verifying-proxy modes, and typed client SDKs.
 
-[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bakhod1r/spector/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bakhod1r/spector/releases/tag/v0.1.0
