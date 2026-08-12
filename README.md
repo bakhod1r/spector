@@ -59,7 +59,9 @@ specter -graphql -dir ./graph -o graphql.json
 | `-proxy-record` | Record traffic to this file as JSONL; credentials redacted by default |
 | `-proxy-record-raw` | Record **without** redacting — the file will contain secrets |
 | `-proxy-learn` | Write an OpenAPI fragment for endpoints seen in traffic but not documented |
+| `-proxy-merge` | With `-proxy-learn`, write the source document with observed traffic merged in (fills dynamic-route gaps) instead of a bare fragment |
 | `-proxy-strict` | Exit non-zero if any drift was found (for CI) |
+| `-merge-learned` | Merge a previously written observed fragment (`.json`) into the scanned document, filling routes the AST could not resolve |
 | `-mock`       | Serve the document as a mock API on an address, e.g. `:8080` |
 | `-mock-origin` | Comma-separated origins allowed to call the mock (default any) |
 | `-mock-credentials` | Allow cookies and `Authorization` headers on mock requests |

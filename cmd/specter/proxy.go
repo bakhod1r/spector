@@ -24,6 +24,7 @@ type proxyConfig struct {
 	record    string
 	recordRaw bool
 	learn     string
+	merge     bool
 	strict    bool
 	title     string
 	version   string
@@ -135,14 +136,22 @@ func runProxy(doc *specter.Document, cfg proxyConfig, stdout, stderr io.Writer) 
 		if learner.Empty() {
 			fmt.Fprintln(stderr, "specter: nothing to learn — every request matched a documented endpoint")
 		} else {
-			data, mErr := json.MarshalIndent(learner.Document(cfg.title, cfg.version), "", "  ")
+			// -proxy-merge writes the source document with observed traffic folded
+			// in (filling the dynamic-route gaps); without it, the bare fragment.
+			out := learner.Document(cfg.title, cfg.version)
+			what := "an OpenAPI fragment for undocumented traffic"
+			if cfg.merge {
+				out = specter.MergeObserved(doc, out)
+				what = "the document with observed traffic merged in"
+			}
+			data, mErr := json.MarshalIndent(out, "", "  ")
 			if mErr != nil {
 				return fail(mErr)
 			}
 			if wErr := os.WriteFile(cfg.learn, append(data, '\n'), 0o644); wErr != nil {
 				return fail(wErr)
 			}
-			fmt.Fprintf(stderr, "specter: wrote an OpenAPI fragment for undocumented traffic to %s (review before merging)\n", cfg.learn)
+			fmt.Fprintf(stderr, "specter: wrote %s to %s (review before merging)\n", what, cfg.learn)
 		}
 	}
 

@@ -324,6 +324,16 @@ func NewProxy(doc *Document, opts ProxyOptions) (*Proxy, error) {
 	return proxy.New(doc, opts)
 }
 
+// MergeObserved folds observed traffic into a source document: routes the
+// document lacks are added and marked x-specter-observed, and documented routes
+// gain only the status codes they did not already carry (a source response is
+// never overwritten). It fills the dynamic-route gaps that emit diagnostics with
+// what live traffic actually did, and backs both -proxy-merge and -merge-learned.
+// Neither input is mutated.
+func MergeObserved(base, observed *Document) *Document {
+	return proxy.MergeObserved(base, observed)
+}
+
 // EvolveChange is one difference between two versions of a document, classified
 // by its effect on an existing client.
 type EvolveChange = evolve.Change

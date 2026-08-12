@@ -60,6 +60,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	proxyRecord := fs.String("proxy-record", "", "record traffic to this file as JSONL; credentials are redacted (see -proxy-record-raw)")
 	proxyRecordRaw := fs.Bool("proxy-record-raw", false, "record traffic WITHOUT redacting credentials or masking sensitive fields; the file will contain secrets — never commit it")
 	proxyLearn := fs.String("proxy-learn", "", "write an OpenAPI fragment for endpoints seen in traffic but missing from the document")
+	proxyMerge := fs.Bool("proxy-merge", false, "with -proxy-learn, write the source document with observed traffic merged in (fills dynamic-route gaps) instead of a bare fragment")
+	mergeLearned := fs.String("merge-learned", "", "merge a previously written observed fragment (.json) into the scanned document, filling routes the AST could not resolve")
 	proxyStrict := fs.Bool("proxy-strict", false, "exit non-zero if any drift was found (for CI)")
 	mockAddr := fs.String("mock", "", "serve the document as a mock API on this address (e.g. :8080)")
 	mockOrigins := fs.String("mock-origin", "", "comma-separated origins allowed to call the mock (default any)")
@@ -405,6 +407,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// -proxy sits in front of a real API and reports where the traffic
 	// disagrees with the document. Like -mock it runs until interrupted.
 	if *proxyAddr != "" {
+		if *proxyMerge && *proxyLearn == "" {
+			return fail(fmt.Errorf("-proxy-merge needs -proxy-learn <file> to name the output"))
+		}
 		doc, derr := specter.Generate(cfg)
 		if derr != nil {
 			return fail(derr)
@@ -416,6 +421,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			record:    *proxyRecord,
 			recordRaw: *proxyRecordRaw,
 			learn:     *proxyLearn,
+			merge:     *proxyMerge,
 			strict:    *proxyStrict,
 			title:     cfg.Title,
 			version:   cfg.Version,
@@ -520,6 +526,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			}
 			if len(doc.Paths) == 0 {
 				warnEmpty("routes", *dirFlag)
+			}
+			// -merge-learned folds a previously captured observed fragment into the
+			// scanned document, filling the routes the AST could not resolve. Done
+			// before diagnostics/output so -o, -watch and 3.1 all see the merged doc.
+			if *mergeLearned != "" {
+				frag, ferr := readDocumentFile(*mergeLearned)
+				if ferr != nil {
+					return nil, ferr
+				}
+				doc = specter.MergeObserved(doc, frag)
 			}
 			routeDiags = doc.Diagnostics
 			emitRouteDiags()
@@ -705,6 +721,21 @@ func applyConfigFile(cfg *specter.Config, fs *flag.FlagSet, path, dir string) er
 	cfg.AccessKey = fc.AccessKey
 	cfg.Production = fc.Production
 	return nil
+}
+
+// readDocumentFile decodes an OpenAPI document (e.g. a -proxy-learn fragment)
+// from a JSON file, for -merge-learned. A missing file or bad JSON is fatal and
+// named, since the merge cannot proceed without it.
+func readDocumentFile(path string) (*specter.Document, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var doc specter.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return &doc, nil
 }
 
 // goPackagePath renders an output directory the way `go test` wants it. A
