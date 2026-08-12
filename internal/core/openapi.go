@@ -101,6 +101,11 @@ type Operation struct {
 	// Recommendations only: Specter documents what the code does and never
 	// reshapes it to look better than it is.
 	Advice []Advisory `json:"x-specter-advice,omitempty"`
+
+	// Observed marks an operation that came from observed traffic, folded in by
+	// MergeObserved, rather than from source. "x-" makes it a vendor extension
+	// consumers ignore; omitempty keeps every source-only document unchanged.
+	Observed bool `json:"x-specter-observed,omitempty"`
 }
 
 // OperationOption configures an Operation built with NewOperation.

@@ -249,6 +249,64 @@ func TestProdFlagHidesSource(t *testing.T) {
 	}
 }
 
+func TestMergeLearnedFillsAndEnriches(t *testing.T) {
+	frag := `{
+  "openapi":"3.0.3","info":{"title":"o","version":"1"},
+  "paths":{
+    "/widgets":{"get":{"responses":{"500":{"description":"Observed 2 time(s)"}}}},
+    "/widgets/{id}":{"get":{"responses":{"200":{"description":"Observed 3 time(s)"}}}}
+  },
+  "components":{"schemas":{}}
+}`
+	dir := writeTree(t, map[string]string{
+		"main.go":   ginSrc,
+		"frag.json": frag,
+	})
+	code, stdout, stderr := exec(t, "-dir", dir, "-merge-learned", filepath.Join(dir, "frag.json"))
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "/widgets/{id}") {
+		t.Errorf("merged doc missing the observed-only route:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "x-specter-observed") {
+		t.Errorf("observed-only route is not marked x-specter-observed:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, `"500"`) {
+		t.Errorf("documented route was not enriched with the observed 500:\n%s", stdout)
+	}
+}
+
+func TestMergeLearnedBadFileExits1(t *testing.T) {
+	dir := writeTree(t, map[string]string{
+		"main.go":  ginSrc,
+		"bad.json": `{ not json`,
+	})
+	// Missing file.
+	if code, _, _ := exec(t, "-dir", dir, "-merge-learned", filepath.Join(dir, "nope.json")); code == 0 {
+		t.Error("a missing -merge-learned file should exit non-zero")
+	}
+	// Malformed JSON — error names the file.
+	code, _, stderr := exec(t, "-dir", dir, "-merge-learned", filepath.Join(dir, "bad.json"))
+	if code == 0 {
+		t.Error("a malformed -merge-learned file should exit non-zero")
+	}
+	if !strings.Contains(stderr, "bad.json") {
+		t.Errorf("error does not name the fragment file:\n%s", stderr)
+	}
+}
+
+func TestProxyMergeNeedsProxyLearn(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	code, _, stderr := exec(t, "-dir", dir, "-proxy", ":0", "-proxy-merge")
+	if code == 0 {
+		t.Fatal("-proxy-merge without -proxy-learn should exit non-zero")
+	}
+	if !strings.Contains(stderr, "proxy-learn") {
+		t.Errorf("error does not mention -proxy-learn:\n%s", stderr)
+	}
+}
+
 func TestConfigFileSetsProduction(t *testing.T) {
 	dir := writeTree(t, map[string]string{
 		"main.go":      ginSrc,
