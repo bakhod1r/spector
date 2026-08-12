@@ -38,6 +38,7 @@ specter -graphql -dir ./graph -o graphql.json
 | `-version`    | API version (default `0.1.0`)                              |
 | `-grpc`       | Export the gRPC document instead of OpenAPI                |
 | `-proto`      | Directory to scan for gRPC sources (autodetected when empty) |
+| `-gateway`    | Export a REST document built from `google.api.http` annotations in `.proto` sources (gRPC-Gateway) |
 | `-graphql`    | Export the GraphQL document instead of OpenAPI             |
 | `-graphqlDir` | Directory to scan for GraphQL sources (autodetected when empty) |
 | `-o`          | Output file (defaults to stdout)                           |
@@ -179,6 +180,44 @@ security:
   bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
 basePath: /docs
 ```
+
+### gRPC-Gateway (`google.api.http`)
+
+```sh
+specter -gateway -dir ./proto -o openapi.yaml
+```
+
+A service annotated for [gRPC-Gateway](https://github.com/grpc-ecosystem/grpc-gateway)
+already declares its REST surface in the `.proto`. `-gateway` reads those
+`google.api.http` options and writes the OpenAPI document the gateway actually
+serves:
+
+```proto
+rpc GetUser(GetUserRequest) returns (User) {
+  option (google.api.http) = {
+    get: "/v1/users/{user_id}"
+    additional_bindings { post: "/v1/users:get" body: "*" }
+  };
+}
+```
+
+- `get`/`put`/`post`/`delete`/`patch` and `custom { kind: ... path: ... }`
+  become the operation's method and path; each `additional_bindings` entry
+  becomes another operation.
+- `{user_id}` becomes a required path parameter, typed from the request
+  message's own field. The pattern in `{name=users/*}` is a gateway matching
+  detail with no OpenAPI equivalent, so the parameter is `{name}`.
+- `body: "*"` sends the whole request message; `body: "field"` sends that
+  field's type. With no `body`, every request field the path did not consume
+  becomes a query parameter — which is how the gateway reads them.
+- A server-streaming RPC is marked `x-specter-realtime: stream`, because the
+  gateway answers it with a stream of JSON messages rather than one body.
+- An RPC **without** the annotation is gRPC-only and is left out: the document
+  describes the HTTP surface, not every method on the service.
+
+Servers, security, `-format` and manual route supplements apply exactly as they
+do to a scanned REST document, so one config describes both front doors. The
+library entry point is `specter.GenerateGateway(cfg)`.
 
 ### YAML output
 

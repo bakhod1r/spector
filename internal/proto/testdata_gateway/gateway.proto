@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package shop.v1;
+
+import "google/api/annotations.proto";
+
+service UserService {
+  // A plain GET whose path carries one field.
+  rpc GetUser(GetUserRequest) returns (User) {
+    option (google.api.http) = {
+      get: "/v1/users/{user_id}"
+    };
+  }
+
+  // A POST whose whole request message is the body.
+  rpc CreateUser(CreateUserRequest) returns (User) {
+    option (google.api.http) = {
+      post: "/v1/users"
+      body: "*"
+    };
+  }
+
+  // A PATCH whose body is one named field, plus a second binding.
+  rpc UpdateUser(UpdateUserRequest) returns (User) {
+    option (google.api.http) = {
+      patch: "/v1/users/{user_id}"
+      body: "user"
+      additional_bindings {
+        put: "/v1/users/{user_id}"
+        body: "user"
+      }
+    };
+  }
+
+  // A path template with a segment pattern after "=".
+  rpc DeleteUser(DeleteUserRequest) returns (Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=users/*}"
+    };
+  }
+
+  // Server streaming over the gateway: a stream of JSON, not one body.
+  rpc ListUsers(ListUsersRequest) returns (stream User) {
+    option (google.api.http) = {
+      get: "/v1/users"
+    };
+  }
+
+  // No annotation: gRPC only, absent from the REST document.
+  rpc InternalPing(Empty) returns (Empty);
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  int32 age = 2;
+}
+
+message UpdateUserRequest {
+  string user_id = 1;
+  User user = 2;
+}
+
+message DeleteUserRequest {
+  string name = 1;
+}
+
+message ListUsersRequest {
+  int32 limit = 1;
+  string query = 2;
+}
+
+message User {
+  string id = 1;
+  string name = 2;
+}
+
+message Empty {}

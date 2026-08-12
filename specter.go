@@ -868,6 +868,33 @@ func GenerateGrpc(cfg Config) (*core.GrpcDoc, error) {
 	return doc, err
 }
 
+// GenerateGateway builds a REST document from the google.api.http annotations
+// in .proto sources — the same mapping gRPC-Gateway serves at runtime. An RPC
+// without the annotation is gRPC-only and is left out: the document describes
+// what the gateway actually exposes over HTTP.
+//
+// Declared servers, security and manual route supplements apply exactly as they
+// do to a scanned REST document, so one config describes both front doors.
+func GenerateGateway(cfg Config) (*core.Document, error) {
+	cfg = cfg.withDefaults()
+	dir := cfg.ProtoDir
+	if dir == "" {
+		dir = findSourceDir(cfg.Dir, ".proto")
+	}
+	doc, err := proto.ScanGateway(dir)
+	if err != nil {
+		return nil, err
+	}
+	doc.Info.Title, doc.Info.Version = cfg.Title, cfg.Version
+	applyDeclared(doc, cfg)
+	applyAdvice(doc)
+	doc, err = applyManualRoutes(doc, cfg.Routes)
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
 // GenerateGraphql builds a GraphQL document. It prefers .graphql/.graphqls
 // SDL sources and falls back to generated Go code (gqlgen resolver
 // interfaces and models) when the SDL yields no queries, so projects that
