@@ -675,6 +675,10 @@ type fileConfig struct {
 	// Production hides the scanned source from the document and console. A
 	// passed -prod flag still wins over the file.
 	Production bool `json:"production" yaml:"production"`
+	// Routes are hand-declared operations for the routes the AST cannot
+	// resolve. They are always taken from the file: there is no flag that
+	// could carry them, so nothing on the command line can conflict.
+	Routes []specter.ManualRoute `json:"routes" yaml:"routes"`
 }
 
 // configNames is the set of filenames applyConfigFile looks for in the scanned
@@ -754,6 +758,7 @@ func applyConfigFile(cfg *specter.Config, fs *flag.FlagSet, path, dir string) er
 	cfg.BasePath = fc.BasePath
 	cfg.AccessKey = fc.AccessKey
 	cfg.Production = fc.Production
+	cfg.Routes = fc.Routes
 	return nil
 }
 

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Manual route supplements: a `routes:` list in `specter.json`/`specter.yaml`
+  (or `Config.Routes`) declares operations for routes the AST cannot resolve.
+  They are folded into the document marked `x-specter-manual`, never override
+  the scan, and a `fills: file.go:line` entry clears the diagnostic it answers
+  so a supplemented codebase passes `-strict-routes`.
 - Static route resolution: route paths and group prefixes built from
   package-level string `const`/`var` and `+` concatenation are resolved across
   all router adapters, not just string literals.

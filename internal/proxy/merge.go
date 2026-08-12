@@ -18,19 +18,34 @@ import (
 // the single implementation behind both the proxy's -proxy-merge output and the
 // offline -merge-learned command.
 func MergeObserved(base, observed *core.Document) *core.Document {
+	return mergeInto(base, observed, func(op *core.Operation) { op.Observed = true })
+}
+
+// MergeManual returns base with hand-declared routes folded in, marked
+// x-specter-manual. It is the same gap-filling merge as MergeObserved with the
+// same precedence — the scanned source always wins on any operation or response
+// it already documents — so a supplement can only add what the AST could not
+// resolve, never rewrite what it could. Neither input is mutated.
+func MergeManual(base, manual *core.Document) *core.Document {
+	return mergeInto(base, manual, func(op *core.Operation) { op.Manual = true })
+}
+
+// mergeInto is the shared body of MergeObserved and MergeManual: mark labels
+// each operation that the base did not already have.
+func mergeInto(base, extra *core.Document, mark func(*core.Operation)) *core.Document {
 	out := cloneDoc(base)
-	if observed == nil {
+	if extra == nil {
 		return out
 	}
 
-	for _, path := range sortedKeys(observed.Paths) {
-		methods := observed.Paths[path]
+	for _, path := range sortedKeys(extra.Paths) {
+		methods := extra.Paths[path]
 		for _, method := range sortedKeys(methods) {
 			oop := methods[method]
 			existing := out.Paths[path][method]
 			if existing == nil {
 				cp := cloneOp(oop)
-				cp.Observed = true
+				mark(cp)
 				out.AddOperation(path, method, cp)
 				continue
 			}

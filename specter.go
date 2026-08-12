@@ -123,6 +123,42 @@ type Config struct {
 	// seam for future hardening; empty (the default) keeps the full developer
 	// experience, source view included.
 	Production bool
+
+	// Routes are hand-declared operations folded into the scanned document.
+	// They exist for the routes the AST genuinely cannot resolve — a path built
+	// in a loop, from a slice, or returned by a function — which otherwise only
+	// produce a diagnostic. The scan always wins: a supplement can add a route
+	// or a status code the source did not document, never rewrite one it did.
+	Routes []ManualRoute
+}
+
+// ManualRoute is one hand-declared operation from Config.Routes (the config
+// file's routes: list). Field tags are here rather than on a CLI-local copy so
+// the JSON and YAML config files, the MCP server and library callers all take
+// the same shape.
+type ManualRoute struct {
+	// Method is the HTTP method, in any case. Empty means GET.
+	Method string `json:"method" yaml:"method"`
+	// Path is the route path, OpenAPI-style ("/v1/reports/{id}"). Required,
+	// and must start with "/".
+	Path string `json:"path" yaml:"path"`
+
+	Summary     string   `json:"summary" yaml:"summary"`
+	Description string   `json:"description" yaml:"description"`
+	OperationID string   `json:"operationId" yaml:"operationId"`
+	Tags        []string `json:"tags" yaml:"tags"`
+	Deprecated  bool     `json:"deprecated" yaml:"deprecated"`
+
+	// Responses are the status codes this route can return. Empty means a
+	// single 200, which is the least the document can honestly claim.
+	Responses []string `json:"responses" yaml:"responses"`
+
+	// Fills names the dynamic-route diagnostic this supplement answers, as
+	// "file.go:line" matching the position the scan reported. When it matches,
+	// that diagnostic is dropped — so a fully supplemented codebase passes
+	// -strict-routes. A value that matches nothing leaves every diagnostic in
+	// place rather than silencing the wrong one.
+	Fills string `json:"fills" yaml:"fills"`
 }
 
 // DefaultBasePath is where the console lives unless Config says otherwise.
@@ -576,10 +612,98 @@ func Generate(cfg Config) (*core.Document, error) {
 	applyInferredSchemes(doc, routes)
 	applyDeclared(doc, cfg)
 	applyAdvice(doc)
+	doc, err = applyManualRoutes(doc, cfg.Routes)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.Production {
 		stripSource(doc)
 	}
 	return doc, nil
+}
+
+// applyManualRoutes folds Config.Routes into the scanned document and drops
+// the diagnostics they claim to answer. It returns a new document (the merge
+// clones) and leaves doc untouched when there are no supplements, so a
+// zero-config run is byte-for-byte what it was.
+func applyManualRoutes(doc *core.Document, routes []ManualRoute) (*core.Document, error) {
+	if len(routes) == 0 {
+		return doc, nil
+	}
+	supp := core.NewDocument(doc.Info.Title, doc.Info.Version)
+	filled := map[string]bool{}
+	for i, r := range routes {
+		if r.Path == "" {
+			return nil, fmt.Errorf("routes[%d]: path is required", i)
+		}
+		if !strings.HasPrefix(r.Path, "/") {
+			return nil, fmt.Errorf("routes[%d]: path %q needs a leading /", i, r.Path)
+		}
+		method := strings.ToLower(r.Method)
+		if method == "" {
+			method = "get"
+		}
+		codes := r.Responses
+		if len(codes) == 0 {
+			codes = []string{"200"}
+		}
+		responses := map[string]*core.Response{}
+		for _, code := range codes {
+			responses[code] = &core.Response{Description: http.StatusText(atoiOr(code)), Content: nil}
+		}
+		supp.AddOperation(r.Path, method, &core.Operation{
+			Summary:     r.Summary,
+			Description: r.Description,
+			OperationID: r.OperationID,
+			Tags:        r.Tags,
+			Deprecated:  r.Deprecated,
+			Responses:   responses,
+		})
+		if r.Fills != "" {
+			filled[r.Fills] = true
+		}
+	}
+	merged := proxy.MergeManual(doc, supp)
+	merged.Diagnostics = keepUnfilledDiags(doc.Diagnostics, filled)
+	return merged, nil
+}
+
+// atoiOr converts a status code to an int, returning 0 for anything that is
+// not a number so http.StatusText gives an empty description rather than a
+// wrong one.
+func atoiOr(code string) int {
+	n, err := strconv.Atoi(code)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// keepUnfilledDiags drops each diagnostic a supplement claimed via fills. The
+// match is on "file:line" with the filename compared by suffix, so a config
+// can name "app.go:12" without knowing the absolute path the scan reported.
+func keepUnfilledDiags(diags []core.Diagnostic, filled map[string]bool) []core.Diagnostic {
+	if len(filled) == 0 || len(diags) == 0 {
+		return diags
+	}
+	var out []core.Diagnostic
+	for _, d := range diags {
+		claimed := false
+		for key := range filled {
+			file, line, ok := strings.Cut(key, ":")
+			if !ok || file == "" {
+				continue
+			}
+			if line == strconv.Itoa(d.Pos.Line) && strings.HasSuffix(filepath.ToSlash(d.Pos.Filename), "/"+filepath.ToSlash(file)) {
+				claimed = true
+				break
+			}
+		}
+		if !claimed {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // stripSource clears every operation's Source so the document carries no file
