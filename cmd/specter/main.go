@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -80,6 +81,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	testPkg := fs.String("test-package", "", "package name for the generated test file (default: apitest)")
 	coverageFlag := fs.Bool("coverage", false, "report documentation coverage instead of a document")
 	coverageMin := fs.Float64("coverage-min", 0, "exit 1 when coverage is below this percent (implies -coverage)")
+	format := fs.String("format", "", "document output format: json (default) or yaml; inferred from -o's extension when empty")
 	strictRoutes := fs.Bool("strict-routes", false, "exit non-zero if any route path cannot be statically resolved")
 	serveAddr := fs.String("serve", "", "serve the interactive console on this address (e.g. :8099) until stopped")
 	serveMock := fs.Bool("serve-mock", false, "with -serve, answer documented paths from the built-in mock on the console origin (adds a MOCK badge)")
@@ -165,10 +167,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			gdoc, gerr := specter.GenerateGrpc(cfg)
 			qdoc, qerr := specter.GenerateGraphql(cfg)
 
+			// -all writes one file per document; -format yaml renames them
+			// and switches the encoding, so the directory is all one format.
+			ext := ".json"
+			if strings.EqualFold(*format, "yaml") || strings.EqualFold(*format, "yml") {
+				ext = ".yaml"
+			}
 			artifacts := []artifact{
-				{"openapi.json", doc, derr, doc != nil && len(doc.Paths) == 0},
-				{"grpc.json", gdoc, gerr, gdoc != nil && len(gdoc.Services) == 0},
-				{"graphql.json", qdoc, qerr, qdoc != nil && len(qdoc.Queries) == 0 && len(qdoc.Types) == 0},
+				{"openapi" + ext, doc, derr, doc != nil && len(doc.Paths) == 0},
+				{"grpc" + ext, gdoc, gerr, gdoc != nil && len(gdoc.Services) == 0},
+				{"graphql" + ext, qdoc, qerr, qdoc != nil && len(qdoc.Queries) == 0 && len(qdoc.Types) == 0},
 			}
 
 			written := 0
@@ -181,15 +189,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 					fmt.Fprintf(stderr, "specter: %s skipped: nothing found in %s\n", a.file, *dirFlag)
 					continue
 				}
-				data, merr := json.MarshalIndent(a.doc, "", "  ")
+				data, merr := marshalDocument(a.doc, *format, a.file)
 				if merr != nil {
 					return fail(merr)
 				}
 				path := filepath.Join(dir, a.file)
-				if werr := os.WriteFile(path, append(data, '\n'), 0o644); werr != nil {
+				if werr := os.WriteFile(path, data, 0o644); werr != nil {
 					return fail(werr)
 				}
-				fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(data)+1)
+				fmt.Fprintf(stderr, "wrote %s (%d bytes)\n", path, len(data))
 				written++
 			}
 			if written == 0 {
@@ -556,11 +564,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 
-		data, err := json.MarshalIndent(v, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return append(data, '\n'), nil
+		return marshalDocument(v, *format, *out)
 	}
 
 	data, err := regen()
@@ -808,4 +812,71 @@ func packageName(dir string) string {
 		return "admin"
 	}
 	return name
+}
+
+// marshalDocument renders the generated document as JSON or YAML. format wins
+// when set; otherwise a -o ending in .yaml/.yml means YAML, so "-o api.yaml"
+// does not quietly write JSON under a YAML name. Only the document output is
+// affected: Postman, HAR and AsyncAPI are formats of their own.
+func marshalDocument(v any, format, out string) ([]byte, error) {
+	if format == "" {
+		switch strings.ToLower(filepath.Ext(out)) {
+		case ".yaml", ".yml":
+			format = "yaml"
+		default:
+			format = "json"
+		}
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	switch strings.ToLower(format) {
+	case "json":
+		return append(data, '\n'), nil
+	case "yaml", "yml":
+		return jsonToYAML(data)
+	default:
+		return nil, fmt.Errorf("unsupported -format %q (want json or yaml)", format)
+	}
+}
+
+// jsonToYAML re-emits an encoded JSON document as YAML. YAML is a superset of
+// JSON, so parsing the JSON into a yaml.Node gives an ordered tree: the output
+// keeps the document's own key order instead of the alphabetical order a
+// map[string]any round-trip would impose.
+func jsonToYAML(data []byte) ([]byte, error) {
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, err
+	}
+	// A JSON document parses as a document node wrapping the real value.
+	root := &node
+	if node.Kind == yaml.DocumentNode && len(node.Content) == 1 {
+		root = node.Content[0]
+	}
+	clearFlowStyle(root)
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(root); err != nil {
+		return nil, err
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// clearFlowStyle drops the flow style every node inherits from having been
+// parsed out of JSON, so the YAML is emitted as readable block style rather
+// than as JSON with a .yaml name.
+func clearFlowStyle(n *yaml.Node) {
+	if n == nil {
+		return
+	}
+	n.Style = 0
+	for _, c := range n.Content {
+		clearFlowStyle(c)
+	}
 }

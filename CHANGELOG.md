@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `-format yaml`: emit the OpenAPI, gRPC or GraphQL document as YAML instead of
+  JSON, in the document's own key order. An `-o` ending in `.yaml`/`.yml`
+  implies it; an explicit `-format` wins. `-all` writes the `.yaml` names.
 - Manual route supplements: a `routes:` list in `specter.json`/`specter.yaml`
   (or `Config.Routes`) declares operations for routes the AST cannot resolve.
   They are folded into the document marked `x-specter-manual`, never override

@@ -41,7 +41,8 @@ specter -graphql -dir ./graph -o graphql.json
 | `-graphql`    | Export the GraphQL document instead of OpenAPI             |
 | `-graphqlDir` | Directory to scan for GraphQL sources (autodetected when empty) |
 | `-o`          | Output file (defaults to stdout)                           |
-| `-all`        | Write openapi.json, grpc.json and graphql.json into `-o` (a directory) |
+| `-format`     | Document output format: `json` (default) or `yaml`; inferred from `-o`'s extension when empty |
+| `-all`        | Write openapi.json, grpc.json and graphql.json into `-o` (a directory); `-format yaml` writes the `.yaml` names instead |
 | `-lint`       | Report routing problems instead of a document; exits 1 if any |
 | `-contract`   | Generate contract artefacts into this directory, e.g. `./contract` |
 | `-contract-format` | Comma-separated: `http`, `go`, `curl` (default: all three) |
@@ -178,6 +179,22 @@ security:
   bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
 basePath: /docs
 ```
+
+### YAML output
+
+```sh
+specter -dir ./api -o openapi.yaml          # extension picks YAML
+specter -dir ./api -format yaml             # or say so explicitly
+specter -grpc -dir ./proto -format yaml
+```
+
+The document is JSON by default. `-format yaml` emits the same document as
+YAML, and an `-o` ending in `.yaml`/`.yml` implies it, so an output file never
+holds JSON under a YAML name; an explicit `-format` always wins over the
+extension. Key order is the document's own — `openapi`, `info`, `paths`, … —
+not alphabetical, so the spec reads top-down the way the JSON does. It applies
+to the OpenAPI, gRPC and GraphQL documents, including `-all`. Postman, HAR and
+AsyncAPI are formats of their own and are unaffected.
 
 ### Manual route supplements
 
