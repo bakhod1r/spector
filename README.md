@@ -32,7 +32,7 @@ specter -graphql -dir ./graph -o graphql.json
 | Flag          | Description                                                |
 | ------------- | ---------------------------------------------------------- |
 | `-dir`        | Directory to scan (default `.`)                            |
-| `-config`     | JSON config file (default: `specter.json` in `-dir`, if present) |
+| `-config`     | Config file, JSON or YAML by extension (default: `specter.json`, `.yaml` or `.yml` in `-dir`, if present) |
 | `-adapter`    | `gin`, `chi`, `echo`, `fiber`, `gorillamux`, `httprouter`, `bunrouter`, or `stdlib`; autodetected when empty |
 | `-title`      | API title (defaults to the directory name)                 |
 | `-version`    | API version (default `0.1.0`)                              |
@@ -146,7 +146,7 @@ The tree is polled once a second and fingerprinted by name, size and mtime;
 `.git`, `vendor` and `node_modules` are skipped. A regeneration that fails does
 not end the watch — the next save may be the fix.
 
-### `specter.json`
+### `specter.json` / `specter.yaml`
 
 Servers and security schemes are declared, not inferred, and a map of schemes
 does not fit on a command line. Put them in a `specter.json` next to the code
@@ -165,10 +165,26 @@ and the CLI writes the same document the embedded console serves:
 }
 ```
 
-It is picked up automatically when it sits in `-dir`; `-config` names one
-elsewhere. The file is a default, not an override — a flag you actually typed
-wins. A `-config` that does not exist, or a file that does not parse, is an
-error rather than a silent fallback.
+The same settings can be written in YAML with identical keys — name the file
+`specter.yaml` (or `specter.yml`):
+
+```yaml
+title: Shop API
+version: 1.2.0
+servers:
+  - url: https://api.example.com
+    description: production
+security:
+  bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+basePath: /docs
+```
+
+It is picked up automatically when it sits in `-dir` — `specter.json` is tried
+first, then `specter.yaml`, then `specter.yml`, and the first found wins.
+`-config` names one elsewhere, its format chosen by extension (`.yaml`/`.yml` is
+YAML, otherwise JSON). The file is a default, not an override — a flag you
+actually typed wins. A `-config` that does not exist, or a file that does not
+parse, is an error rather than a silent fallback.
 
 ## Embedded console (library)
 

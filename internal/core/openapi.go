@@ -33,10 +33,12 @@ type Document struct {
 	Diagnostics []Diagnostic `json:"-"`
 }
 
-// Server is one base URL the API is reachable at.
+// Server is one base URL the API is reachable at. The yaml tags let a YAML
+// config file (specter.yaml) use the same keys as JSON; they never affect the
+// document's JSON output.
 type Server struct {
-	URL         string `json:"url"`
-	Description string `json:"description,omitempty"`
+	URL         string `json:"url" yaml:"url"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
 // SecurityRequirement names a scheme from components.securitySchemes. The
@@ -48,12 +50,12 @@ type SecurityRequirement map[string][]string
 // apiKey types are modelled — they cover bearer tokens, basic auth, and API
 // keys, which is what the console can actually send.
 type SecurityScheme struct {
-	Type         string `json:"type"`                   // "http" | "apiKey"
-	Scheme       string `json:"scheme,omitempty"`       // http: "bearer" | "basic"
-	BearerFormat string `json:"bearerFormat,omitempty"` // http+bearer: e.g. "JWT"
-	Name         string `json:"name,omitempty"`         // apiKey: parameter name
-	In           string `json:"in,omitempty"`           // apiKey: "header" | "query" | "cookie"
-	Description  string `json:"description,omitempty"`
+	Type         string `json:"type" yaml:"type"`                                     // "http" | "apiKey"
+	Scheme       string `json:"scheme,omitempty" yaml:"scheme,omitempty"`             // http: "bearer" | "basic"
+	BearerFormat string `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty"` // http+bearer: e.g. "JWT"
+	Name         string `json:"name,omitempty" yaml:"name,omitempty"`                 // apiKey: parameter name
+	In           string `json:"in,omitempty" yaml:"in,omitempty"`                     // apiKey: "header" | "query" | "cookie"
+	Description  string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
 // Info holds API metadata.

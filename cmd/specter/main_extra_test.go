@@ -213,6 +213,85 @@ func TestLintScanErrorExits1(t *testing.T) {
 
 // ---- config adapter field ----
 
+const yamlConfigSrc = `title: Shop
+version: "2.0"
+servers:
+  - url: https://api.example.com
+    description: prod
+security:
+  bearerAuth:
+    type: http
+    scheme: bearer
+    bearerFormat: JWT
+`
+
+// A specter.yaml next to the source is applied the same way specter.json is,
+// with identical keys — including the nested camelCase bearerFormat.
+func TestYAMLConfigFillsDocument(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "specter.yaml": yamlConfigSrc})
+	code, stdout, stderr := exec(t, "-dir", dir)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	var doc struct {
+		Info       struct{ Title, Version string } `json:"info"`
+		Servers    []struct{ URL string }          `json:"servers"`
+		Components struct {
+			SecuritySchemes map[string]struct {
+				Type, Scheme, BearerFormat string
+			} `json:"securitySchemes"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("stdout not JSON: %v\n%s", err, stdout)
+	}
+	if doc.Info.Title != "Shop" || doc.Info.Version != "2.0" {
+		t.Errorf("info = %+v, want Shop/2.0 from the YAML", doc.Info)
+	}
+	if len(doc.Servers) != 1 || doc.Servers[0].URL != "https://api.example.com" {
+		t.Errorf("servers = %+v, want the YAML server", doc.Servers)
+	}
+	if s := doc.Components.SecuritySchemes["bearerAuth"]; s.Scheme != "bearer" || s.BearerFormat != "JWT" {
+		t.Errorf("securitySchemes = %+v, want bearerAuth scheme=bearer bearerFormat=JWT", doc.Components.SecuritySchemes)
+	}
+}
+
+func TestConfigYmlExtension(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "cfg.yml": yamlConfigSrc})
+	code, stdout, stderr := exec(t, "-dir", dir, "-config", filepath.Join(dir, "cfg.yml"))
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, `"Shop"`) {
+		t.Errorf("-config .yml did not apply the YAML title:\n%s", stdout)
+	}
+}
+
+// JSON is tried first, so a specter.json wins over a specter.yaml sitting beside
+// it — today's behaviour is never silently overridden.
+func TestJSONPrecedenceOverYAML(t *testing.T) {
+	yaml := "title: FromYAML\nversion: \"9.9\"\n"
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "specter.json": configSrc, "specter.yaml": yaml})
+	code, stdout, stderr := exec(t, "-dir", dir)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	}
+	if strings.Contains(stdout, "FromYAML") {
+		t.Errorf("specter.yaml overrode specter.json; JSON should win:\n%s", stdout)
+	}
+}
+
+func TestBadYAMLExits1(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc, "bad.yaml": "title: [unterminated\n"})
+	code, _, stderr := exec(t, "-dir", dir, "-config", filepath.Join(dir, "bad.yaml"))
+	if code == 0 {
+		t.Error("malformed YAML config should exit non-zero")
+	}
+	if !strings.Contains(stderr, "bad.yaml") {
+		t.Errorf("error does not name the file:\n%s", stderr)
+	}
+}
+
 func TestConfigFileSetsAdapter(t *testing.T) {
 	dir := writeTree(t, map[string]string{
 		"main.go":      ginSrc,
