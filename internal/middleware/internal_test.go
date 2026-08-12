@@ -18,12 +18,12 @@ func expr(t *testing.T, src string) ast.Expr {
 
 func TestExprName(t *testing.T) {
 	cases := map[string]string{
-		"AuthRequired":         "AuthRequired",
-		"jwt.Auth":             "jwt.Auth",
-		"a.b.C":                "C",
-		`AuthRequired("x")`:    "AuthRequired",
-		"func() {}":            "func literal",
-		`"not middleware"`:     "",
+		"AuthRequired":      "AuthRequired",
+		"jwt.Auth":          "jwt.Auth",
+		"a.b.C":             "C",
+		`AuthRequired("x")`: "AuthRequired",
+		"func() {}":         "func literal",
+		`"not middleware"`:  "",
 	}
 	for src, want := range cases {
 		if got := exprName(expr(t, src)); got != want {

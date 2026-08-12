@@ -17,12 +17,12 @@ func (A) methodOnly() User { return User{} } // no plain function shares this na
 
 func setup() {
 	r := newEngine()
-	plain()                     // call.Fun is not a selector
-	r.GET(pathVar, h)           // path is not a string literal
-	r.GET("/mw", mwFn, h)       // inline middleware before the handler
-	s.router.GET("/nested", h)  // receiver is a selector, not an ident
-	s.g = r.Group("/x")         // group assigned to a non-ident lhs
-	g := r.Group(pathVar)       // group with a dynamic prefix
+	plain()                    // call.Fun is not a selector
+	r.GET(pathVar, h)          // path is not a string literal
+	r.GET("/mw", mwFn, h)      // inline middleware before the handler
+	s.router.GET("/nested", h) // receiver is a selector, not an ident
+	s.g = r.Group("/x")        // group assigned to a non-ident lhs
+	g := r.Group(pathVar)      // group with a dynamic prefix
 	g.GET("/inside", h)
 	r.GET("/m", methodOnly)
 }

@@ -109,7 +109,10 @@ func TestDiagnosticsSorted(t *testing.T) {
 		t.Fatalf("len = %d, want 3", len(got))
 	}
 	// Sorted by filename then line.
-	wantOrder := []struct{ file string; line int }{
+	wantOrder := []struct {
+		file string
+		line int
+	}{
 		{"a.go", 2}, {"a.go", 9}, {"b.go", 3},
 	}
 	for i, w := range wantOrder {

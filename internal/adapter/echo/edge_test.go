@@ -14,9 +14,9 @@ func TestScanEdge(t *testing.T) {
 		m[r.Method+" "+r.Path] = true
 	}
 	for _, want := range []string{
-		"get /m2",              // literal "GET" inside a Match slice
-		"get /m3", "post /m3",  // http.MethodGet / http.MethodPost selectors
-		"get /inside",          // group with a dynamic prefix: no prefix applied
+		"get /m2",             // literal "GET" inside a Match slice
+		"get /m3", "post /m3", // http.MethodGet / http.MethodPost selectors
+		"get /inside",           // group with a dynamic prefix: no prefix applied
 		"get /files/{wildcard}", // bare * segment
 	} {
 		if !m[want] {

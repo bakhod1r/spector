@@ -4,10 +4,10 @@ import "testing"
 
 func TestParameterKey(t *testing.T) {
 	cases := map[string]string{
-		"X-Request-ID": "XRequestID",
+		"X-Request-ID":  "XRequestID",
 		"Authorization": "Authorization",
-		"---":          "Header",
-		"":             "Header",
+		"---":           "Header",
+		"":              "Header",
 	}
 	for in, want := range cases {
 		if got := parameterKey(in); got != want {

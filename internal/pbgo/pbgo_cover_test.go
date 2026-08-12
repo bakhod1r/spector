@@ -108,8 +108,8 @@ func TestParseServiceDescOddElements(t *testing.T) {
 func TestHandlerIfaceRejectsOtherShapes(t *testing.T) {
 	cases := []ast.Expr{
 		ast.NewIdent("notACall"),
-		&ast.CallExpr{Fun: ast.NewIdent("f")},                                       // no paren
-		&ast.CallExpr{Fun: &ast.ParenExpr{X: ast.NewIdent("T")}},                    // no star
+		&ast.CallExpr{Fun: ast.NewIdent("f")},                    // no paren
+		&ast.CallExpr{Fun: &ast.ParenExpr{X: ast.NewIdent("T")}}, // no star
 		&ast.CallExpr{Fun: &ast.ParenExpr{X: &ast.StarExpr{X: &ast.SelectorExpr{X: ast.NewIdent("p"), Sel: ast.NewIdent("T")}}}}, // starred non-ident
 	}
 	for i, e := range cases {

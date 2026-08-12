@@ -14,8 +14,8 @@ func setup() {
 	s.g = e.Group("/x")                                          // group assigned to a non-ident lhs
 	g := e.Group(pathVar)                                        // group with a dynamic prefix
 	g.GET("/inside", h)
-	e.GET("/files/*", h)   // bare * wildcard segment
-	e.GET("/dl/*path", h)  // named * wildcard segment
+	e.GET("/files/*", h)  // bare * wildcard segment
+	e.GET("/dl/*path", h) // named * wildcard segment
 }
 
 func h(c Context) error { return nil }

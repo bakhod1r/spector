@@ -26,9 +26,9 @@ func (e *Extra) callsOut(req *http.Request) {
 // Shapes that must classify as nothing.
 func oddShapes() {
 	fmt.Sprintf("an import that is no dependency")
-	http.NewServeMux()          // net/http, but server-side plumbing
-	newClient().Do(nil)         // receiver is a call, no name to judge
-	missingHelper()             // declared nowhere in the package
+	http.NewServeMux()  // net/http, but server-side plumbing
+	newClient().Do(nil) // receiver is a call, no name to judge
+	missingHelper()     // declared nowhere in the package
 	deep1()
 }
 

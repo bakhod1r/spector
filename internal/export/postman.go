@@ -34,9 +34,9 @@ type pmInfo struct {
 }
 
 type pmItem struct {
-	Name     string     `json:"name"`
-	Item     []pmItem   `json:"item,omitempty"`    // folder
-	Request  *pmRequest `json:"request,omitempty"` // leaf
+	Name     string       `json:"name"`
+	Item     []pmItem     `json:"item,omitempty"`    // folder
+	Request  *pmRequest   `json:"request,omitempty"` // leaf
 	Response []pmResponse `json:"response,omitempty"`
 	Event    []pmEvent    `json:"event,omitempty"`
 }
@@ -75,9 +75,9 @@ type pmHeader struct {
 }
 
 type pmBody struct {
-	Mode    string            `json:"mode"`
-	Raw     string            `json:"raw"`
-	Options map[string]any    `json:"options,omitempty"`
+	Mode    string         `json:"mode"`
+	Raw     string         `json:"raw"`
+	Options map[string]any `json:"options,omitempty"`
 }
 
 type pmURL struct {
