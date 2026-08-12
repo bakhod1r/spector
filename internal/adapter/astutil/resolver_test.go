@@ -160,3 +160,30 @@ func TestResolverTopLevelLocalStillResolves(t *testing.T) {
 func routes() { base := "/v1"; use(base+"/x") }
 func use(string) {}`, "use", "/v1/x")
 }
+
+func TestResolverLabeledTopLevelDecl(t *testing.T) {
+	// A LabeledStmt wrapping a top-level ":=" is still a function-level
+	// binding, not a nested-block declaration: it must resolve.
+	mustResolve(t, `package p
+func routes() {
+L:
+	base := "/v1"
+	use(base + "/x")
+}
+func use(string) {}`, "use", "/v1/x")
+}
+
+func TestResolverLabeledNestedDeclStillMasked(t *testing.T) {
+	// A LabeledStmt wrapping a real nested block keeps masking its decls.
+	mustMask(t, `package p
+const base = "/admin"
+func routes(cond bool) {
+L:
+	if cond {
+		base := "/v1"
+		_ = base
+	}
+	use(base + "/x")
+}
+func use(string) {}`, "use")
+}

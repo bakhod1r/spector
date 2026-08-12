@@ -183,6 +183,15 @@ func (r *Resolver) applyLocalBindings(body *ast.BlockStmt, env map[string]bindin
 		})
 	}
 	for _, stmt := range body.List {
+		// A label does not open a scope: unwrap it so the statement it labels
+		// is classified as the top-level statement it really is.
+		for {
+			ls, ok := stmt.(*ast.LabeledStmt)
+			if !ok {
+				break
+			}
+			stmt = ls.Stmt
+		}
 		// Any statement that is itself a nested block (if/for/switch/select/
 		// bare block/etc.) may contain declarations lexically scoped to it.
 		// Walk everything below the top-level statement itself (but not the
