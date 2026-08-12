@@ -179,6 +179,34 @@ security:
 basePath: /docs
 ```
 
+### Manual route supplements
+
+A route the AST genuinely cannot resolve — built in a loop, from a slice, or
+returned by a function — is reported as a diagnostic and documented nowhere.
+Declare it by hand in the config file's `routes:` list and it joins the
+document, marked `x-specter-manual` so a reader can tell an asserted route from
+a scanned one:
+
+```yaml
+routes:
+  - method: GET                  # default GET
+    path: /v1/reports/{id}       # required, leading / required
+    summary: Report by id
+    description: Generated nightly.
+    operationId: getReport
+    tags: [reports]
+    deprecated: false
+    responses: ["200", "404"]    # default ["200"]
+    fills: routes.go:42          # the diagnostic this answers
+```
+
+The scan always wins: a supplement adds a route or a status code the source did
+not document, and never rewrites one it did. `fills` names the `file.go:line`
+the diagnostic reported; when it matches, that diagnostic is dropped, so a
+fully supplemented codebase passes `-strict-routes`. A `fills` that matches
+nothing leaves every diagnostic in place rather than silencing the wrong one.
+Library callers pass the same entries as `Config.Routes` (`[]specter.ManualRoute`).
+
 It is picked up automatically when it sits in `-dir` — `specter.json` is tried
 first, then `specter.yaml`, then `specter.yml`, and the first found wins.
 `-config` names one elsewhere, its format chosen by extension (`.yaml`/`.yml` is
@@ -968,7 +996,8 @@ catches a misreading of the protocol.
   genuinely dynamic — built in a loop, from a slice/map, from a function
   return, or from a parameter — is likewise reported to stderr as a
   diagnostic instead of silently dropped. Pass `-strict-routes` to turn any
-  such diagnostic into a non-zero exit, for CI.
+  such diagnostic into a non-zero exit, for CI, and declare the route by hand
+  in the config file's `routes:` list to document it anyway.
 - net/http grouping uses the sub-mux + `http.StripPrefix` idiom, and sub-muxes
   nest: a mux mounted on a mux mounted on the root composes every prefix and
   guard onto the leaf routes (the standard mux has no native groups).

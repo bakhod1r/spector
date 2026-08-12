@@ -108,6 +108,13 @@ type Operation struct {
 	// MergeObserved, rather than from source. "x-" makes it a vendor extension
 	// consumers ignore; omitempty keeps every source-only document unchanged.
 	Observed bool `json:"x-specter-observed,omitempty"`
+
+	// Manual marks an operation declared by hand in the config file's routes:
+	// list rather than found in source. It is how a genuinely dynamic route —
+	// one the AST cannot resolve, which otherwise only emits a diagnostic —
+	// gets into the document, and it stays labelled so a reader can tell an
+	// asserted route from a scanned one.
+	Manual bool `json:"x-specter-manual,omitempty"`
 }
 
 // OperationOption configures an Operation built with NewOperation.
