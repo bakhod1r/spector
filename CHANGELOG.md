@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `-gateway`: an RPC with `additional_bindings` gave every binding the same
+  `operationId`, which OpenAPI requires to be unique. The first binding keeps
+  the RPC's name; the rest are numbered.
+- Manual route supplements: a response whose status code is not a number
+  ("default", "4XX") was emitted with an empty `description`, which OpenAPI
+  forbids.
+- Manual route supplements: `fills` never matched when the scan reported a bare
+  filename — what `-dir .` produces, the most common invocation — because the
+  match required a directory separator.
+
 ## [0.2.0] - 2026-08-12
 
 ### Added

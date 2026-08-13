@@ -135,3 +135,24 @@ func TestGatewayNoAnnotationsAtAll(t *testing.T) {
 		t.Fatalf("paths = %v, want none: testdata/shop.proto has no http options", doc.Paths)
 	}
 }
+
+// OpenAPI requires operationId to be unique across the document, so the extra
+// operations an additional_bindings entry creates cannot all carry the RPC's
+// own name.
+func TestGatewayOperationIDsAreUnique(t *testing.T) {
+	doc := gatewayDoc(t)
+	seen := map[string][]string{}
+	for path, methods := range doc.Paths {
+		for method, o := range methods {
+			seen[o.OperationID] = append(seen[o.OperationID], method+" "+path)
+		}
+	}
+	for id, where := range seen {
+		if len(where) > 1 {
+			t.Errorf("operationId %q used by %v", id, where)
+		}
+	}
+	if doc.Paths["/v1/users/{user_id}"]["patch"].OperationID != "UserService_UpdateUser" {
+		t.Error("the first binding should keep the RPC's own name")
+	}
+}
