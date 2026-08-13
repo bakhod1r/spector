@@ -649,7 +649,7 @@ func applyManualRoutes(doc *core.Document, routes []ManualRoute) (*core.Document
 		}
 		responses := map[string]*core.Response{}
 		for _, code := range codes {
-			responses[code] = &core.Response{Description: http.StatusText(atoiOr(code)), Content: nil}
+			responses[code] = &core.Response{Description: statusDescription(code), Content: nil}
 		}
 		supp.AddOperation(r.Path, method, &core.Operation{
 			Summary:     r.Summary,
@@ -668,15 +668,20 @@ func applyManualRoutes(doc *core.Document, routes []ManualRoute) (*core.Document
 	return merged, nil
 }
 
-// atoiOr converts a status code to an int, returning 0 for anything that is
-// not a number so http.StatusText gives an empty description rather than a
-// wrong one.
-func atoiOr(code string) int {
-	n, err := strconv.Atoi(code)
-	if err != nil {
-		return 0
+// statusDescription names a response. OpenAPI requires every response to carry
+// a non-empty description, and a status code is not always a number ("default",
+// "4XX"), so an unrecognised code falls back to a plain word rather than to the
+// empty string http.StatusText returns.
+func statusDescription(code string) string {
+	if n, err := strconv.Atoi(code); err == nil {
+		if text := http.StatusText(n); text != "" {
+			return text
+		}
 	}
-	return n
+	if code == "default" {
+		return "Default response"
+	}
+	return "Response"
 }
 
 // keepUnfilledDiags drops each diagnostic a supplement claimed via fills. The
@@ -694,7 +699,7 @@ func keepUnfilledDiags(diags []core.Diagnostic, filled map[string]bool) []core.D
 			if !ok || file == "" {
 				continue
 			}
-			if line == strconv.Itoa(d.Pos.Line) && strings.HasSuffix(filepath.ToSlash(d.Pos.Filename), "/"+filepath.ToSlash(file)) {
+			if line == strconv.Itoa(d.Pos.Line) && sameFile(d.Pos.Filename, file) {
 				claimed = true
 				break
 			}
@@ -704,6 +709,15 @@ func keepUnfilledDiags(diags []core.Diagnostic, filled map[string]bool) []core.D
 		}
 	}
 	return out
+}
+
+// sameFile reports whether a diagnostic's filename names the file a fills entry
+// claims. The comparison is by path suffix so a config can say "routes.go:42"
+// without knowing the directory the scan reported — including the bare filename
+// a scan of "." produces, which has no directory in front of it at all.
+func sameFile(reported, claimed string) bool {
+	reported, claimed = filepath.ToSlash(reported), filepath.ToSlash(claimed)
+	return reported == claimed || strings.HasSuffix(reported, "/"+claimed)
 }
 
 // stripSource clears every operation's Source so the document carries no file

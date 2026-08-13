@@ -1,6 +1,7 @@
 package specter
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -135,5 +136,54 @@ func TestManualRouteInvalidPathIsAnError(t *testing.T) {
 	_, err := Generate(Config{Dir: dir, Adapter: "stdlib", Routes: []ManualRoute{{Path: "v1/x"}}})
 	if err == nil || !strings.Contains(err.Error(), "leading /") {
 		t.Fatalf("err = %v, want a leading-slash complaint", err)
+	}
+}
+
+// Every OpenAPI response needs a non-empty description, including one whose
+// status code is not a number ("default", "4XX").
+func TestManualRouteResponseAlwaysDescribed(t *testing.T) {
+	dir := writeManualDir(t)
+	doc, err := Generate(Config{Dir: dir, Adapter: "stdlib", Routes: []ManualRoute{{
+		Path: "/v1/x", Responses: []string{"200", "default", "4XX"},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for code, resp := range doc.Paths["/v1/x"]["get"].Responses {
+		if resp.Description == "" {
+			t.Errorf("response %q has an empty description", code)
+		}
+	}
+}
+
+// The scan reports a bare "main.go" when it is pointed at ".", which is the
+// most common invocation; fills has to match that too, not just a path with a
+// directory in front of it.
+func TestManualRouteFillsMatchesBareFilename(t *testing.T) {
+	dir := writeManualDir(t)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(wd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	base, err := Generate(Config{Dir: ".", Adapter: "stdlib"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(base.Diagnostics) != 1 {
+		t.Fatalf("diagnostics = %v, want one", base.Diagnostics)
+	}
+	doc, err := Generate(Config{Dir: ".", Adapter: "stdlib", Routes: []ManualRoute{{
+		Path:  "/v1/x",
+		Fills: "main.go:" + strconv.Itoa(base.Diagnostics[0].Pos.Line),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Diagnostics) != 0 {
+		t.Errorf("fills did not match the diagnostic reported as %q", base.Diagnostics[0].Pos.Filename)
 	}
 }

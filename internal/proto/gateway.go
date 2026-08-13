@@ -3,6 +3,7 @@ package proto
 import (
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/emicklei/proto"
@@ -77,12 +78,21 @@ func ScanGateway(dir string) (*core.Document, error) {
 	}
 
 	used := map[string]bool{}
+	// OpenAPI requires operationId to be unique. One RPC can carry several
+	// bindings (additional_bindings), so only the first keeps the RPC's own
+	// name and the rest are numbered.
+	idCount := map[string]int{}
 	for _, b := range bindings {
 		in := qualify(b.rpc.RequestType, b.pkg)
 		out := qualify(b.rpc.ReturnsType, b.pkg)
 		path, params := templateParams(b.path, all[in])
+		id := b.service + "_" + b.rpc.Name
+		idCount[id]++
+		if n := idCount[id]; n > 1 {
+			id = id + "_" + strconv.Itoa(n)
+		}
 		op := &core.Operation{
-			OperationID: b.service + "_" + b.rpc.Name,
+			OperationID: id,
 			Tags:        []string{b.service},
 			Parameters:  params,
 			Responses: map[string]*core.Response{
