@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func obj(props map[string]*core.Schema) *core.Schema {

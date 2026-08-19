@@ -3,7 +3,7 @@ package mock
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // The rule this package states for itself is that a sampled value satisfies the

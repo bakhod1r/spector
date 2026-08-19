@@ -10,7 +10,7 @@ services from `.proto` files or generated `*.pb.go` stubs, and GraphQL schemas
 from `.graphql` SDL or gqlgen-generated Go code.
 
 ```
-go install github.com/user/specter/cmd/specter@latest
+go install github.com/bakhod1r/spector/cmd/specter@latest
 ```
 
 ## Quick start (CLI)
@@ -279,8 +279,8 @@ document is derived from the source at startup.
 
 ```go
 import (
-    "github.com/user/specter"
-    "github.com/user/specter/mount"
+    "github.com/bakhod1r/spector"
+    "github.com/bakhod1r/spector/mount"
 )
 
 func main() {
@@ -801,7 +801,7 @@ main.go:97:  shadowed-route: GET /users/me may be shadowed by /users/{id} regist
 It exits 1 when it finds anything, so CI can gate on it:
 
 ```yaml
-- run: go run github.com/user/specter/cmd/specter -lint -dir ./api
+- run: go run github.com/bakhod1r/spector/cmd/specter -lint -dir ./api
 ```
 
 Handlers are recognised by signature rather than by name, so ordinary helpers

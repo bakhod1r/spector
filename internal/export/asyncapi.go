@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // AsyncAPI renders the document's realtime endpoints as an AsyncAPI 2.6

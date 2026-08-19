@@ -3,7 +3,7 @@ package advice
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func TestNilOperationGetsNoAdvice(t *testing.T) {

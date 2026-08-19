@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // generatePython renders one self-contained client.py: a dataclass per schema

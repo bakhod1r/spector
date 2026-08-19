@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // Gin registers the console on a gin router under cfg.BasePath

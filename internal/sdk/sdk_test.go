@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // doc builds a small but representative document: a listed and a fetched

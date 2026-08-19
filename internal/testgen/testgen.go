@@ -18,8 +18,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/mock"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/mock"
 )
 
 // Options configures the generated file.

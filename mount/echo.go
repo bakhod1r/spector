@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // Echo registers the console on an echo router under cfg.BasePath

@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 func main() {

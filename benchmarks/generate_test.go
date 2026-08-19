@@ -11,7 +11,7 @@ package benchmarks
 import (
 	"testing"
 
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // shopDir is the example API, reached relative to this package's directory

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/user/specter"
-	"github.com/user/specter/internal/evolve"
+	"github.com/bakhod1r/spector"
+	"github.com/bakhod1r/spector/internal/evolve"
 )
 
 // evolveConfig is what the -evolve branch collected.

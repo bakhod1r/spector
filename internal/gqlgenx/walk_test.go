@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // walk pulls every schema reachable from a root into the used set, so the

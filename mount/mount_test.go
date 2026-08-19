@@ -12,7 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gorilla/mux"
 	"github.com/labstack/echo/v4"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // serveFunc issues one request against a mounted router and reports what came

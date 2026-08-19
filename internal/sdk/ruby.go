@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // generateRuby renders one self-contained client.rb: a class per schema and a

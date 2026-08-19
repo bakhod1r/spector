@@ -7,7 +7,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/user/specter/examples/shop/shoppb"
+	"github.com/bakhod1r/spector/examples/shop/shoppb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )

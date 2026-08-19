@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // generateJava renders a dependency-free Java 17 client. Java's standard

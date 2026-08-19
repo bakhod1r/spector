@@ -28,9 +28,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/user/specter/internal/conform"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/route"
+	"github.com/bakhod1r/spector/internal/conform"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/route"
 )
 
 // Kinds of disagreement worth reporting.

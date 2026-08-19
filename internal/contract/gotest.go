@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/specter/internal/conform"
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/conform"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // renderGoTest writes the test file: one test per documented endpoint, and

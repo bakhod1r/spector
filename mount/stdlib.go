@@ -3,7 +3,7 @@ package mount
 import (
 	"net/http"
 
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // Stdlib registers the console on a net/http mux under cfg.BasePath

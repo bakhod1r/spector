@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // mustParse asserts the generated file is legal Go, not merely text that looks

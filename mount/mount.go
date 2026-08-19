@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // endpoints are the paths the console serves, relative to the mount point.

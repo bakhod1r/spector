@@ -5,11 +5,11 @@ import (
 	"go/parser"
 	"go/token"
 
-	"github.com/user/specter/internal/adapter/astutil"
-	"github.com/user/specter/internal/calls"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/middleware"
-	"github.com/user/specter/internal/realtime"
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
+	"github.com/bakhod1r/spector/internal/calls"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/middleware"
+	"github.com/bakhod1r/spector/internal/realtime"
 )
 
 var methods = map[string]string{

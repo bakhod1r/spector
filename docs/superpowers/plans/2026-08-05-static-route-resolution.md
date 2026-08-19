@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module path `github.com/user/specter`.
+- Module path `github.com/bakhod1r/spector`.
 - Zero new external dependencies; zero new required annotations (Specter's promise: no source changes needed to be documented).
 - `StringLit` (`astutil.go:18`) stays as-is; `ResolveString(expr, nil)` must be a behaviour-preserving drop-in for it (literal → same value, everything else → false).
 - Only package-level consts/vars in the scanned tree are resolved; no cross-package, no SSA, no type checking. Unresolved → diagnostic, never a crash.

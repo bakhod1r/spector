@@ -3,8 +3,8 @@ package fiber
 import (
 	"testing"
 
-	"github.com/user/specter/internal/adapter/astutil"
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func scanEdge(t *testing.T) map[string]core.Route {

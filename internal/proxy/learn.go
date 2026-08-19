@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/route"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/route"
 )
 
 // Learner builds a document fragment out of what the scanner missed.

@@ -1,4 +1,4 @@
-module github.com/user/spector
+module github.com/bakhod1r/spector
 
 go 1.26.2
 
@@ -10,6 +10,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/gofiber/fiber/v2 v2.52.14
+	github.com/golang/protobuf v1.5.4
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/graphql-go/graphql v0.8.1
@@ -41,7 +42,6 @@ require (
 	github.com/go-playground/validator/v10 v10.30.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/jhump/protoreflect/v2 v2.0.0-beta.1 // indirect

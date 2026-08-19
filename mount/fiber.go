@@ -6,7 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // Fiber registers the console on a fiber app under cfg.BasePath

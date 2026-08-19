@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // Advice is one recommendation. It is an alias of the document model's type so

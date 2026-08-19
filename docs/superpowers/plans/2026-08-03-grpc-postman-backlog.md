@@ -15,7 +15,7 @@
 - UI is one self-contained file `internal/ui/ui.html`; NO external CDN/assets. All new JS lives inside it.
 - Server surface stays minimal; only `internal/grpcx.Request` gains fields (G1/G2).
 - Follow existing patterns; add tests to existing test files, don't restructure.
-- Module path: `github.com/user/specter`.
+- Module path: `github.com/bakhod1r/spector`.
 - Run Go tests from repo root: `go test ./internal/...`. Run e2e from repo root per existing `e2e` setup.
 - Deliberately OUT of scope: mutual-TLS/CA files (G2), full JSONPath grammar unions/scripts (P1), proto2/custom options (G4), full JS isolation via Worker/iframe (P3), Postman formdata/file bodies & separate environment import (P2).
 

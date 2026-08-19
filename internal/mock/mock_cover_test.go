@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // ---- sample edge cases ----

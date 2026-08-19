@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/user/specter"
-	"github.com/user/specter/mount"
+	"github.com/bakhod1r/spector"
+	"github.com/bakhod1r/spector/mount"
 )
 
 type Money struct {

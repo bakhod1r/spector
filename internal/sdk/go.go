@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // generateGo renders one self-contained client.go: a struct per schema and a

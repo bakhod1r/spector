@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // Route is one compiled operation: the path split into segments so matching

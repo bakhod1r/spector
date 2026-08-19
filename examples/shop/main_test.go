@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 func TestMain(m *testing.M) {

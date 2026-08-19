@@ -24,7 +24,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // Kinds of middleware worth reporting. Anything else is recorded by name

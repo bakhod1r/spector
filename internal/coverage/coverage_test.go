@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // op is a small builder so each case shows only the aspect it is about.

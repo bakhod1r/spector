@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // load parses the fixture package and returns an Index over it.

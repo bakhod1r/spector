@@ -12,7 +12,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // Scan walks dir for *.graphql/*.graphqls files and builds a GraphqlDoc from

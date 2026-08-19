@@ -11,7 +11,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // runMCP serves specter's generators and linter as MCP tools over stdio, so an

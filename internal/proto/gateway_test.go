@@ -3,7 +3,7 @@ package proto
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func gatewayDoc(t *testing.T) *core.Document {

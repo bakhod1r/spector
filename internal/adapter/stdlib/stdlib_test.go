@@ -3,7 +3,7 @@ package stdlib
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func routeMap(routes []core.Route) map[string]core.Route {

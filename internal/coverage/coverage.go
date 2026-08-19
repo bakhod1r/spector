@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // Check is one aspect an operation can be missing.

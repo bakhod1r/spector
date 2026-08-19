@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 type TypeInfo struct {

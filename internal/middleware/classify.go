@@ -3,7 +3,7 @@ package middleware
 import (
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // patterns map a substring of a middleware's name to what it does and, for

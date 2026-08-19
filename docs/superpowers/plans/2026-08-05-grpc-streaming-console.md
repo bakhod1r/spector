@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - No new external dependencies; everything above is already in `go.mod`.
-- Module path is `github.com/user/specter`.
+- Module path is `github.com/bakhod1r/spector`.
 - The console 404s (never 401s) unauthorized requests — a gated console must not confirm it exists. Every new route follows this.
 - gRPC symbol format from the UI is `package.Service/Method`; `Invoke`/`Stream` normalise the slash. Proto package is `shop.v1`.
 - `Request` JSON shape (existing, in `internal/grpcx/invoke.go`): `target`, `symbol`, `data`, `headers`, `tls`, `insecure`, `timeoutSec` (0 → 15s default).
@@ -57,8 +57,8 @@ Run from repo root:
 
 ```bash
 protoc -I examples/shop/proto \
-  --go_out=. --go_opt=module=github.com/user/specter \
-  --go-grpc_out=. --go-grpc_opt=module=github.com/user/specter \
+  --go_out=. --go_opt=module=github.com/bakhod1r/spector \
+  --go-grpc_out=. --go-grpc_opt=module=github.com/bakhod1r/spector \
   examples/shop/proto/shop.proto
 ```
 

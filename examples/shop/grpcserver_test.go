@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/user/specter/examples/shop/shoppb"
+	"github.com/bakhod1r/spector/examples/shop/shoppb"
 )
 
 func TestGetUserFindsSeededUser(t *testing.T) {

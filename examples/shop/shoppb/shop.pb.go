@@ -966,7 +966,7 @@ const file_shop_proto_rawDesc = "" +
 	"\fOrderService\x128\n" +
 	"\n" +
 	"PlaceOrder\x12\x1a.shop.v1.PlaceOrderRequest\x1a\x0e.shop.v1.Order\x124\n" +
-	"\bGetOrder\x12\x18.shop.v1.GetOrderRequest\x1a\x0e.shop.v1.OrderB.Z,github.com/user/specter/examples/shop/shoppbb\x06proto3"
+	"\bGetOrder\x12\x18.shop.v1.GetOrderRequest\x1a\x0e.shop.v1.OrderB.Z,github.com/bakhod1r/spector/examples/shop/shoppbb\x06proto3"
 
 var (
 	file_shop_proto_rawDescOnce sync.Once

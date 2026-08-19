@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 	"gopkg.in/yaml.v3"
 )
 

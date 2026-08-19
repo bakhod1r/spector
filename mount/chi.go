@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // Chi registers the console on a chi router under cfg.BasePath

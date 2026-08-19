@@ -29,8 +29,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/mock"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/mock"
 )
 
 //go:embed templates/*.tmpl

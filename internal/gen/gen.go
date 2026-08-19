@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 const refPrefix = "#/components/schemas/"

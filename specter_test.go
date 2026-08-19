@@ -13,8 +13,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/user/specter/examples/shop/shoppb"
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/examples/shop/shoppb"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // writeTree materialises a small module on disk so the AST-based scanners have

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Language floor: Go (module `github.com/user/specter`). No new dependencies.
+- Language floor: Go (module `github.com/bakhod1r/spector`). No new dependencies.
 - `astutil.ResolveString(expr, consts)` and `astutil.StringConsts(files)` MUST be retained unchanged (other callers and tests depend on them; `ResolveString(expr, nil)` is a `StringLit` drop-in).
 - `core.Adapter.Scan` signature is unchanged: `Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error)`.
 - Resolver MUST NOT panic on any AST shape: an unhandled expr returns `("", false)`.

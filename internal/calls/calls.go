@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // maxDepth bounds how far a handler is followed into the functions it calls.

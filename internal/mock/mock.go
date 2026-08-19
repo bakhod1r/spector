@@ -18,8 +18,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/route"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/route"
 )
 
 // Handler serves the document with the default options.

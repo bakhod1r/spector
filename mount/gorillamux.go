@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // GorillaMux registers the console on a gorilla/mux router under cfg.BasePath

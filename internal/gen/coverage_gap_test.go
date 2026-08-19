@@ -3,7 +3,7 @@ package gen
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // An explicit operationId directive wins over the handler name.

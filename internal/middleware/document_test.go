@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	ginadapter "github.com/user/specter/internal/adapter/gin"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/gen"
+	ginadapter "github.com/bakhod1r/spector/internal/adapter/gin"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/gen"
 
-	"github.com/user/specter"
+	"github.com/bakhod1r/spector"
 )
 
 // buildDoc runs the fixture all the way to an OpenAPI document, which is where

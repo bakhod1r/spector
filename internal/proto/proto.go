@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/emicklei/proto"
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func Scan(dir string) (*core.GrpcDoc, error) {

@@ -3,7 +3,7 @@ package sdk
 import (
 	"sort"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // fieldDef is one resolved property of a schema, after allOf composition has

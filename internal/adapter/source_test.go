@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	chiadapter "github.com/user/specter/internal/adapter/chi"
-	echoadapter "github.com/user/specter/internal/adapter/echo"
-	ginadapter "github.com/user/specter/internal/adapter/gin"
-	stdlibadapter "github.com/user/specter/internal/adapter/stdlib"
-	"github.com/user/specter/internal/core"
+	chiadapter "github.com/bakhod1r/spector/internal/adapter/chi"
+	echoadapter "github.com/bakhod1r/spector/internal/adapter/echo"
+	ginadapter "github.com/bakhod1r/spector/internal/adapter/gin"
+	stdlibadapter "github.com/bakhod1r/spector/internal/adapter/stdlib"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func adapters() map[string]core.Adapter {

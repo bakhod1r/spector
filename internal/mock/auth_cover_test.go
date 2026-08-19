@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func authDoc(schemes map[string]*core.SecurityScheme, opSec, docSec []core.SecurityRequirement) *core.Document {

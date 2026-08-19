@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/user/specter"
-	"github.com/user/specter/internal/proxy"
+	"github.com/bakhod1r/spector"
+	"github.com/bakhod1r/spector/internal/proxy"
 )
 
 // proxyConfig is what the -proxy branch collected, so runProxy takes one value

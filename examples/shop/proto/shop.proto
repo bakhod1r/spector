@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package shop.v1;
 
-option go_package = "github.com/user/specter/examples/shop/shoppb";
+option go_package = "github.com/bakhod1r/spector/examples/shop/shoppb";
 
 message Money {
   double amount = 1;

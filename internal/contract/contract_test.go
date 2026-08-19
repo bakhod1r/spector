@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // doc builds a small but realistic document: a list, a fetch by id, and a

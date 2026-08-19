@@ -3,7 +3,7 @@ package route
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func doc(paths ...[2]string) *core.Document {
