@@ -1,4 +1,4 @@
-module github.com/user/specter
+module github.com/user/spector
 
 go 1.26.2
 
