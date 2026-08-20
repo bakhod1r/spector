@@ -142,7 +142,13 @@ func flatten(doc *core.Document) []operation {
 	return ops
 }
 
-// successSchema picks the first 2xx response that carries a JSON body.
+// successSchema picks the first 2xx response that carries a JSON body, or the
+// "default" one when there is no 2xx.
+//
+// An operation whose status code the scanner could not read is documented under
+// "default" rather than an invented 200, and the body it returns is just as
+// real. Ignoring it would hand the caller a client method that returns nothing
+// for an endpoint that does return something.
 func successSchema(op *core.Operation) *core.Schema {
 	codes := make([]string, 0, len(op.Responses))
 	for c := range op.Responses {
@@ -153,13 +159,19 @@ func successSchema(op *core.Operation) *core.Schema {
 		if !strings.HasPrefix(c, "2") {
 			continue
 		}
-		r := op.Responses[c]
-		if r == nil {
-			continue
+		if s := jsonSchemaOf(op.Responses[c]); s != nil {
+			return s
 		}
-		if mt, ok := r.Content["application/json"]; ok && mt.Schema != nil {
-			return mt.Schema
-		}
+	}
+	return jsonSchemaOf(op.Responses["default"])
+}
+
+func jsonSchemaOf(r *core.Response) *core.Schema {
+	if r == nil {
+		return nil
+	}
+	if mt, ok := r.Content["application/json"]; ok && mt.Schema != nil {
+		return mt.Schema
 	}
 	return nil
 }

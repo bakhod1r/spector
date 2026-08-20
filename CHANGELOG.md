@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrapper used to document paths and middleware and nothing else — no request
   body, no response type, no schemas. Cross-package handlers
   (`r.POST("/x", h.Handler{}.Create)`) are resolved for the same reason.
+- A helper whose name matches a framework verb is stepped into like any other.
+  `httpx.BindJSON(c, &req)` is spelled exactly like gin's own `c.BindJSON`, so
+  the scan matched the name and stopped: the request type was lost, and so was
+  every status the helper writes (the `400` inside a bind wrapper). Handlers
+  that bind through a wrapper in another package now document their request
+  body and its schema.
+- A response passed as a call is typed from the callee's signature:
+  `httpx.OK(c, newTokenResponse(t))` documents `TokenResponse`. Building the
+  body with a constructor rather than a composite literal is how it is normally
+  written, and it used to yield no response type at all.
 - A status code the scanner cannot resolve is no longer reported as 200. It
   becomes OpenAPI's `default` response, so a handler that answers 201 is never
   documented as answering 200 — and the linter no longer advises "consider 201
@@ -38,6 +48,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checked-in stubs panicked at package init against the protobuf runtime the
   module requires, which took the example's tests and the root package's tests
   down with them.
+
+### Security
+- The console no longer claims a documented path because it ends the same way
+  as one of its own endpoints. A real `GET /v1/documents/{id}/source` was
+  answered by the console's source reader, and `GET /v1/exports/openapi.json`
+  served the whole specification to whoever asked. Endpoints are now matched
+  exactly, against the mount point.
+- `grpc/invoke` and `grpc/stream` are closed in production unless an
+  `accessKey` is set. They dial a host named in the request body, so an open
+  console let anyone who could reach it open connections from the server to
+  internal addresses, cloud metadata services and closed ports.
+- The access-key cookie is scoped to the console's mount point instead of `/`,
+  so a deployment secret stops being attached to every request the application
+  serves. It is also marked `Secure` when `X-Forwarded-Proto` is `https`, which
+  is the case `r.TLS` misses on every TLS-terminating proxy.
 
 ### Added
 - `c.DefaultQuery("limit", "20")` puts the fallback in the parameter schema as
@@ -49,6 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `grpc.json` are unaffected and always built.
 
 ### Changed
+- `specter.Handler` rescans when the source changes instead of caching the
+  first scan for the life of the process, and no longer caches a failed scan —
+  a console that 500'd on a half-written file kept doing so after the file was
+  fixed. The tree is fingerprinted at most once a second.
+- `mount` registers `synth/body` and `grpc/stream`, which the console fetches.
+  gin and echo register each endpoint by name, so those two features were
+  missing there while working on every framework mounted as a subtree.
 - `Adapter` implementations parse through `astutil.ParseDir`, which walks
   recursively, skips `_test.go` and vendor/testdata trees, and skips a file
   that does not parse rather than failing the whole scan.

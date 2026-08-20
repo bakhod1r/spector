@@ -28,6 +28,12 @@ var endpoints = []struct {
 	{"/graphql.json", http.MethodGet},
 	{"/source", http.MethodGet},
 	{"/grpc/invoke", http.MethodPost},
+	// The console fetches these two as well. Leaving them out cost gin and
+	// echo users the "Generate body" button and gRPC streaming — features that
+	// worked on every framework that mounts the handler on a subtree, so the
+	// same console silently differed by router.
+	{"/synth/body", http.MethodGet},
+	{"/grpc/stream", http.MethodGet},
 }
 
 // prepare returns the normalized mount point and the console handler with the

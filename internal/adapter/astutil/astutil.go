@@ -461,6 +461,17 @@ type inspection struct {
 	seen map[*ast.FuncDecl]bool
 }
 
+// argType is ArgType plus the package's function results, so a response passed
+// as a call — httpx.OK(c, newTokenResponse(t)) — is typed from the callee's
+// signature. Writing the body through a constructor is the normal way to build
+// one, and without this every such endpoint documents no response type at all.
+func (in *inspection) argType(expr ast.Expr, types map[string]TypeInfo) TypeInfo {
+	if t := ArgType(expr, types); t.Name != "" {
+		return t
+	}
+	return callType(expr, in.pkg.Returns)
+}
+
 func (in *inspection) addResp(status int, t TypeInfo) {
 	in.h.Responses = append(in.h.Responses, Response{Status: status, Type: t})
 }
@@ -474,31 +485,32 @@ func (in *inspection) walk(body *ast.BlockStmt, sc scope, depth int) {
 		if !ok {
 			return true
 		}
+		// Every call is a candidate for stepping into, whether or not its name
+		// is also a framework verb. A project's own httpx.BindJSON(c, &req) is
+		// spelled exactly like gin's c.BindJSON(&req) and means the same thing
+		// one level down; matching the verb and stopping there lost the
+		// request body and every status the helper writes.
+		in.descend(call, sc, depth)
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok {
-			in.descend(call, sc, depth)
 			return true
 		}
 		h := &in.h
 		addResp := in.addResp
 		switch sel.Sel.Name {
-		default:
-			// Not a framework verb: it may be one of the project's own
-			// wrappers around one.
-			in.descend(call, sc, depth)
 		case "Decode", "DecodeJSON", "Unmarshal":
 			if h.Request.Name == "" && len(call.Args) >= 1 {
-				h.Request = ArgType(call.Args[len(call.Args)-1], types)
+				h.Request = in.argType(call.Args[len(call.Args)-1], types)
 			}
 		case "ShouldBindJSON", "BindJSON", "ShouldBind", "Bind", "BodyParser":
 			// "Bind" is echo's spelling of the same thing; "BodyParser" fiber's.
 			if h.Request.Name == "" && len(call.Args) == 1 {
-				h.Request = ArgType(call.Args[0], types)
+				h.Request = in.argType(call.Args[0], types)
 			}
 		case "Encode":
 			// net/http response body; status comes from a preceding WriteHeader.
 			if len(call.Args) == 1 {
-				t := ArgType(call.Args[0], types)
+				t := in.argType(call.Args[0], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
@@ -514,7 +526,7 @@ func (in *inspection) walk(body *ast.BlockStmt, sc scope, depth int) {
 				// answers 201 would be documented as returning 200 — worse
 				// than saying nothing, because a client believes it.
 				status := sc.statusValue(call.Args[0])
-				t := ArgType(call.Args[len(call.Args)-1], types)
+				t := in.argType(call.Args[len(call.Args)-1], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
@@ -523,7 +535,7 @@ func (in *inspection) walk(body *ast.BlockStmt, sc scope, depth int) {
 				// render.JSON(w, r, x) style handled via Encode; here a bare
 				// JSON(x) is treated as a 200 body — unless it chains off
 				// fiber's c.Status(201).JSON(x), which names the code itself.
-				t := ArgType(call.Args[0], types)
+				t := in.argType(call.Args[0], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
@@ -637,7 +649,7 @@ func (in *inspection) bind(fd *ast.FuncDecl, call *ast.CallExpr, caller scope) s
 		if i >= len(params) || params[i] == "" || params[i] == "_" {
 			continue
 		}
-		if t := ArgType(arg, caller.types); t.Name != "" {
+		if t := in.argType(arg, caller.types); t.Name != "" {
 			sc.types[params[i]] = t
 		}
 		if s := caller.statusValue(arg); s != 0 {

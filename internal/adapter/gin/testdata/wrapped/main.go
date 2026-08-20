@@ -19,6 +19,7 @@ func Register(r *gin.Engine) {
 	registerMFA(private.Group("/auth/mfa"))
 	admin := private.Group("/admin")
 	registerBilling(admin.Group("/billing"))
+	registerRoles(private.Group("/rbac"))
 }
 
 func registerMFA(g *gin.RouterGroup) {

@@ -132,3 +132,39 @@ func TestScanRecordsQueryDefault(t *testing.T) {
 	}
 	t.Fatal("route not found")
 }
+
+// A helper in another package is the same helper. It was missed twice over:
+// its name matched a framework verb so the scan stopped at the name, and the
+// response it was handed was a constructor call rather than a literal.
+func TestScanFollowsCrossPackageHelpers(t *testing.T) {
+	a := &Adapter{}
+	routes, schemas, _, err := a.Scan("testdata/wrapped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range routes {
+		if r.Method+" "+r.Path != "post /api/v1/rbac/roles" {
+			continue
+		}
+		if r.RequestType != "RoleReq" {
+			t.Errorf("request = %q, want RoleReq through httpx.BindJSON", r.RequestType)
+		}
+		if r.ResponseType != "RoleResp" {
+			t.Errorf("response = %q, want RoleResp from newRoleResp()", r.ResponseType)
+		}
+		var statuses []int
+		for _, resp := range r.Responses {
+			statuses = append(statuses, resp.Status)
+		}
+		// 400 is written inside the helper and belongs to every endpoint that
+		// binds through it; source order puts the bind first.
+		if len(statuses) != 2 || statuses[0] != 400 || statuses[1] != 201 {
+			t.Errorf("statuses = %v, want [400 201]", statuses)
+		}
+		if schemas["RoleReq"] == nil || schemas["RoleResp"] == nil {
+			t.Errorf("missing schemas: %v", schemas)
+		}
+		return
+	}
+	t.Fatalf("route not found in %v", routes)
+}

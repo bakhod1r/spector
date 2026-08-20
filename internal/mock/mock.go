@@ -117,6 +117,12 @@ func primary(op *core.Operation) (int, *core.Response) {
 	if len(codes) > 0 {
 		return codes[0], op.Responses[strconv.Itoa(codes[0])]
 	}
+	// An operation with only a "default" response still has a body worth
+	// serving; the code the handler really uses is what could not be read, not
+	// the payload.
+	if r, has := op.Responses["default"]; has {
+		return http.StatusOK, r
+	}
 	return http.StatusOK, nil
 }
 

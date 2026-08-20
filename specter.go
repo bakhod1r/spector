@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"hash/fnv"
+	iofs "io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bakhod1r/spector/internal/coverage"
 	"github.com/bakhod1r/spector/internal/export"
@@ -1006,9 +1009,46 @@ func sameOrigin(origin, host string) bool {
 	return origin[i+3:] == host
 }
 
+// fingerprint hashes the name, size and modification time of every source file
+// under dir. It is what lets the console notice an edit without a restart, and
+// it costs one stat per file rather than a read: an edit that changes neither
+// size nor mtime does not happen in practice.
+func fingerprint(dir string) string {
+	h := fnv.New64a()
+	filepath.WalkDir(dir, func(path string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return nil // a vanished file is itself a change the next pass sees
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if name == ".git" || name == "node_modules" || name == "vendor" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		switch filepath.Ext(path) {
+		case ".go", ".proto", ".graphql", ".graphqls":
+		default:
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil
+		}
+		fmt.Fprintf(h, "%s|%d|%d\n", path, info.Size(), info.ModTime().UnixNano())
+		return nil
+	})
+	return fmt.Sprintf("%x", h.Sum64())
+}
+
+// consoleRecheck is how long the console trusts its last scan before
+// fingerprinting the tree again. A second is invisible to a person clicking
+// through the page and keeps a burst of fetches from walking the tree once per
+// request. A variable so tests do not have to sleep.
+var consoleRecheck = time.Second
+
 func Handler(cfg Config) http.Handler {
 	var (
-		once sync.Once
 		doc  *core.Document
 		gdoc *core.GrpcDoc
 		qdoc *core.GraphqlDoc
@@ -1017,13 +1057,43 @@ func Handler(cfg Config) http.Handler {
 		qerr error
 	)
 	var mockHandler http.Handler
+	var (
+		mu    sync.Mutex
+		built bool
+		// checked and stamp throttle the rescan: the tree is fingerprinted at
+		// most once a second, and rebuilt only when that fingerprint moves.
+		checked time.Time
+		stamp   string
+	)
 	build := func() {
 		doc, err = Generate(cfg)
 		gdoc, gerr = GenerateGrpc(cfg)
 		qdoc, qerr = GenerateGraphql(cfg)
+		mockHandler = nil
 		if cfg.Mock && err == nil {
 			mockHandler = MockHandler(doc, MockOptions{})
 		}
+	}
+	// ensure keeps the console showing the code as it is now. A once.Do would
+	// be wrong twice over for a tool that reads source: an edit would not show
+	// until a restart, and a scan that failed on a half-written file would keep
+	// answering 500 long after the file was fixed.
+	scanDir := cfg.withDefaults().Dir
+	ensure := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		now := time.Now()
+		if built && err == nil && now.Sub(checked) < consoleRecheck {
+			return
+		}
+		cur := fingerprint(scanDir)
+		checked = now
+		if built && err == nil && cur == stamp {
+			return
+		}
+		stamp = cur
+		built = true
+		build()
 	}
 
 	// consolePath reports whether a request is for the console page (or its own
@@ -1033,6 +1103,17 @@ func Handler(cfg Config) http.Handler {
 	basePath := cfg.BasePathOrDefault()
 	consolePath := func(p string) bool {
 		return p == "/" || p == basePath || strings.HasPrefix(p, basePath+"/")
+	}
+	// endpoint matches one of the console's own JSON endpoints exactly, at the
+	// mount point or at the root the mount stripped it to.
+	//
+	// Matching by suffix instead took every documented path that happened to
+	// end the same way: a real GET /v1/documents/{id}/source was answered by
+	// the console's source reader, and GET /v1/exports/openapi.json served the
+	// whole specification. An API cannot be expected to avoid those names.
+	mountRoot := strings.TrimSuffix(basePath, "/")
+	endpoint := func(p, name string) bool {
+		return p == "/"+name || p == mountRoot+"/"+name
 	}
 
 	// page is the embedded console, with the mock flag flipped on when mounted
@@ -1069,18 +1150,39 @@ func Handler(cfg Config) http.Handler {
 		// A key that arrived in the URL becomes a cookie so the page's own
 		// fetches carry it, and so it stops being echoed in every link.
 		if cfg.AccessKey != "" && r.URL.Query().Get("key") != "" {
+			// Path is the mount point, not the origin: the key is a
+			// deployment secret, and a cookie scoped to "/" is attached to
+			// every request the application makes, where any middleware that
+			// logs headers writes it down.
+			cookiePath := basePath
+			if cookiePath == "" {
+				cookiePath = "/"
+			}
 			http.SetCookie(w, &http.Cookie{
 				Name:     accessCookie,
 				Value:    cfg.AccessKey,
-				Path:     "/",
+				Path:     cookiePath,
 				HttpOnly: true,
 				SameSite: http.SameSiteLaxMode,
-				Secure:   r.TLS != nil,
+				// TLS is normally terminated by a proxy, so r.TLS is nil on
+				// exactly the deployments that are HTTPS to the browser.
+				Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
 			})
 		}
 
-		once.Do(build)
-		if strings.HasSuffix(r.URL.Path, "grpc/stream") {
+		ensure()
+		// The gRPC endpoints make the server open a connection to a host the
+		// request names. That is a useful console button on a developer's
+		// machine and a server-side request forgery anywhere else: an
+		// unauthenticated caller can reach internal addresses, cloud metadata
+		// services and closed ports through it. Production says this deployment
+		// is exposed, so there they exist only behind an access key.
+		if cfg.Production && cfg.AccessKey == "" &&
+			(endpoint(r.URL.Path, "grpc/stream") || endpoint(r.URL.Path, "grpc/invoke")) {
+			http.Error(w, "not available", http.StatusNotFound)
+			return
+		}
+		if endpoint(r.URL.Path, "grpc/stream") {
 			conn, uerr := grpcStreamUpgrader.Upgrade(w, r, nil)
 			if uerr != nil {
 				return // Upgrade already wrote an error response
@@ -1088,7 +1190,7 @@ func Handler(cfg Config) http.Handler {
 			_ = grpcx.Stream(protoDir, conn)
 			return
 		}
-		if strings.HasSuffix(r.URL.Path, "grpc/invoke") {
+		if endpoint(r.URL.Path, "grpc/invoke") {
 			if r.Method != http.MethodPost {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)
 				return
@@ -1108,7 +1210,7 @@ func Handler(cfg Config) http.Handler {
 			w.Write([]byte(resp))
 			return
 		}
-		if strings.HasSuffix(r.URL.Path, "source") {
+		if endpoint(r.URL.Path, "source") {
 			if cfg.Production {
 				// Source is hidden in production: refuse even a hand-crafted
 				// request, matching the "not available" the UI already handles.
@@ -1127,7 +1229,7 @@ func Handler(cfg Config) http.Handler {
 			writeJSON(w, snip)
 			return
 		}
-		if strings.HasSuffix(r.URL.Path, "grpc.json") {
+		if endpoint(r.URL.Path, "grpc.json") {
 			if gerr != nil || gdoc == nil {
 				writeJSON(w, core.NewGrpcDoc())
 				return
@@ -1135,7 +1237,7 @@ func Handler(cfg Config) http.Handler {
 			writeJSON(w, gdoc)
 			return
 		}
-		if strings.HasSuffix(r.URL.Path, "graphql.json") {
+		if endpoint(r.URL.Path, "graphql.json") {
 			if qerr != nil || qdoc == nil {
 				writeJSON(w, core.NewGraphqlDoc())
 				return
@@ -1151,7 +1253,7 @@ func Handler(cfg Config) http.Handler {
 		// the document's own schema, using github.com/bakhod1r/synth. The
 		// console offers it behind a "Generate body" button so a caller can
 		// fill a request with plausible data instead of the bare sample.
-		if strings.HasSuffix(r.URL.Path, "synth/body") {
+		if endpoint(r.URL.Path, "synth/body") {
 			method, path := r.URL.Query().Get("method"), r.URL.Query().Get("path")
 			if method == "" || path == "" {
 				http.Error(w, "method and path are required", http.StatusBadRequest)
@@ -1177,7 +1279,7 @@ func Handler(cfg Config) http.Handler {
 			w.Write(body)
 			return
 		}
-		if strings.HasSuffix(r.URL.Path, "openapi.json") {
+		if endpoint(r.URL.Path, "openapi.json") {
 			writeJSON(w, doc)
 			return
 		}
