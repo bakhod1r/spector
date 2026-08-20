@@ -498,6 +498,17 @@ type Pkg struct {
 	// that answers out of its own state says nothing about the payload
 	// anywhere in its body; the declaration is on the struct.
 	RecvFields map[string]TypeInfo
+
+	// Resolve decides which declaration a call names, the same way a route's
+	// handler is decided. Leave it nil to fall back to a bare name, which is
+	// what a single-package project has anyway.
+	//
+	// Following calls by name alone is how a handler ends up documented from
+	// a function in an unrelated package: `Handle`, `record`, `encode` and
+	// `decode` are declared once per layer in any real tree, and the first one
+	// parsed answered for all of them. An audit codec's json.Unmarshal then
+	// became an HTTP endpoint's request body.
+	Resolve func(call *ast.CallExpr) *ast.FuncDecl
 }
 
 // FuncDecls indexes every function and method with a body, by name. Plain
@@ -818,7 +829,7 @@ func (in *inspection) walk(body *ast.BlockStmt, sc scope, depth int) {
 // the request body, the response type and the schemas of every endpoint in a
 // project that has such a helper, which is most of them.
 func (in *inspection) descend(call *ast.CallExpr, sc scope, depth int) {
-	if depth >= maxHelperDepth || len(in.pkg.Funcs) == 0 {
+	if depth >= maxHelperDepth || (len(in.pkg.Funcs) == 0 && in.pkg.Resolve == nil) {
 		return
 	}
 	var name string
@@ -830,10 +841,16 @@ func (in *inspection) descend(call *ast.CallExpr, sc scope, depth int) {
 	default:
 		return
 	}
-	fd, ok := in.pkg.Funcs[name]
+	var fd *ast.FuncDecl
+	if in.pkg.Resolve != nil {
+		fd = in.pkg.Resolve(call)
+	}
+	if fd == nil {
+		fd = in.pkg.Funcs[name]
+	}
 	// seen guards recursion: a helper that calls itself, or two that call each
 	// other, would otherwise walk until the stack ends.
-	if !ok || fd.Body == nil || in.seen[fd] {
+	if fd == nil || fd.Body == nil || in.seen[fd] {
 		return
 	}
 	in.seen[fd] = true

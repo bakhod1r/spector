@@ -430,6 +430,14 @@ var handlerFuncNames = map[string]bool{
 	"HandlersChain": true,
 }
 
+// DirOf is the package directory a declaration was written in.
+func (ix *FuncIndex) DirOf(fd *ast.FuncDecl) string {
+	if ix == nil || fd == nil {
+		return ""
+	}
+	return ix.dirOfFile[ix.fileOfDecl[fd]]
+}
+
 // PkgAt is the inspection context for a call site: the result types and
 // declarations of the package the handler itself lives in, so a handler is
 // read against its own package rather than against a flattened tree.

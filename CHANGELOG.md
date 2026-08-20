@@ -7,7 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-20
+
 ### Fixed
+- Calls out of a handler are followed into the declaration they actually name.
+  They were resolved by bare name against a tree-wide table, and `decode`,
+  `Handle` and `Append` are each declared several times in any layered project:
+  the first one parsed answered for all of them. A JWT `decode(claims)` on the
+  auth path therefore stepped into an audit codec's `decode(payload []byte)`,
+  whose `json.Unmarshal` was read as the endpoint's request body — so four HTTP
+  operations documented a Kafka wire struct as their input. Resolution now uses
+  the same package-aware rules a route's handler does.
+- Struct declarations are indexed by the package they are in. `Handler`,
+  `Envelope` and `Response` are each declared once per bounded context, and a
+  name-keyed table let the first one answer for every context: a handler read
+  its own state through another context's field list and found nothing. A
+  context that declares its own envelope is now documented against that one,
+  falling back to a shared helper's only when a single package declares it.
+- A list built with `make([]T, 0, n)` names its payload. It is the ordinary way
+  a handler that returns a collection builds one — more common than
+  `[]T{}`, because the length is usually known — and the response documented as
+  nothing at all.
+- A handler that answers out of its receiver's own store — `u, ok := h.users[id]`
+  — names its payload. The type is on the struct field, nowhere in the body.
+- The console's endpoint filter works while a request panel is open. Saved and
+  ad-hoc request cards reuse the `.op` class and carry no filter key; reading
+  one threw on the first card and killed the whole filter, leaving every
+  category showing its full count and every operation visible, as if nothing
+  had been typed.
+- The console's category sidebar follows the search. It is the index of the
+  list beside it and was left untouched, so it contradicted the pane: full
+  counts, and rows for operations the search had just hidden — clicking one
+  scrolled to something no longer on screen.
+- The console's search survives a tab switch. Moving between REST, gRPC,
+  GraphQL and Realtime rebuilt the pane unfiltered while the search box kept
+  its text, so the box named a filter the list beside it was not applying.
+- A search for a category's name shows that category's operations in the pane,
+  not only in the sidebar. The sidebar already matched on the group name; the
+  pane matched only per-operation, so a tag taken from `tags` rather than from
+  the path listed five operations in the index and none in the list.
+- The console's Mock button works without a restart. The mock route existed
+  only when the process was started with mocking on, so the switch a reader
+  flips while reading usually did nothing.
 - The lint job runs. `.golangci.yml` is a `version: "2"` config and the action
   installed the newest v1, which rejected it outright; the config had therefore
   never been enforced, and it caught a dead method (`FuncIndex.recvType`) on
@@ -183,7 +224,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public baseline: zero-config OpenAPI generation from Go router source,
 a browser console, mock and verifying-proxy modes, and typed client SDKs.
 
-[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/bakhod1r/spector/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/bakhod1r/spector/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/bakhod1r/spector/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/bakhod1r/spector/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/bakhod1r/spector/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bakhod1r/spector/releases/tag/v0.1.0

@@ -20,7 +20,10 @@ import "github.com/bakhod1r/spector/internal/core"
 // because the endpoint really does return them.
 type envelopes struct {
 	schemas map[string]*core.Schema
-	fields  map[string]map[string]string
+	structs *StructIndex
+	// dir is the package the handler was declared in, so an envelope that
+	// context declares itself is read as its own.
+	dir string
 }
 
 func (e envelopes) apply(h Handler) Handler {
@@ -50,7 +53,15 @@ func (e envelopes) register(outer string, w Wrapped) (string, bool) {
 	if !ok || base.Type != "object" || len(base.Properties) == 0 {
 		return "", false
 	}
-	prop, ok := e.fields[outer][w.Field]
+	// The handler's own package answers first: a context that declares its own
+	// Envelope means that one. Failing that the envelope is a shared helper's,
+	// declared in a package the handler only imports, so it is looked up by
+	// name across the tree — which resolves only when one package declares it.
+	fields := e.structs.Wire(e.dir, outer)
+	if fields == nil {
+		fields = e.structs.WireAnywhere(outer)
+	}
+	prop, ok := fields[w.Field]
 	if !ok {
 		return "", false
 	}
