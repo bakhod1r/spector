@@ -1,7 +1,7 @@
 // Package advice reviews a generated document against HTTP and JSON standards
 // and reports where an API diverges from them.
 //
-// These are recommendations, never rewrites. Specter documents what the code
+// These are recommendations, never rewrites. Spector documents what the code
 // does; if it silently reshaped an error body to match RFC 9457 the document
 // would stop describing the service and start describing an aspiration. So the
 // findings are attached to the document and shown in the console, and changing

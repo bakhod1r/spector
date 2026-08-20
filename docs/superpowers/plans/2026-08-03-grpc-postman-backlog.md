@@ -431,7 +431,7 @@ git commit -m "feat(ui): JSONPath wildcard, recursive descent, and filters in pi
 - Test: `e2e/console.spec.js`
 
 **Interfaces:**
-- Produces: `isPostmanV21(json)` detector; `postmanToStore(json)` mapper returning `{collections:[...]}` in Specter's shape. `importStore` routes to it when detected, else the existing `parseImport`.
+- Produces: `isPostmanV21(json)` detector; `postmanToStore(json)` mapper returning `{collections:[...]}` in Spector's shape. `importStore` routes to it when detected, else the existing `parseImport`.
 
 - [x] **Step 1: Write the failing e2e test**
 
@@ -450,7 +450,7 @@ Assert after import a collection "demo" exists with one request: method GET, pat
 - [x] **Step 2: Run to verify it fails**
 
 Run the e2e suite.
-Expected: FAIL (`parseImport` rejects — no `specter.collection` format marker).
+Expected: FAIL (`parseImport` rejects — no `spector.collection` format marker).
 
 - [x] **Step 3: Add detector + mapper**
 
@@ -509,7 +509,7 @@ Reuse the existing replace/merge confirm dialog and `mergeStore`.
 - [x] **Step 5: Run to verify it passes**
 
 Run the e2e suite.
-Expected: PASS. Also confirm native `specter.collection` import still works (regression).
+Expected: PASS. Also confirm native `spector.collection` import still works (regression).
 
 - [x] **Step 6: Commit**
 

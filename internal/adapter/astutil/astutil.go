@@ -13,6 +13,25 @@ import (
 type TypeInfo struct {
 	Name  string
 	Array bool
+
+	// Wrap is set when the value written to the wire is an envelope built
+	// around a payload the caller supplied:
+	//
+	//	func OK(c *gin.Context, data any) { c.JSON(200, Envelope{Data: data}) }
+	//
+	// Name is then the envelope — the same for every endpoint in the project —
+	// and the payload type, which is the only part a client cares about, is
+	// nowhere in the document. Wrap keeps the pairing so the adapter can
+	// synthesise the schema the endpoint actually returns.
+	Wrap *Wrapped
+}
+
+// Wrapped is an envelope field and the payload type that reaches it.
+type Wrapped struct {
+	// Field is the Go field name in the envelope struct (Data), not its
+	// serialized name — the tag is read where the struct is, not here.
+	Field string
+	Inner TypeInfo
 }
 
 func StringLit(expr ast.Expr) (string, bool) {
@@ -28,19 +47,19 @@ func StringLit(expr ast.Expr) (string, bool) {
 }
 
 // Directives are optional lines in a handler's doc comment that state what the
-// AST cannot infer. Specter's promise is that a project needs no annotations —
+// AST cannot infer. Spector's promise is that a project needs no annotations —
 // and it keeps that promise: omit these and everything still works. Writing one
 // only adds detail that has no other source.
 //
 //	// ListUsers returns every user.
-//	// specter:tags users,admin
-//	// specter:operationId listAllUsers
+//	// spector:tags users,admin
+//	// spector:operationId listAllUsers
 //	func listUsers(c *gin.Context) { ... }
 //
 // The prefix is namespaced so a directive cannot be confused with prose, and
 // directive lines are stripped from the description: they are instructions to
 // the generator, not documentation for a reader.
-const directivePrefix = "specter:"
+const directivePrefix = "spector:"
 
 // Directives holds what a doc comment declared.
 type Directives struct {
@@ -49,8 +68,8 @@ type Directives struct {
 	Deprecated  bool
 }
 
-// ParseDirectives reads the specter: lines out of a doc comment. Unknown
-// directives are ignored rather than reported: a newer Specter may understand
+// ParseDirectives reads the spector: lines out of a doc comment. Unknown
+// directives are ignored rather than reported: a newer Spector may understand
 // one this version does not, and failing on it would make the annotation
 // riskier to adopt than leaving it out.
 func ParseDirectives(doc *ast.CommentGroup) Directives {
@@ -90,7 +109,7 @@ func DocComment(doc *ast.CommentGroup, funcName string) (summary, description st
 		return "", ""
 	}
 	// Directive lines are instructions to the generator, not prose; leaving
-	// them in would put "specter:tags users" in the rendered description.
+	// them in would put "spector:tags users" in the rendered description.
 	var kept []string
 	for _, line := range strings.Split(doc.Text(), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), directivePrefix) {
@@ -171,8 +190,82 @@ func (l Locator) Handler(fd *ast.FuncDecl, call ast.Node) *core.Source {
 	return nil
 }
 
+// handlerUnwrapDepth bounds HandlerExpr's descent. Real route registrations
+// nest one or two levels; the bound is what stops a malformed or adversarial
+// tree from looping.
+const handlerUnwrapDepth = 8
+
+// sliceBuilders are the calls that produce a handler chain whose last element
+// is the handler itself. `append(guards, h.Create)...` is the ordinary way a
+// package attaches shared middleware to a route:
+//
+//	func (h *Handler) Mount(r gin.IRouter, guards ...gin.HandlerFunc) {
+//		r.POST("/register", append(guards, h.Register)...)
+//	}
+//
+// The registration's last argument is then the append call, not the handler,
+// so a scanner that reads the argument directly finds no name, no body, and
+// documents the endpoint with no request type, no response type and no
+// schema — which is exactly what a project using this idiom got.
+var sliceBuilders = map[string]bool{
+	"append": true,
+	// slices.Concat(guards, more, []gin.HandlerFunc{h.Create}).
+	"Concat": true,
+}
+
+// HandlerExpr reduces a route registration's handler argument to the
+// expression that actually names the handler, seeing through the wrappings Go
+// code puts around a handler chain: an append, a slice literal, a parenthesis,
+// a variadic spread.
+//
+// It is deliberately shallow — it does not resolve identifiers or step into
+// functions — because its only job is to answer "which sub-expression is the
+// handler". Everything downstream (naming, body lookup, inspection) is
+// unchanged and therefore fixed for every adapter at once.
+func HandlerExpr(expr ast.Expr) ast.Expr {
+	for i := 0; i < handlerUnwrapDepth; i++ {
+		switch t := expr.(type) {
+		case *ast.ParenExpr:
+			expr = t.X
+		case *ast.Ellipsis:
+			// A spread written as a node rather than as the call's own
+			// Ellipsis position.
+			if t.Elt == nil {
+				return expr
+			}
+			expr = t.Elt
+		case *ast.CompositeLit:
+			// []gin.HandlerFunc{mw, h.Create}: the handler is last, as it is
+			// in the registration itself.
+			if len(t.Elts) == 0 {
+				return expr
+			}
+			expr = t.Elts[len(t.Elts)-1]
+		case *ast.CallExpr:
+			if len(t.Args) == 0 || !sliceBuilders[calleeName(t.Fun)] {
+				return expr
+			}
+			expr = t.Args[len(t.Args)-1]
+		default:
+			return expr
+		}
+	}
+	return expr
+}
+
+// calleeName is the bare name a call names, for both f(...) and pkg.f(...).
+func calleeName(fun ast.Expr) string {
+	switch f := fun.(type) {
+	case *ast.Ident:
+		return f.Name
+	case *ast.SelectorExpr:
+		return f.Sel.Name
+	}
+	return ""
+}
+
 func HandlerName(expr ast.Expr) string {
-	switch t := expr.(type) {
+	switch t := HandlerExpr(expr).(type) {
 	case *ast.Ident:
 		return t.Name
 	case *ast.SelectorExpr:
@@ -426,10 +519,20 @@ func FuncDecls(files []*ast.File) map[string]*ast.FuncDecl {
 //
 // — and a scanner that stops at the handler body documents those handlers with
 // no request body, no response type and no schema at all: the exact endpoints a
-// client needs most. Two levels covers a helper that calls a helper, which is
-// where real code stops; going deeper mostly finds shared error plumbing whose
-// responses belong to no one endpoint.
-const maxHelperDepth = 2
+// client needs most.
+//
+// Three levels, because a layered project reaches the framework through three
+// hops and not two:
+//
+//	h.moderate(c, fn)   // resolves the path parameter
+//	  h.run(c, err)     // maps the error, or succeeds
+//	    httpx.NoContent(c)
+//
+// At two, the status the endpoint actually answers with is written one call
+// past the horizon and the operation is documented with no response at all.
+// Deeper than three mostly finds shared plumbing whose responses belong to no
+// one endpoint.
+const maxHelperDepth = 3
 
 // InspectHandlerIn is InspectHandlerWith that also follows calls out of the
 // handler into the package's own functions, up to maxHelperDepth, carrying the
@@ -437,8 +540,20 @@ const maxHelperDepth = 2
 // what makes a handler written through wrappers document the same as one that
 // calls the framework directly.
 func InspectHandlerIn(body *ast.BlockStmt, pkg Pkg) Handler {
+	return InspectBodiesIn([]*ast.BlockStmt{body}, pkg)
+}
+
+// InspectBodiesIn is InspectHandlerIn over several blocks that together make
+// up one handler. A handler factory has two — the function's own body and the
+// literal it returns — and both describe the same endpoint.
+func InspectBodiesIn(bodies []*ast.BlockStmt, pkg Pkg) Handler {
 	in := &inspection{pkg: pkg, seen: map[*ast.FuncDecl]bool{}}
-	in.walk(body, scope{types: LocalTypesWith(body, pkg.Returns)}, 0)
+	for _, body := range bodies {
+		if body == nil {
+			continue
+		}
+		in.walk(body, scope{types: LocalTypesWith(body, pkg.Returns)}, 0)
+	}
 	h := in.h
 	h.Responses = dedupeResponses(h.Responses)
 	h.Response = primaryResponse(h.Responses, h.Response)
@@ -466,10 +581,61 @@ type inspection struct {
 // signature. Writing the body through a constructor is the normal way to build
 // one, and without this every such endpoint documents no response type at all.
 func (in *inspection) argType(expr ast.Expr, types map[string]TypeInfo) TypeInfo {
-	if t := ArgType(expr, types); t.Name != "" {
-		return t
+	t := ArgType(expr, types)
+	if t.Name == "" {
+		t = callType(expr, in.pkg.Returns)
 	}
-	return callType(expr, in.pkg.Returns)
+	if t.Name != "" {
+		if w := in.wrapped(expr, types); w != nil {
+			t.Wrap = w
+		}
+	}
+	return t
+}
+
+// wrapped reports the payload inside an envelope literal.
+//
+// The shape is `Envelope{Data: data}` written inside a response helper, where
+// `data` is the helper's own parameter and the scope already knows what the
+// caller passed for it. Only a field whose value resolves to a type is
+// considered, and only the first such field: an envelope carries one payload,
+// and its other fields (meta, error) are either absent or literals of their
+// own named types, which the schema already describes.
+func (in *inspection) wrapped(expr ast.Expr, types map[string]TypeInfo) *Wrapped {
+	lit, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		// The payload arrives as a name — the helper's parameter — bound to
+		// the caller's argument type. A composite literal here is a nested
+		// envelope, not a payload, and is left alone.
+		id, ok := kv.Value.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		inner, found := types[id.Name]
+		if !found || inner.Name == "" || inner.Name == litTypeName(lit) {
+			continue
+		}
+		inner.Wrap = nil
+		return &Wrapped{Field: key.Name, Inner: inner}
+	}
+	return nil
+}
+
+// litTypeName is the composite literal's own type name, used to refuse an
+// envelope that would wrap itself.
+func litTypeName(lit *ast.CompositeLit) string {
+	return TypeName(lit.Type).Name
 }
 
 func (in *inspection) addResp(status int, t TypeInfo) {
@@ -504,7 +670,27 @@ func (in *inspection) walk(body *ast.BlockStmt, sc scope, depth int) {
 			}
 		case "ShouldBindJSON", "BindJSON", "ShouldBind", "Bind", "BodyParser":
 			// "Bind" is echo's spelling of the same thing; "BodyParser" fiber's.
-			if h.Request.Name == "" && len(call.Args) == 1 {
+			//
+			// chi's render.Bind(r, &req) means it too, but puts the request
+			// first and the payload last. Reading argument zero there would
+			// have documented the *http.Request as the body.
+			if h.Request.Name != "" {
+				break
+			}
+			switch len(call.Args) {
+			case 1:
+				h.Request = in.argType(call.Args[0], types)
+			case 2:
+				if sel.Sel.Name == "Bind" {
+					h.Request = in.argType(call.Args[1], types)
+				}
+			}
+		case "ShouldBindWith", "BindWith", "MustBindWith", "ShouldBindBodyWith", "ShouldBindBodyWithJSON":
+			// The explicit-binding forms: c.ShouldBindWith(&req, binding.JSON).
+			// They bind the same payload as ShouldBindJSON — the second argument
+			// only names the binder — so a handler written this way documented
+			// no request body at all until it was read here too.
+			if h.Request.Name == "" && len(call.Args) >= 1 {
 				h.Request = in.argType(call.Args[0], types)
 			}
 		case "Encode":

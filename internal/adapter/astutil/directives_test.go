@@ -25,10 +25,10 @@ func TestParseDirectives(t *testing.T) {
 	f := parseFileT(t, `package p
 
 // listUsers returns users.
-// specter:tags users, admin,
-// specter:operationId ListUsers
-// specter:deprecated
-// specter:unknown ignored
+// spector:tags users, admin,
+// spector:operationId ListUsers
+// spector:deprecated
+// spector:unknown ignored
 func listUsers() {}
 `)
 	fd := f.Decls[0].(*ast.FuncDecl)

@@ -43,7 +43,9 @@ func ScanGateway(dir string) (*core.Document, error) {
 			return nil, err
 		}
 		def, perr := proto.NewParser(f).Parse()
-		f.Close()
+		// Closing a file opened for reading reports nothing a caller can act
+		// on: the parse above already consumed it, or already failed.
+		_ = f.Close()
 		if perr != nil {
 			return nil, perr
 		}

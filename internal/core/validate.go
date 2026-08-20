@@ -17,7 +17,7 @@ const (
 // `doc:"..."` for a description and `example:"..."` for a sample value.
 //
 // Huma and several other Go API libraries established these spellings, so a
-// project migrating to Specter keeps what it already wrote. They constrain
+// project migrating to Spector keeps what it already wrote. They constrain
 // nothing, which is why they are read unconditionally: unlike a bound, a
 // description cannot make the document wrong.
 //
@@ -149,7 +149,7 @@ func validationRules(tag string) []string {
 	return out
 }
 
-// tagValue pulls one key's value out of a struct tag. The tags Specter reads
+// tagValue pulls one key's value out of a struct tag. The tags Spector reads
 // are simple enough that reflect.StructTag's parser is not needed, and this
 // works on the raw text the AST gives us.
 func tagValue(tag, key string) string {

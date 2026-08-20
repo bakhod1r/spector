@@ -25,7 +25,7 @@ module.exports = async function run(BASE) {
   for (const methods of Object.values(spec.paths)) {
     for (const op of Object.values(methods)) byId[op.operationId] = op;
   }
-  const calls = id => byId[id]?.['x-specter-calls'] || [];
+  const calls = id => byId[id]?.['x-spector-calls'] || [];
   const kinds = id => calls(id).map(x => x.kind).sort();
 
   check('checkout reaches all four kinds',

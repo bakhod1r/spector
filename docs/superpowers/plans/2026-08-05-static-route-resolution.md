@@ -6,12 +6,12 @@
 
 **Architecture:** A shared resolver in `internal/adapter/astutil` (`StringConsts` builds a name→value table; `ResolveString` statically evaluates literal/ident/concat/paren expressions) replaces the literal-only `StringLit` at each adapter's route-path and group-prefix site. A `Diagnostics` collector records unresolved sites with `file:line` + reason. The `Adapter.Scan` interface gains a fourth return value carrying the diagnostics, which the CLI prints to stderr (with an opt-in `-strict-routes` non-zero exit).
 
-**Tech Stack:** Go, `go/ast`, `go/token`, `go/parser`; internal packages `internal/adapter/*`, `internal/core`, `specter.go`, `cmd/specter`.
+**Tech Stack:** Go, `go/ast`, `go/token`, `go/parser`; internal packages `internal/adapter/*`, `internal/core`, `spector.go`, `cmd/spector`.
 
 ## Global Constraints
 
 - Module path `github.com/bakhod1r/spector`.
-- Zero new external dependencies; zero new required annotations (Specter's promise: no source changes needed to be documented).
+- Zero new external dependencies; zero new required annotations (Spector's promise: no source changes needed to be documented).
 - `StringLit` (`astutil.go:18`) stays as-is; `ResolveString(expr, nil)` must be a behaviour-preserving drop-in for it (literal → same value, everything else → false).
 - Only package-level consts/vars in the scanned tree are resolved; no cross-package, no SSA, no type checking. Unresolved → diagnostic, never a crash.
 - Existing golden/testdata output must not change except for net-new routes in testdata specifically added to exercise resolution.
@@ -25,8 +25,8 @@
 - `internal/adapter/astutil/astutil.go` — modify: add `Locator.Position(token.Pos) token.Position`.
 - `internal/adapter/{gin,chi,echo,fiber,gorillamux,httprouter,bunrouter,stdlib}/*.go` — modify: build consts + diagnostics, swap route-path/group-prefix sites to `ResolveString`, return diagnostics.
 - Each adapter's `testdata/` — add fixtures exercising const/var/concat routes and one genuinely dynamic route.
-- `specter.go` — modify: both `adapterFor(cfg).Scan(cfg.Dir)` call sites (lines 248, 530) to accept the 4th return; expose diagnostics on the library result.
-- `cmd/specter/main.go` — modify: print diagnostics to stderr; add `-strict-routes` flag.
+- `spector.go` — modify: both `adapterFor(cfg).Scan(cfg.Dir)` call sites (lines 248, 530) to accept the 4th return; expose diagnostics on the library result.
+- `cmd/spector/main.go` — modify: print diagnostics to stderr; add `-strict-routes` flag.
 - `README.md` — modify: document static resolution + diagnostics.
 
 ## Adapter route-path / group-prefix site map
@@ -452,7 +452,7 @@ This task must be atomic: the `Adapter.Scan` signature change and all eight adap
 
 **Files:**
 - Modify: all eight `internal/adapter/*/*.go` (see site map above)
-- Modify: `specter.go:248`, `specter.go:530`
+- Modify: `spector.go:248`, `spector.go:530`
 - Test: existing adapter tests must still pass; add const-route testdata for gin, chi, echo, stdlib.
 
 **Interfaces:**
@@ -520,7 +520,7 @@ In `internal/adapter/gin/gin.go` `Scan`:
 - At line 169 (group prefix): `prefix, ok := astutil.ResolveString(call.Args[0], consts)`; on `!ok`, `diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))`.
 - Change the final `return routes, scanner.Schemas, nil` to `return routes, scanner.Schemas, diags.List(), nil`.
 
-Update `specter.go:248` and `specter.go:530`:
+Update `spector.go:248` and `spector.go:530`:
 - Line 248 `routes, _, err := adapterFor(cfg).Scan(cfg.Dir)` → `routes, _, _, err := adapterFor(cfg).Scan(cfg.Dir)`.
 - Line 530 `routes, schemas, err := adapterFor(cfg).Scan(cfg.Dir)` → `routes, schemas, diags, err := adapterFor(cfg).Scan(cfg.Dir)` and stash `diags` where the result is assembled (add a field to whatever struct line 530 populates, or a local passed onward; grep the function to see the return path — the diagnostics must reach the library result for Task 5). If unclear, add `_ = diags` here and record a TODO-free note in the report that Task 5 wires it; but prefer wiring a `Diagnostics []astutil.Diagnostic` field on the result now.
 
@@ -562,7 +562,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/adapter specter.go
+git add internal/adapter spector.go
 git commit -m "feat(adapter): resolve const/var/concat route paths across all routers"
 ```
 
@@ -650,17 +650,17 @@ git commit -m "test(adapter): assert dynamic routes produce diagnostics"
 ### Task 5: Surface diagnostics on the library result and CLI stderr + -strict-routes
 
 **Files:**
-- Modify: `specter.go` (expose diagnostics on the result of the function at line 530)
-- Modify: `cmd/specter/main.go`
-- Test: `cmd/specter/main_test.go` (or the nearest CLI test file)
+- Modify: `spector.go` (expose diagnostics on the result of the function at line 530)
+- Modify: `cmd/spector/main.go`
+- Test: `cmd/spector/main_test.go` (or the nearest CLI test file)
 
 **Interfaces:**
-- Consumes: the `diags` collected at `specter.go:530` (Task 3).
+- Consumes: the `diags` collected at `spector.go:530` (Task 3).
 - Produces: a `-strict-routes` flag; stderr diagnostic lines.
 
 - [ ] **Step 1: Write the failing CLI test**
 
-Locate the CLI test harness (grep `func TestMain\|func run(\|os.Args` under `cmd/specter/`). Add a fixture-driven test that runs the generator against a source dir containing one dynamic route and captures stderr. Model it on the existing CLI tests' invocation style. The assertion:
+Locate the CLI test harness (grep `func TestMain\|func run(\|os.Args` under `cmd/spector/`). Add a fixture-driven test that runs the generator against a source dir containing one dynamic route and captures stderr. Model it on the existing CLI tests' invocation style. The assertion:
 
 ```go
 func TestCLIWarnsOnDynamicRoute(t *testing.T) {
@@ -687,28 +687,28 @@ Adapt `runMain` to however the CLI is invoked in existing tests (it may be `main
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `go test ./cmd/specter/ -run TestCLIWarnsOnDynamicRoute -v`
+Run: `go test ./cmd/spector/ -run TestCLIWarnsOnDynamicRoute -v`
 Expected: FAIL — no diagnostic output, no `-strict-routes` flag.
 
 - [ ] **Step 3: Wire diagnostics through and print them**
 
-In `specter.go`, ensure the diagnostics collected at line 530 reach the CLI. The cleanest path: have the function return them (or set them on its result struct). Grep the function containing line 530 for its signature and return type; add a `[]astutil.Diagnostic` alongside the existing result (e.g. a `RouteDiagnostics` field, or an extra return value consumed by `cmd/specter`).
+In `spector.go`, ensure the diagnostics collected at line 530 reach the CLI. The cleanest path: have the function return them (or set them on its result struct). Grep the function containing line 530 for its signature and return type; add a `[]astutil.Diagnostic` alongside the existing result (e.g. a `RouteDiagnostics` field, or an extra return value consumed by `cmd/spector`).
 
-In `cmd/specter/main.go`:
+In `cmd/spector/main.go`:
 - Add the flag: `strictRoutes := flag.Bool("strict-routes", false, "exit non-zero if any route path cannot be statically resolved")`.
 - After generation, for each diagnostic print to stderr:
-  `fmt.Fprintf(os.Stderr, "specter: %s: dynamic %s, cannot infer path (%s)\n", d.Pos, d.Kind, d.Reason)` and, if any exist, a summary `fmt.Fprintf(os.Stderr, "specter: %d route(s) could not be statically resolved\n", n)`.
+  `fmt.Fprintf(os.Stderr, "spector: %s: dynamic %s, cannot infer path (%s)\n", d.Pos, d.Kind, d.Reason)` and, if any exist, a summary `fmt.Fprintf(os.Stderr, "spector: %d route(s) could not be statically resolved\n", n)`.
 - If `*strictRoutes && n > 0`, return a non-zero exit code.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `go test ./cmd/specter/ -run TestCLIWarnsOnDynamicRoute -v`
+Run: `go test ./cmd/spector/ -run TestCLIWarnsOnDynamicRoute -v`
 Expected: PASS (default exit 0 with a warning; `-strict-routes` exits non-zero).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add specter.go cmd/specter
+git add spector.go cmd/spector
 git commit -m "feat(cli): warn on dynamic routes; add -strict-routes"
 ```
 
@@ -726,7 +726,7 @@ Expected: PASS across all packages. If a golden test changed unexpectedly (a lit
 
 - [ ] **Step 2: Document the feature**
 
-Find the routing/limitations section in `README.md` (`grep -n -i "route\|literal\|limitation" README.md`). Add a short paragraph, matching the surrounding voice: Specter now resolves route paths and group prefixes built from package-level string constants/vars and `+` concatenations, not just string literals; routes whose path is genuinely dynamic (built in a loop, from a slice/map, or a function return) are reported to stderr as diagnostics, and `-strict-routes` turns those into a non-zero exit. Remove or update any existing limitation bullet that claims only literal routes are detected.
+Find the routing/limitations section in `README.md` (`grep -n -i "route\|literal\|limitation" README.md`). Add a short paragraph, matching the surrounding voice: Spector now resolves route paths and group prefixes built from package-level string constants/vars and `+` concatenations, not just string literals; routes whose path is genuinely dynamic (built in a loop, from a slice/map, or a function return) are reported to stderr as diagnostics, and `-strict-routes` turns those into a non-zero exit. Remove or update any existing limitation bullet that claims only literal routes are detected.
 
 - [ ] **Step 3: Commit**
 
@@ -749,6 +749,6 @@ git commit -m "docs: document static route resolution and -strict-routes"
 - Literal routes byte-identical, drop-in `ResolveString(_, nil)` → Task 1 test `TestResolveStringLiteralDropIn`, guarded by Task 6 full-suite golden check. ✓
 - No new deps, no annotations, stderr-not-stdout → Global Constraints, honoured in Task 5. ✓
 
-**Placeholder scan:** One soft spot — Task 3 Step 3 / Task 5 Step 3 both depend on the exact shape of the function at `specter.go:530`, which the implementer must grep. This is unavoidable without pasting that function here; the instruction is concrete (add a `[]astutil.Diagnostic` field/return and thread it) and names the exact line. No "TBD"/"handle edge cases" placeholders remain.
+**Placeholder scan:** One soft spot — Task 3 Step 3 / Task 5 Step 3 both depend on the exact shape of the function at `spector.go:530`, which the implementer must grep. This is unavoidable without pasting that function here; the instruction is concrete (add a `[]astutil.Diagnostic` field/return and thread it) and names the exact line. No "TBD"/"handle edge cases" placeholders remain.
 
 **Type consistency:** `ResolveString(ast.Expr, map[string]string) (string, bool)`, `StringConsts([]*ast.File) map[string]string`, `Diagnostic{Pos token.Position; Kind, Reason string}`, `Diagnostics.Add/List`, `Locator.Position(token.Pos) token.Position`, and the new `Scan(...) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error)` are used identically across Tasks 1–5. `DescribeExpr` is exported from Task 2 onward, so the adapters in sibling packages (Task 3) call it without a mid-plan rename.

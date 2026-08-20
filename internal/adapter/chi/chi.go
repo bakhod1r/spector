@@ -29,7 +29,7 @@ func (a *Adapter) Name() string { return "chi" }
 func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	// ParseComments is required, not optional: summaries, descriptions and the
-	// specter: directives all live in doc comments, and without this flag
+	// spector: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
 	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
@@ -57,7 +57,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	loc := astutil.Locator{Fset: fset, Dir: dir}
 	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
-	w := &walker{handlers: handlers, loc: loc, index: index, mw: mw, res: res, diags: &diags}
+	w := &walker{handlers: handlers, loc: loc, index: index, mw: mw, res: res, diags: &diags, scope: astutil.NewScope(fset, files), schemas: scanner.Schemas, entered: map[*ast.FuncDecl]bool{}}
 	for _, file := range files {
 		w.collect(file, "", nil)
 	}
@@ -68,6 +68,11 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 // walker carries the state that does not change as the walk descends, so the
 // recursion only passes what does: the path prefix and the middleware in scope.
 type walker struct {
+	// scope resolves a handler name against the package it was written in,
+	// reads it through the project's helper packages, and names the payload
+	// inside its response envelope. None of that is framework-specific.
+	scope    *astutil.Scope
+	schemas  map[string]*core.Schema
 	handlers map[string]*ast.FuncDecl
 	loc      astutil.Locator
 	index    *calls.Index
@@ -75,6 +80,9 @@ type walker struct {
 	routes   []core.Route
 	res      *astutil.Resolver
 	diags    *astutil.Diagnostics
+	// entered guards a registration function that is handed the router and
+	// hands it on again, directly or through another.
+	entered map[*ast.FuncDecl]bool
 }
 
 // collect walks node for chi routing calls under the accumulated path prefix.
@@ -88,6 +96,12 @@ type walker struct {
 // as the walk descends instead. Order still decides: an r.Use is added to the
 // scope where it appears, so routes registered above it are unaffected.
 func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
+	w.collectIn(node, prefix, scope, nil)
+}
+
+// collectIn is collect with the names the router is known by at this point,
+// which is what lets the walk follow a group handed to another function.
+func (w *walker) collectIn(node ast.Node, prefix string, scope []ast.Expr, routers map[string]bool) {
 	ast.Inspect(node, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -106,9 +120,18 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 		// Groups: r.Route("/api", func(r chi.Router){...}) with a prefix, and
 		// r.Group(func(r chi.Router){...}) without one — the latter exists
 		// precisely to scope middleware.
-		if body, p, ok := groupBody(sel, call, w.res, w.loc, w.diags); ok {
-			w.collect(body, prefix+p, scope)
+		if body, p, name, ok := groupBody(sel, call, w.res, w.loc, w.diags); ok {
+			w.collectIn(body, prefix+p, scope, astutil.WithRouter(routers, name))
 			return false // inner routes already handled with the prefix
+		}
+
+		// The group is handed to a registration function elsewhere; its
+		// routes belong under this prefix.
+		if callee, param, ok := w.scope.RouterHandoff(call, routers); ok && !w.entered[callee] {
+			w.entered[callee] = true
+			w.collectIn(callee.Body, prefix, scope, astutil.WithRouter(nil, param))
+			delete(w.entered, callee)
+			return false
 		}
 
 		method, ok := methods[sel.Sel.Name]
@@ -120,7 +143,8 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 			w.diags.Add(w.loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			return true
 		}
-		name := astutil.HandlerName(call.Args[1])
+		handlerArg := call.Args[1]
+		name := astutil.HandlerName(handlerArg)
 		route := core.Route{
 			Method:      method,
 			Path:        prefix + path,
@@ -128,12 +152,12 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 			// r.With(mw).Get(...) attaches middleware to this route alone.
 			Middleware: w.mw.Chain(append(scope[:len(scope):len(scope)], withArgs(sel)...)),
 		}
-		fd := w.handlers[name]
+		fd := w.scope.Handler(handlerArg, w.handlers)
 		route.Source = w.loc.Handler(fd, call)
 		if fd != nil {
 			route.Calls = calls.Analyze(fd, w.index)
 			route.Realtime = realtime.Detect(fd, w.handlers)
-			astutil.InspectHandler(fd.Body).Apply(&route)
+			w.scope.Inspect(fd, w.schemas).Apply(&route)
 			route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
 			d := astutil.ParseDirectives(fd.Doc)
 			route.Tags, route.Deprecated, route.OperationID = d.Tags, d.Deprecated, d.OperationID
@@ -145,27 +169,27 @@ func (w *walker) collect(node ast.Node, prefix string, scope []ast.Expr) {
 
 // groupBody reports the closure a chi group runs, and the prefix it adds.
 // Route carries a path; Group carries none and exists to scope middleware.
-func groupBody(sel *ast.SelectorExpr, call *ast.CallExpr, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) (body *ast.BlockStmt, prefix string, ok bool) {
+func groupBody(sel *ast.SelectorExpr, call *ast.CallExpr, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) (body *ast.BlockStmt, prefix, router string, ok bool) {
 	switch {
 	case sel.Sel.Name == "Route" && len(call.Args) == 2:
 		p, ok := res.Resolve(call.Args[0])
 		if !ok {
 			diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
-			return nil, "", false
+			return nil, "", "", false
 		}
 		fn, ok := call.Args[1].(*ast.FuncLit)
 		if !ok {
-			return nil, "", false
+			return nil, "", "", false
 		}
-		return fn.Body, p, true
+		return fn.Body, p, astutil.FuncLitParam(fn), true
 	case sel.Sel.Name == "Group" && len(call.Args) == 1:
 		fn, ok := call.Args[0].(*ast.FuncLit)
 		if !ok {
-			return nil, "", false
+			return nil, "", "", false
 		}
-		return fn.Body, "", true
+		return fn.Body, "", astutil.FuncLitParam(fn), true
 	}
-	return nil, "", false
+	return nil, "", "", false
 }
 
 // withArgs pulls the middleware out of r.With(a, b).Get(...), where the

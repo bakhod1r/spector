@@ -1,4 +1,4 @@
-package specter
+package spector
 
 import (
 	"net/http/httptest"

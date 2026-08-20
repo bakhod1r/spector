@@ -41,7 +41,7 @@ func renderCheck(opts Options, a *auth) ([]byte, error) {
 	return gofmt("check.go", src)
 }
 
-// conformBody returns Specter's own shape checker, ready to be pasted into the
+// conformBody returns Spector's own shape checker, ready to be pasted into the
 // generated package.
 //
 // The alternative — writing the checks a second time in a template — would let

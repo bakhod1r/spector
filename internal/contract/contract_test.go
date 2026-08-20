@@ -492,7 +492,7 @@ func TestConstrainedPathParametersKeepTheirDocumentedValue(t *testing.T) {
 //
 // They agree because the checker is carried, not restated: this test is what
 // stops someone editing one copy and leaving the other behind.
-func TestGeneratedCheckerIsSpecterOwn(t *testing.T) {
+func TestGeneratedCheckerIsSpectorOwn(t *testing.T) {
 	_, check := goFiles(t)
 
 	// Every function the shared checker defines has to arrive intact.

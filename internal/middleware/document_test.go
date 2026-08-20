@@ -151,8 +151,8 @@ func codes(op *core.Operation) []string {
 // A security requirement naming a scheme the document never defines is not
 // merely untidy: it makes the document invalid, and every consumer rejects it.
 func TestEverySecuritySchemeReferencedIsDefined(t *testing.T) {
-	cfg := specter.Config{Dir: "testdata/app", Title: "t", Version: "1"}
-	doc, err := specter.Generate(cfg)
+	cfg := spector.Config{Dir: "testdata/app", Title: "t", Version: "1"}
+	doc, err := spector.Generate(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,10 +178,10 @@ func TestEverySecuritySchemeReferencedIsDefined(t *testing.T) {
 
 // A scheme stated in Config is better evidence than one guessed from a name.
 func TestDeclaredSchemeWinsOverTheInferredOne(t *testing.T) {
-	declared := specter.SecurityScheme{Type: "apiKey", Name: "X-Company-Token", In: "header"}
-	doc, err := specter.Generate(specter.Config{
+	declared := spector.SecurityScheme{Type: "apiKey", Name: "X-Company-Token", In: "header"}
+	doc, err := spector.Generate(spector.Config{
 		Dir: "testdata/app", Title: "t", Version: "1",
-		Security: map[string]specter.SecurityScheme{"bearerAuth": declared},
+		Security: map[string]spector.SecurityScheme{"bearerAuth": declared},
 	})
 	if err != nil {
 		t.Fatal(err)

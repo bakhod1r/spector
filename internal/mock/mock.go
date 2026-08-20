@@ -1,6 +1,6 @@
 // Package mock serves a generated document as a working HTTP API.
 //
-// The point is to unblock a frontend before the backend exists. Specter already
+// The point is to unblock a frontend before the backend exists. Spector already
 // knows every path, method, status code and response schema, so the mock is not
 // a new source of truth — it is the document, executed. That is also its
 // limitation, and the honest way to describe it: it returns shaped data, not

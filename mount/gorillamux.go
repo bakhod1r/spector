@@ -13,7 +13,7 @@ import (
 // mux matches a PathPrefix against the whole subtree, so like chi this is one
 // registration rather than one per endpoint: anything the console adds later is
 // served without touching this function.
-func GorillaMux(r *mux.Router, cfg specter.Config) {
+func GorillaMux(r *mux.Router, cfg spector.Config) {
 	base, h := prepare(cfg)
 
 	// The bare mount point is registered before the prefix so it is matched

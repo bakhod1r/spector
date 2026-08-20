@@ -5,7 +5,7 @@
 // operation for it; the proxy judges a live request by finding the operation
 // for it. If those two disagreed about whether GET /users/me is /users/{id},
 // the proxy would report drift the mock does not have, and the report would be
-// about Specter rather than about the API.
+// about Spector rather than about the API.
 package route
 
 import (

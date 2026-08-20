@@ -1,0 +1,70 @@
+# Release build for the spector CLI.
+#
+# The published binaries are built with `-tags "mcp grpclive"`, which is the
+# opposite of the default `go install`. The tags exist to keep a source install
+# small; a download has already paid that cost by the time it is unpacked, and
+# a user who fetched a binary has no way to rebuild it with a tag they turn out
+# to need.
+version: 2
+
+project_name: spector
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: spector
+    main: ./cmd/spector
+    binary: spector
+    env:
+      # cgo is not used anywhere in the tree, and disabling it is what makes a
+      # linux binary run on a distro other than the builder's.
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -tags=mcp grpclive
+    ldflags:
+      # -s -w drop the symbol table and DWARF: the console ships inside the
+      # binary, so its size is worth trimming. main.version is what `spector -V`
+      # reports.
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: spector
+    formats: [tar.gz]
+    # Windows users unpack with the shell's built-in zip support far more often
+    # than with tar.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  # The tree keeps a hand-written CHANGELOG.md; a second list generated from
+  # commit subjects would only disagree with it.
+  disable: true
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    Built from `{{ .FullCommit }}`. Verify a download against `checksums.txt`.
+
+    Binaries include the `mcp` and `grpclive` build tags. `go install` does not
+    — see the install section of the README.

@@ -41,9 +41,26 @@ import (
 // parameters resolved so far: a group that reaches a function through two hops
 // is only resolvable once the first hop is known.
 func GroupParams(files []*ast.File, res *Resolver, out map[*ast.FuncDecl]map[string]string, prefixOf func(name string, in *ast.FuncDecl) (string, bool), diags *Diagnostics, loc Locator) {
-	// Callees by name, methods included: a call site says registerRoutes(...)
-	// or h.registerRoutes(...), and the name is the only part resolvable
-	// without a type check.
+	GroupParamsIn(nil, files, res, out, prefixOf, diags, loc)
+}
+
+// GroupParamsIn is GroupParams with a package-aware index deciding which
+// declaration a call names.
+//
+// Without one the callee is matched by bare name, and `Mount` is the name half
+// the bounded contexts in a layered project give their route registration. The
+// first one parsed then receives every other one's prefix, so a whole context's
+// routes are documented under the wrong base path — or, when the winner takes
+// no group at all, under none.
+func GroupParamsIn(ix *FuncIndex, files []*ast.File, res *Resolver, out map[*ast.FuncDecl]map[string]string, prefixOf func(name string, in *ast.FuncDecl) (string, bool), diags *Diagnostics, loc Locator) {
+	groupParamsWith(ix, files, res, GroupMethodCall, out, prefixOf, diags, loc)
+}
+
+// groupParamsWith is GroupParamsIn for a framework whose group calls are
+// spelled some other way.
+func groupParamsWith(ix *FuncIndex, files []*ast.File, res *Resolver, match GroupCall, out map[*ast.FuncDecl]map[string]string, prefixOf func(name string, in *ast.FuncDecl) (string, bool), diags *Diagnostics, loc Locator) {
+	// Callees by name, methods included: without an index the name is the only
+	// part resolvable, which is what a single-package project needs.
 	funcs := FuncDecls(files)
 
 	// Call sites are gathered once, in file order (files arrive sorted by
@@ -60,6 +77,7 @@ func GroupParams(files []*ast.File, res *Resolver, out map[*ast.FuncDecl]map[str
 			if !ok || caller.Body == nil {
 				continue
 			}
+			callerFile := file
 			ast.Inspect(caller.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok || len(call.Args) == 0 {
@@ -74,7 +92,11 @@ func GroupParams(files []*ast.File, res *Resolver, out map[*ast.FuncDecl]map[str
 				default:
 					return true
 				}
-				if callee, ok := funcs[name]; ok && callee != caller {
+				callee := ix.Lookup(callerFile, caller, call.Fun)
+				if callee == nil {
+					callee = funcs[name]
+				}
+				if callee != nil && callee != caller {
 					sites = append(sites, site{caller: caller, callee: callee, call: call})
 				}
 				return true
@@ -104,7 +126,7 @@ func GroupParams(files []*ast.File, res *Resolver, out map[*ast.FuncDecl]map[str
 				if i >= len(params) || params[i] == "" || params[i] == "_" {
 					continue
 				}
-				prefix, ok := groupArgPrefix(arg, res, s.caller, known)
+				prefix, ok := groupArgPrefix(arg, res, match, diags, loc, s.caller, known)
 				if !ok {
 					continue
 				}
@@ -137,24 +159,20 @@ func GroupParams(files []*ast.File, res *Resolver, out map[*ast.FuncDecl]map[str
 // groupArgPrefix resolves a call argument that is a router group to its full
 // prefix: either a bare group variable, or an `x.Group("/y")` call whose own
 // receiver may carry a prefix in turn. Both are read in the caller's scope.
-func groupArgPrefix(arg ast.Expr, res *Resolver, caller *ast.FuncDecl, known func(string, *ast.FuncDecl) (string, bool)) (string, bool) {
+func groupArgPrefix(arg ast.Expr, res *Resolver, match GroupCall, diags *Diagnostics, loc Locator, caller *ast.FuncDecl, known func(string, *ast.FuncDecl) (string, bool)) (string, bool) {
 	switch e := arg.(type) {
 	case *ast.Ident:
 		return known(e.Name, caller)
 	case *ast.CallExpr:
-		sel, ok := e.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Group" || len(e.Args) < 1 {
-			return "", false
-		}
-		prefix, ok := res.Resolve(e.Args[0])
+		recv, prefix, ok := match(e, res, diags, loc)
 		if !ok {
 			return "", false
 		}
+		// A receiver with no recorded prefix is the root router, which
+		// contributes nothing — not a reason to give up on the argument.
 		base := ""
-		if id, ok := sel.X.(*ast.Ident); ok {
-			// A receiver with no recorded prefix is the root router, which
-			// contributes nothing — not a reason to give up on the argument.
-			base, _ = known(id.Name, caller)
+		if recv != "" {
+			base, _ = known(recv, caller)
 		}
 		return base + prefix, true
 	}

@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-20
+
+### Changed
+- **The module is `github.com/bakhod1r/spector`.** The project was spelled
+  `specter` through 0.4.0; the import path, the command, the binary and the
+  config file (`spector.json`, `spector.yaml`) all follow the new spelling, as
+  do the `spector:` doc directives. An existing install keeps working — the old
+  tags are still fetchable under the old path — but an upgrade is a rewrite of
+  the import path, not a version bump.
+- The minimum Go version is 1.26.6, which closes 16 advisories the previous
+  1.26.2 floor left reachable, among them an infinite loop in the HTTP/2
+  transport (`GO-2026-4918`) that `-serve` and the proxy both route through.
+  `govulncheck` now runs on every CI build rather than at release time.
+
+### Added
+- Responses wrapped in a project's own envelope helper are documented as the
+  payload they carry. A service where every handler answers through
+  `OK(c, data)` used to document eighty operations as the same `Envelope` with
+  an `any` field, and a client generated from it had no types at all — a silent
+  failure, because the document looked complete. The pairing of the envelope
+  with the payload it was handed is now registered as its own schema, and the
+  envelope's other fields (`meta`, `error`) survive.
+- Routes are resolved through the layers a service grows once it passes one
+  package: bounded contexts that each declare `Mount`/`Create`, registrations
+  spread as `append(guards, h.X)...`, handler factories, and a group prefix
+  that reaches the registration three hops away. Covered for all eight
+  adapters.
+- Prebuilt binaries. Tagging `v*` builds linux, macOS and Windows archives for
+  amd64 and arm64, with checksums, and publishes them to the GitHub release.
+  They carry the `mcp` and `grpclive` build tags: those tags exist to keep a
+  source install small, and someone who downloaded a binary has no way to
+  rebuild it with a tag they turn out to need.
+- `spector -V` prints the version of the binary. `-version` was already taken —
+  it is the version of the API being documented — so renaming it would have
+  silently changed what every existing invocation writes into the document.
+
+### Fixed
+- The coverage floor measures the packages the project ships. The examples and
+  their generated protobuf stubs counted as uncovered code, which held the
+  reported total at 88.2% — below the 90% floor — for demo files nothing is
+  meant to test. Scoped to the shipping packages it is 91.5%.
+
 ## [0.4.0] - 2026-08-20
 
 ### Fixed
@@ -70,11 +112,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build tags for the two dependencies that dominated install size. The default
   build is 7 modules instead of 28: `-tags grpclive` restores live gRPC calling
   from the console (grpcurl, grpc-go, protoreflect, go-spiffe, envoy protos),
-  `-tags mcp` restores `specter -mcp`. Scanning `.proto` and writing
+  `-tags mcp` restores `spector -mcp`. Scanning `.proto` and writing
   `grpc.json` are unaffected and always built.
 
 ### Changed
-- `specter.Handler` rescans when the source changes instead of caching the
+- `spector.Handler` rescans when the source changes instead of caching the
   first scan for the life of the process, and no longer caches a failed scan —
   a console that 500'd on a half-written file kept doing so after the file was
   fixed. The tree is fingerprinted at most once a second.
@@ -89,16 +131,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2026-08-12
 
 ### Added
-- `-gateway` (`specter.GenerateGateway`): build a REST OpenAPI document from the
+- `-gateway` (`spector.GenerateGateway`): build a REST OpenAPI document from the
   `google.api.http` annotations in `.proto` sources — methods, path templates,
   `body` mappings, `additional_bindings` and `custom` kinds. Unannotated RPCs
-  are left out; server-streaming bindings are marked `x-specter-realtime`.
+  are left out; server-streaming bindings are marked `x-spector-realtime`.
 - `-format yaml`: emit the OpenAPI, gRPC or GraphQL document as YAML instead of
   JSON, in the document's own key order. An `-o` ending in `.yaml`/`.yml`
   implies it; an explicit `-format` wins. `-all` writes the `.yaml` names.
-- Manual route supplements: a `routes:` list in `specter.json`/`specter.yaml`
+- Manual route supplements: a `routes:` list in `spector.json`/`spector.yaml`
   (or `Config.Routes`) declares operations for routes the AST cannot resolve.
-  They are folded into the document marked `x-specter-manual`, never override
+  They are folded into the document marked `x-spector-manual`, never override
   the scan, and a `fills: file.go:line` entry clears the diagnostic it answers
   so a supplemented codebase passes `-strict-routes`.
 - Static route resolution: route paths and group prefixes built from

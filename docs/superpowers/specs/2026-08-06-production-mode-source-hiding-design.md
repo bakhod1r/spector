@@ -3,8 +3,8 @@
 ## Problem
 
 The console exposes the scanned application's Go source. Each operation carries
-an `x-specter-source` extension (file + line), the UI renders a **View source**
-button from it, and the `source` HTTP endpoint (`specter.go`, the
+an `x-spector-source` extension (file + line), the UI renders a **View source**
+button from it, and the `source` HTTP endpoint (`spector.go`, the
 `strings.HasSuffix(r.URL.Path, "source")` branch) reads and returns the actual
 file contents via `source.Read`. On an internet-facing deployment this leaks
 source code, file paths, and internal structure.
@@ -22,28 +22,28 @@ source-viewing developer experience unchanged. Non-breaking.
 `Production` is a general hardening flag, but this spec wires it to exactly one
 behaviour: hiding source. It is named `Production` (not `HideSource`) so future
 internet-facing hardening (e.g. gating `grpc/invoke`, stripping the
-`x-specter-calls` call graph) can attach to the same flag later. Those are
+`x-spector-calls` call graph) can attach to the same flag later. Those are
 **out of scope** here — this change strips source only.
 
 ## Design
 
 ### Config + flag
 
-- Add `Config.Production bool` to `specter.Config` (documented alongside
+- Add `Config.Production bool` to `spector.Config` (documented alongside
   `AccessKey`, since both concern internet-facing deployment).
-- Add CLI flag `-prod` in `cmd/specter/main.go` that sets `cfg.Production`.
+- Add CLI flag `-prod` in `cmd/spector/main.go` that sets `cfg.Production`.
 - Add `production` to the JSON config-file struct (`fileConfig`) and copy it into
   `cfg.Production` in `applyConfigFile`, matching how `AccessKey`/`BasePath` are
   read, so one file can describe a production deployment.
 
 ### Two enforcement points (defence in depth)
 
-1. **Strip source from the document (primary).** In `Generate` (`specter.go`),
+1. **Strip source from the document (primary).** In `Generate` (`spector.go`),
    after the document is built, if `cfg.Production` is set, walk every operation
    in `doc.Paths` and set `Operation.Source = nil`. Because the field is
-   `json:"x-specter-source,omitempty"`, the extension then disappears from the
+   `json:"x-spector-source,omitempty"`, the extension then disappears from the
    emitted JSON. Consequences:
-   - The UI's **View source** button is gated on `op["x-specter-source"]`
+   - The UI's **View source** button is gated on `op["x-spector-source"]`
      (`ui.html:1573`); with the extension gone, the button never renders.
    - File paths and line numbers no longer appear anywhere in the document.
 
@@ -74,7 +74,7 @@ document schema (the field is simply absent when nil).
 ## Testing (TDD)
 
 - `Generate` unit: with `Config.Production` true, every operation's `Source` is
-  nil and the marshalled JSON contains no `x-specter-source`; with it false (a
+  nil and the marshalled JSON contains no `x-spector-source`; with it false (a
   control), at least one operation still has `Source` set. Uses `examples/shop`.
 - `Handler` unit: with `Production` true, `GET /docs/source?file=…&line=…`
   returns 404; with it false, it returns the snippet JSON (guard the existing
@@ -87,7 +87,7 @@ document schema (the field is simply absent when nil).
 
 - Gating `grpc/invoke`, `synth/body`, or the mock in production (future work on
   the same flag).
-- Stripping `x-specter-calls` / `x-specter-middleware` / `x-specter-advice`
+- Stripping `x-spector-calls` / `x-spector-middleware` / `x-spector-advice`
   (call graph, middleware, advisories) — a separate decision; this change is
   scoped to source.
 - Any authentication change; `AccessKey` remains the access-gating mechanism.

@@ -13,7 +13,7 @@ import (
 // the mux itself redirects "/docs" to "/docs/" — but it drops the query when it
 // does, which would lose an access key on the first visit, so the bare path is
 // registered explicitly.
-func Stdlib(mux *http.ServeMux, cfg specter.Config) {
+func Stdlib(mux *http.ServeMux, cfg spector.Config) {
 	base, h := prepare(cfg)
 
 	mux.HandleFunc(base, func(w http.ResponseWriter, req *http.Request) {

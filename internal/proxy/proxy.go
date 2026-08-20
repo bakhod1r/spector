@@ -1,6 +1,6 @@
 // Package proxy watches live traffic and compares it against the document.
 //
-// The contract artefacts check the document with requests Specter invented:
+// The contract artefacts check the document with requests Spector invented:
 // one sample body, one path value, the happy path. Real traffic is not like
 // that. It has empty lists, error cases, clients sending fields nobody
 // documented, and endpoints the scanner never saw because they are registered

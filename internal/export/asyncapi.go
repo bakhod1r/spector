@@ -11,7 +11,7 @@ import (
 
 // AsyncAPI renders the document's realtime endpoints as an AsyncAPI 2.6
 // document. The REST document already marks WebSocket and SSE handlers
-// (x-specter-realtime); those become channels, keyed by path, that OpenAPI has
+// (x-spector-realtime); those become channels, keyed by path, that OpenAPI has
 // no vocabulary for. A WebSocket is bidirectional, so it carries both a
 // subscribe and a publish operation; SSE streams server-to-client only, so it
 // carries subscribe alone. Ordinary REST operations are left to the OpenAPI

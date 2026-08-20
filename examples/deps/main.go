@@ -28,7 +28,7 @@ type Order struct {
 
 // The cache and queue are interfaces rather than a real redis/kafka client so
 // this example adds no dependencies to the module. That also makes it the
-// honest demonstration: with no import to go by, Specter has only the field
+// honest demonstration: with no import to go by, Spector has only the field
 // names to work from, and reports those findings as "likely" rather than
 // "certain".
 type Cache interface {
@@ -106,7 +106,7 @@ func main() {
 	s := &Server{}
 	r := router(s)
 
-	mount.Gin(r, specter.Config{
+	mount.Gin(r, spector.Config{
 		Dir:     ".",
 		Title:   "Deps API",
 		Version: "1.0.0",

@@ -22,7 +22,7 @@ func MergeObserved(base, observed *core.Document) *core.Document {
 }
 
 // MergeManual returns base with hand-declared routes folded in, marked
-// x-specter-manual. It is the same gap-filling merge as MergeObserved with the
+// x-spector-manual. It is the same gap-filling merge as MergeObserved with the
 // same precedence — the scanned source always wins on any operation or response
 // it already documents — so a supplement can only add what the AST could not
 // resolve, never rewrite what it could. Neither input is mutated.

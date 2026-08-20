@@ -93,7 +93,7 @@ func (r *Recorder) Close() error {
 	return r.w.Close()
 }
 
-const redacted = "<redacted by specter>"
+const redacted = "<redacted by spector>"
 
 // sensitiveHeaders are the headers that carry credentials outright.
 var sensitiveHeaders = map[string]bool{

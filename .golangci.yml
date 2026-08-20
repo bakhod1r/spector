@@ -1,0 +1,60 @@
+# golangci-lint configuration.
+#
+# The rule this file follows: a check stays on when ignoring it could hide a
+# defect, and is turned off only where the "problem" is a house style the code
+# deliberately does not follow. Nothing here is disabled to make CI green.
+
+version: "2"
+
+linters:
+  settings:
+    staticcheck:
+      checks:
+        # golangci-lint's default set: the ST* naming and comment-style checks
+        # are off, because this codebase's comments are prose about why the
+        # code is as it is, not the "Name ..." formula the checker expects.
+        - all
+        - "-ST1000"
+        - "-ST1003"
+        - "-ST1016"
+        - "-ST1020"
+        - "-ST1021"
+        - "-ST1022"
+        # QF* are refactoring suggestions, not findings: lift a condition out
+        # of a loop, apply De Morgan's law, drop an embedded field from a
+        # selector, omit a type that can be inferred. Each is a matter of which
+        # form reads better, and in this codebase the longer form is usually
+        # the one that says what it means — the explicit type in
+        # `var _ Server = Server{...}` is the whole point of that assertion.
+        - "-QF1001"
+        - "-QF1006"
+        - "-QF1008"
+        - "-QF1011"
+
+    errcheck:
+      # Writing to a *bytes.Buffer, an http.ResponseWriter or os.Stderr can
+      # fail only when the client has gone away or the process is out of
+      # memory, and there is nothing a caller can do about either: the reply is
+      # already half-written, and the error would be reported by writing again.
+      # Checking these would mean noise on every line, which teaches a reader to
+      # skim past the ones that matter.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - io.WriteString
+        - (net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+
+  exclusions:
+    rules:
+      # Test and example code closes files, chdirs and starts servers for
+      # effect; a failure there fails the test or the demo loudly enough.
+      - path: (_test\.go|^examples/)
+        linters:
+          - errcheck
+      # A deferred Close on a file opened for reading has no error worth
+      # handling: the read already succeeded or already reported its failure.
+      - source: "defer .*\\.Close\\(\\)"
+        linters:
+          - errcheck

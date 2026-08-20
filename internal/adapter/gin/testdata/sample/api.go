@@ -20,7 +20,7 @@ func Register(r *gin.Engine) {
 }
 
 // listUsers returns every user.
-// specter:tags users
+// spector:tags users
 func listUsers(c *gin.Context) {
 	_ = c.Query("limit")
 	_ = c.GetHeader("X-Tenant")

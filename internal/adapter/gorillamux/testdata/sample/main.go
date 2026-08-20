@@ -21,7 +21,7 @@ type CreateUserReq struct {
 // listUsers returns every user.
 //
 // Supports free-text search and a page size.
-// specter:tags users
+// spector:tags users
 func listUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	limit := r.URL.Query().Get("limit")

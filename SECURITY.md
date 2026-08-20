@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Specter is pre-1.0. Security fixes are applied to the latest release and to
+Spector is pre-1.0. Security fixes are applied to the latest release and to
 `main`. Older tagged releases are not patched — upgrade to the latest version.
 
 ## Reporting a vulnerability
@@ -25,7 +25,7 @@ your contribution is credited unless you prefer otherwise.
 
 ## Scope notes
 
-Specter generates documentation and serves a developer console. A few things
+Spector generates documentation and serves a developer console. A few things
 are intentional rather than vulnerabilities:
 
 - The console's `AccessKey` is a deployment secret, not user authentication —

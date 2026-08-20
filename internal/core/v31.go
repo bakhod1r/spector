@@ -4,7 +4,7 @@ import "encoding/json"
 
 // ToV31 converts the document to OpenAPI 3.1. The model in this package is
 // written against 3.0.3, and almost all of it is valid 3.1 unchanged; the two
-// real differences that matter for what Specter emits are handled here:
+// real differences that matter for what Spector emits are handled here:
 //
 //   - the version string becomes "3.1.0"
 //   - exclusiveMinimum/exclusiveMaximum stop being booleans that modify

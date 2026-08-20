@@ -44,7 +44,7 @@ func Serve(mux *http.ServeMux) error {
 }
 
 // listUsers returns every user.
-// specter:tags users
+// spector:tags users
 func listUsers(w http.ResponseWriter, r *http.Request) {
 	_ = r.URL.Query().Get("limit")
 	_ = r.Header.Get("X-Tenant")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Specter</title>
+<title>Spector</title>
 <!-- Flipped to true by the Go side when the console mounts its own mock
      (Config.Mock), so the header can warn that responses are shaped, not live. -->
 <script>window.__MOCK__=false;</script>
@@ -18,6 +18,8 @@
   header { padding:14px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap; position:sticky; top:0; z-index:40; background:var(--bg); }
   header h1 { margin:0; font-size:19px; }
   header .ver { color:var(--muted); font-size:13px; }
+  header .mockurl { font-family:ui-monospace,monospace; font-size:11px; color:var(--muted); border:1px solid var(--border); border-radius:5px; padding:2px 7px; margin-left:6px; cursor:pointer; }
+  header .mockurl:hover { color:var(--accent); border-color:var(--accent); }
   header .mockbadge { font-size:11px; font-weight:700; letter-spacing:.5px; color:#000; background:var(--accent); padding:2px 7px; border-radius:5px; cursor:default; }
   header .spacer { flex:1; }
   select, input, textarea { background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-family:inherit; font-size:13px; }
@@ -204,6 +206,16 @@
   .chainval { font-size:11px; color:var(--muted); font-family:ui-monospace,monospace; margin:-2px 0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .chainval.miss { color:var(--red); }
   #app.focus-saved > .cat { display:none; }
+  body.focus-saved #catSect { display:none; }
+  .viewbar { display:flex; gap:6px; margin:2px 0 6px; }
+  .viewbar button { font-size:11px; padding:2px 9px; }
+  .viewbar button.on { border-color:var(--accent); color:var(--accent); }
+  .tablewrap { overflow-x:auto; border:1px solid var(--border); border-radius:6px; }
+  table.jtable { border-collapse:collapse; width:100%; font-size:12px; }
+  table.jtable th, table.jtable td { text-align:left; padding:5px 9px; border-bottom:1px solid var(--border); font-family:ui-monospace,monospace; white-space:nowrap; max-width:420px; overflow:hidden; text-overflow:ellipsis; }
+  table.jtable th { color:var(--muted); font-weight:600; background:var(--panel); position:sticky; top:0; }
+  table.jtable tr:last-child td { border-bottom:0; }
+  .htmlprev iframe { width:100%; height:420px; border:1px solid var(--border); border-radius:6px; background:#fff; }
   .hidden { display:none !important; }
   .log { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:8px; margin-top:8px; height:260px; overflow-y:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
   .log .ln { display:flex; gap:8px; padding:2px 0; border-bottom:1px solid var(--border); }
@@ -257,7 +269,7 @@
 </head>
 <body>
 <header>
-  <h1 id="title">API</h1><span class="ver" id="ver"></span><span class="mockbadge" id="mockBadge" title="Responses come from Specter's built-in mock — shaped from the schema, not a live backend." hidden>MOCK</span>
+  <h1 id="title">API</h1><span class="ver" id="ver"></span><span class="mockbadge" id="mockBadge" title="Responses come from Spector's built-in mock — shaped from the schema, not a live backend." hidden>MOCK</span><span class="mockurl" id="mockUrl" title="The mock answers documented paths on this origin — click to copy." hidden></span>
   <div class="apitabs">
     <button id="tabRest" class="on">REST</button>
     <button id="tabGrpc">gRPC</button>
@@ -272,7 +284,7 @@
   <button id="runAllBtn" class="primary" title="Run every endpoint in this tab and check status + response schema">Run all</button>
   <a class="linkbtn" href="openapi.json" download="openapi.json"><button>Spec</button></a>
   <button id="exportBtn" title="Export collections, environments and history">Export</button>
-  <button id="importBtn" title="Import a Specter collection file">Import</button>
+  <button id="importBtn" title="Import a Spector collection file">Import</button>
   <input type="file" id="importFile" accept="application/json,.json" class="hidden">
   <button id="themeBtn" title="Toggle theme">🌙</button>
 </header>
@@ -321,16 +333,16 @@
 </div>
 <script>
 const methodOrder = ["get","post","put","patch","delete","head","options"];
-const LS_KEY = "specter.state";
+const LS_KEY = "spector.state";
 
 function initTheme() {
-  let t = localStorage.getItem("specter.theme");
+  let t = localStorage.getItem("spector.theme");
   if (!t) t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
   applyTheme(t);
 }
 function applyTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
-  localStorage.setItem("specter.theme", t);
+  localStorage.setItem("spector.theme", t);
   const btn = document.getElementById("themeBtn");
   if (btn) btn.textContent = t === "light" ? "☀️" : "🌙";
 }
@@ -342,14 +354,34 @@ initTheme();
 let SPEC = null;
 let store = loadStore();
 
+// The four tiers an API ends up having anyway. Only "local" can be filled in
+// truthfully from here; the rest carry a guessed host so an unedited one fails
+// loudly instead of quietly hitting the wrong tier.
+function defaultEnvs() {
+  const host = location.hostname.replace(/^(dev|staging|stage|api)\./, "") || "example.com";
+  const guess = sub => location.protocol + "//" + sub + "." + host;
+  return [
+    { id:"local",   name:"local",   vars:{ baseUrl: location.origin, token:"" } },
+    { id:"dev",     name:"dev",     vars:{ baseUrl: guess("dev"),     token:"" } },
+    { id:"staging", name:"staging", vars:{ baseUrl: guess("staging"), token:"" } },
+    { id:"prod",    name:"prod",    vars:{ baseUrl: guess("api"),     token:"" } },
+  ];
+}
+
 function loadStore() {
   try {
     const s = JSON.parse(localStorage.getItem(LS_KEY));
-    if (s && s.environments) return s;
+    if (s && s.environments) {
+      // Stores written before the four tiers existed hold only "local". Add
+      // what is missing; never touch an environment already configured.
+      const have = new Set(s.environments.map(e => e.id));
+      for (const env of defaultEnvs()) if (!have.has(env.id)) s.environments.push(env);
+      return s;
+    }
   } catch (e) {}
   return {
     activeEnvId: "local",
-    environments: [{ id:"local", name:"local", vars:{ baseUrl: location.origin, token:"" } }],
+    environments: defaultEnvs(),
     opState: {},
     collections: [{ id:"default", name:"Saved", requests:[] }],
     history: [],
@@ -358,7 +390,7 @@ function loadStore() {
 function saveStore() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
 
 // ---- import / export ----
-const EXPORT_FORMAT = "specter.collection";
+const EXPORT_FORMAT = "spector.collection";
 const EXPORT_VERSION = 1;
 
 function buildExport(s) {
@@ -373,14 +405,14 @@ function buildExport(s) {
   };
 }
 
-// Throws with a human-readable reason when the payload is not a Specter export.
+// Throws with a human-readable reason when the payload is not a Spector export.
 function parseImport(text) {
   let doc;
   try { doc = JSON.parse(text); }
   catch (e) { throw new Error("Not valid JSON: " + e.message); }
   if (!doc || typeof doc !== "object") throw new Error("Expected a JSON object.");
-  if (doc.format !== EXPORT_FORMAT) throw new Error("Not a Specter collection file (missing format marker).");
-  if (doc.version > EXPORT_VERSION) throw new Error("File was written by a newer Specter (version " + doc.version + ").");
+  if (doc.format !== EXPORT_FORMAT) throw new Error("Not a Spector collection file (missing format marker).");
+  if (doc.version > EXPORT_VERSION) throw new Error("File was written by a newer Spector (version " + doc.version + ").");
   if (!Array.isArray(doc.environments) || !Array.isArray(doc.collections)) {
     throw new Error("File is missing environments or collections.");
   }
@@ -421,7 +453,7 @@ function exportStore() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "specter-collection.json";
+  a.download = "spector-collection.json";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -559,7 +591,7 @@ function interpolateMap(map, env) {
 // ---- spec helpers ----
 let GRPC = null;
 let GRAPHQL = null;
-let mode = localStorage.getItem("specter.mode") || "rest";
+let mode = localStorage.getItem("spector.mode") || "rest";
 
 async function load() {
   SPEC = await (await fetch("openapi.json")).json();
@@ -567,7 +599,19 @@ async function load() {
   try { GRAPHQL = await (await fetch("graphql.json")).json(); } catch (e) { GRAPHQL = null; }
   document.getElementById("title").textContent = SPEC.info.title || "API";
   document.getElementById("ver").textContent = SPEC.info.version || "";
-  if (window.__MOCK__) document.getElementById("mockBadge").hidden = false;
+  if (window.__MOCK__) {
+    document.getElementById("mockBadge").hidden = false;
+    // The badge says the responses are shaped; it never said where they come
+    // from. The origin is the mock's base URL — worth showing, and worth
+    // copying, because it is what a client outside the console has to call.
+    const mu = document.getElementById("mockUrl");
+    mu.hidden = false; mu.textContent = location.origin;
+    mu.onclick = () => {
+      navigator.clipboard && navigator.clipboard.writeText(location.origin);
+      const prev = mu.textContent; mu.textContent = "copied \u2713";
+      setTimeout(() => { mu.textContent = prev; }, 1200);
+    };
+  }
   renderEnvSelector();
   renderSide();
   wireToolbar();
@@ -638,22 +682,37 @@ function applyRoute(route, { rerender = true } = {}) {
   const changed = route.mode && route.mode !== mode;
   if (route.mode) {
     mode = route.mode;
-    localStorage.setItem("specter.mode", mode);
+    localStorage.setItem("spector.mode", mode);
   }
   const search = document.getElementById("search");
   if (search && route.q !== search.value) {
     search.value = route.q;
   }
   if (rerender) renderActive();
-  if (route.q) applyFilter(route.q);
+  applyFilter(route.q || "");
   if (route.anchor) revealAnchor(route.anchor);
   return changed;
 }
 
+// applyFilter hides the operations that do not match and retitles every
+// category with how many of its operations survived. A category that still
+// advertises 5 while showing 3 is lying about the result of the search.
 function applyFilter(q) {
-  const needle = q.toLowerCase();
+  const needle = q.trim().toLowerCase();
   document.querySelectorAll(".op").forEach(op => {
     op.classList.toggle("hidden", !op.dataset.key.includes(needle));
+  });
+  document.querySelectorAll(".cat").forEach(cat => {
+    const ops = [...cat.querySelectorAll(".op")];
+    const shown = ops.filter(op => !op.classList.contains("hidden")).length;
+    const badge = cat.querySelector(".cat-head .count");
+    if (badge) {
+      if (badge.dataset.total === undefined) badge.dataset.total = String(ops.length);
+      badge.textContent = needle ? String(shown) : badge.dataset.total;
+    }
+    cat.classList.toggle("hidden", !!needle && shown === 0);
+    // A match inside a collapsed category is a match nobody can see.
+    if (needle && shown) cat.classList.remove("collapsed");
   });
 }
 
@@ -888,12 +947,7 @@ function wireToolbar() {
   document.getElementById("envManage").onclick = openEnvModal;
   wireEnvModal();
   document.getElementById("search").addEventListener("input", e => {
-    const q = e.target.value.toLowerCase();
-    document.querySelectorAll(".op").forEach(op => op.classList.toggle("hidden", !op.dataset.key.includes(q)));
-    document.querySelectorAll(".cat").forEach(cat => {
-      const anyVisible = [...cat.querySelectorAll(".op")].some(op => !op.classList.contains("hidden"));
-      cat.classList.toggle("hidden", !anyVisible);
-    });
+    applyFilter(e.target.value);
     // Filtering replaces the route rather than stacking one entry per
     // keystroke, so Back leaves the console instead of replaying the typing.
     setRoute(mode, "", e.target.value.trim(), true);
@@ -920,7 +974,7 @@ function wireToolbar() {
   for (const [id, m] of Object.entries(tabIds)) {
     document.getElementById(id).onclick = () => {
       mode = m;
-      localStorage.setItem("specter.mode", m);
+      localStorage.setItem("spector.mode", m);
       setRoute(m, "", currentFilter());
       renderActive();
     };
@@ -1178,7 +1232,7 @@ function renderResponse(out, res, ms, bytes, body, hdrs, extracted, results, jso
   }
   // Headers first: they say what the body is before the body scrolls past.
   if (hdrs) addLabeled(out, "Response headers", hdrs);
-  addBody(out, "Response body", body, json);
+  addBody(out, "Response body", body, json, res.headers.get("content-type") || "");
   if (req) addChainBox(out, req);
 }
 
@@ -1248,14 +1302,100 @@ function colorJson(container, val, indent) {
   span("tok-num", String(val));
 }
 
-// addBody shows a response body: coloured per-key when it parsed as JSON,
-// plain text otherwise.
-function addBody(parent, label, text, json) {
+// addBody shows a response body. JSON gets the coloured tree, a table view for
+// the shapes a table actually suits, and the raw text; HTML gets a rendered
+// preview. Anything else is text, as before.
+function addBody(parent, label, text, json, ctype) {
   const l = document.createElement("label"); l.textContent = label; parent.appendChild(l);
-  const pre = document.createElement("pre");
-  if (json !== null && json !== undefined) colorJson(pre, json, 0);
-  else pre.textContent = text;
-  parent.appendChild(pre);
+
+  const views = [];
+  const isJson = json !== null && json !== undefined;
+  const isHtml = /text\/html|application\/xhtml\+xml/i.test(ctype || "") || (!isJson && /^\s*(<!doctype html|<html[\s>])/i.test(text || ""));
+  if (isJson) {
+    views.push({ name:"Pretty", build:() => { const pre = document.createElement("pre"); colorJson(pre, json, 0); return pre; } });
+    if (tableable(json)) views.push({ name:"Table", build:() => jsonTable(json) });
+  }
+  if (isHtml) views.push({ name:"Preview", build:() => htmlPreview(text) });
+  views.push({ name:"Raw", build:() => { const pre = document.createElement("pre"); pre.textContent = text; return pre; } });
+
+  const holder = document.createElement("div");
+  if (views.length > 1) {
+    const bar = document.createElement("div"); bar.className = "viewbar";
+    const show = v => { holder.innerHTML = ""; holder.appendChild(v.build());
+      [...bar.children].forEach(b => b.classList.toggle("on", b.textContent === v.name)); };
+    for (const v of views) { const b = document.createElement("button"); b.textContent = v.name; b.onclick = () => show(v); bar.appendChild(b); }
+    parent.appendChild(bar);
+    show(views[0]);
+  } else {
+    holder.appendChild(views[0].build());
+  }
+  parent.appendChild(holder);
+}
+
+// tableable reports whether a value has rows and columns to show. A scalar or
+// a deeply nested object has neither, and a table of one cell helps nobody.
+function tableable(v) {
+  if (Array.isArray(v)) return v.length > 0;
+  if (v && typeof v === "object") return Object.keys(v).length > 0;
+  return false;
+}
+
+// cellText renders one value for a table cell: scalars as themselves, nested
+// structures as compact JSON, which the title attribute repeats in full.
+function cellText(v) {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+// jsonTable turns a value into a table: an array of objects becomes one row
+// per element with the union of the keys as columns, an array of scalars a
+// single-column list, and a plain object a key/value list.
+function jsonTable(v) {
+  const wrap = document.createElement("div"); wrap.className = "tablewrap";
+  const t = document.createElement("table"); t.className = "jtable";
+  const head = document.createElement("thead"), bodyEl = document.createElement("tbody");
+  const cell = (tag, text) => { const c = document.createElement(tag); c.textContent = text; if (text && text.length > 60) c.title = text; return c; };
+
+  if (Array.isArray(v)) {
+    const objs = v.every(x => x && typeof x === "object" && !Array.isArray(x));
+    if (objs) {
+      const cols = []; const seen = new Set();
+      for (const row of v) for (const k of Object.keys(row)) if (!seen.has(k)) { seen.add(k); cols.push(k); }
+      const hr = document.createElement("tr"); hr.appendChild(cell("th", "#"));
+      for (const k of cols) hr.appendChild(cell("th", k));
+      head.appendChild(hr);
+      v.forEach((row, i) => {
+        const tr = document.createElement("tr"); tr.appendChild(cell("td", String(i)));
+        for (const k of cols) tr.appendChild(cell("td", cellText(row[k])));
+        bodyEl.appendChild(tr);
+      });
+    } else {
+      const hr = document.createElement("tr"); hr.appendChild(cell("th", "#")); hr.appendChild(cell("th", "value")); head.appendChild(hr);
+      v.forEach((x, i) => { const tr = document.createElement("tr"); tr.appendChild(cell("td", String(i))); tr.appendChild(cell("td", cellText(x))); bodyEl.appendChild(tr); });
+    }
+  } else {
+    const hr = document.createElement("tr"); hr.appendChild(cell("th", "field")); hr.appendChild(cell("th", "value")); head.appendChild(hr);
+    for (const k of Object.keys(v)) { const tr = document.createElement("tr"); tr.appendChild(cell("td", k)); tr.appendChild(cell("td", cellText(v[k]))); bodyEl.appendChild(tr); }
+  }
+  t.append(head, bodyEl); wrap.appendChild(t); return wrap;
+}
+
+// htmlPreview renders an HTML body in a sandboxed frame. The sandbox attribute
+// is empty on purpose: no scripts, no forms, no same-origin access, no
+// top-level navigation. A response body is untrusted input, and previewing it
+// must never be a way to run code inside the console's origin.
+function htmlPreview(text) {
+  const wrap = document.createElement("div"); wrap.className = "htmlprev";
+  const frame = document.createElement("iframe");
+  frame.setAttribute("sandbox", "");
+  frame.setAttribute("referrerpolicy", "no-referrer");
+  frame.srcdoc = text;
+  wrap.appendChild(frame);
+  const note = document.createElement("div"); note.className = "hint";
+  note.textContent = "Rendered in a sandboxed frame — scripts, forms and navigation are disabled.";
+  wrap.appendChild(note);
+  return wrap;
 }
 
 // addSaveVar is the one-off "grab this field into a variable" control. The
@@ -1602,7 +1742,7 @@ function opCard(spec, path, method, op) {
   el.dataset.key = (method+" "+path+" "+(op.summary||op.operationId||"")).toLowerCase();
   el.id = opAnchor(path, method);
   const head = document.createElement("div"); head.className = "op-head";
-  const rtKind = op["x-specter-realtime"];
+  const rtKind = op["x-spector-realtime"];
   head.innerHTML = `<span class="method m-${method}">${method}</span><span class="path">${path}</span>`
     + (rtKind ? `<span class="rtbadge ${rtKind}">${rtKind}</span>` : "")
     + (op.summary||op.operationId ? `<span class="summary">${op.summary||op.operationId}</span>`:"");
@@ -1627,19 +1767,19 @@ function opCard(spec, path, method, op) {
     body.appendChild(note);
   }
 
-  const mws = op["x-specter-middleware"];
+  const mws = op["x-spector-middleware"];
   if (mws && mws.length) {
     const lbl = document.createElement("label"); lbl.textContent = "Runs before the handler"; body.appendChild(lbl);
     body.appendChild(middlewareView(mws));
   }
 
-  const tips = op["x-specter-advice"];
+  const tips = op["x-spector-advice"];
   if (tips && tips.length) {
     const lbl = document.createElement("label"); lbl.textContent = "Standards"; body.appendChild(lbl);
     for (const a of tips) body.appendChild(adviceView(a));
   }
 
-  const deps = op["x-specter-calls"];
+  const deps = op["x-spector-calls"];
   if (deps && deps.length) {
     const lbl = document.createElement("label"); lbl.textContent = "Reaches"; body.appendChild(lbl);
     body.appendChild(depsView(deps));
@@ -1671,13 +1811,13 @@ function opCard(spec, path, method, op) {
   curlBtn.onclick = () => { const c = buildCurl(req, activeEnv()); curlBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; curlBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ curlBtn.textContent="Copied!"; setTimeout(()=>curlBtn.textContent="Copy as cURL",1200); }); };
   row.append(sendBtn, saveBtn, curlBtn);
 
-  // Specter reads the AST, so it knows where this operation came from. Nothing
+  // Spector reads the AST, so it knows where this operation came from. Nothing
   // annotation-based can offer this, and a hand-written spec loses it at once.
   const srcBox = document.createElement("div");
-  if (op["x-specter-source"]) {
+  if (op["x-spector-source"]) {
     const srcBtn = document.createElement("button");
     srcBtn.textContent = "View source";
-    srcBtn.onclick = () => toggleSource(srcBtn, srcBox, op["x-specter-source"]);
+    srcBtn.onclick = () => toggleSource(srcBtn, srcBox, op["x-spector-source"]);
     row.appendChild(srcBtn);
   }
 
@@ -1743,7 +1883,7 @@ function middlewareView(mws) {
 }
 
 // depsView renders what a handler reaches. Entries matched on a receiver's
-// name are drawn differently and footnoted: Specter reads syntax, not types, so
+// name are drawn differently and footnoted: Spector reads syntax, not types, so
 // those are conventions rather than proof, and a dependency map that presents
 // guesses as facts is worse than none — it gets believed.
 function depsView(deps) {
@@ -2447,7 +2587,7 @@ function discoveredRealtime() {
   if (!SPEC || !SPEC.paths) return out;
   for (const [path, methods] of Object.entries(SPEC.paths)) {
     for (const [method, op] of Object.entries(methods)) {
-      const kind = op["x-specter-realtime"];
+      const kind = op["x-spector-realtime"];
       if (kind) out.push({ kind, method: method.toUpperCase(), path, id: op.operationId });
     }
   }
@@ -2556,7 +2696,7 @@ function buildSse(ctx) {
 }
 
 // --- minimal MQTT 3.1.1 codec ---
-// Specter ships as a single embedded page with no external assets, so a CDN
+// Spector ships as a single embedded page with no external assets, so a CDN
 // MQTT client is not an option. Only the packets a tester needs are
 // implemented: CONNECT, SUBSCRIBE, PUBLISH (QoS 0) and PINGREQ.
 const MQ_ENC = new TextEncoder(), MQ_DEC = new TextDecoder();
@@ -2621,7 +2761,7 @@ function buildMqtt(ctx) {
   const user = document.createElement("input"); user.className = "mono"; user.placeholder = "username (optional)";
   const pass = document.createElement("input"); pass.className = "mono"; pass.type = "password"; pass.placeholder = "password (optional)";
   grid.appendChild(user); grid.appendChild(pass);
-  const topicPub = field("Publish topic", "sensors/room1/temp", "test/specter");
+  const topicPub = field("Publish topic", "sensors/room1/temp", "test/spector");
 
   const send = sendRow(ctx, "Payload", v => {
     if (!sock || sock.readyState !== 1) { ctx.say("err", "not connected"); return false; }
@@ -2663,7 +2803,7 @@ function buildMqtt(ctx) {
       const read = mqReader(onPacket);
       sock.onopen = () => {
         const env = activeEnv();
-        sock.send(mqConnect("specter-" + uid(), interpolate(user.value, env), interpolate(pass.value, env)));
+        sock.send(mqConnect("spector-" + uid(), interpolate(user.value, env), interpolate(pass.value, env)));
       };
       sock.onmessage = e => read(new Uint8Array(e.data));
       sock.onerror = () => ctx.say("err", "socket error — is the broker's websocket listener up?");
@@ -2729,6 +2869,7 @@ function openSaved(req) {
   // One request is open and it is the whole point of the view; the endpoint
   // categories below it are noise until it is closed again.
   app.classList.add("focus-saved");
+  document.body.classList.add("focus-saved");
   panel.innerHTML = "";
   const card = document.createElement("div"); card.className="op open";
   const head = document.createElement("div"); head.className="op-head";
@@ -2743,7 +2884,7 @@ function openSaved(req) {
   const out = document.createElement("div"); out.className="resp"; const curlBox=document.createElement("div");
   sendBtn.onclick=()=>send(clone,out);
   curlBtn.onclick=()=>{ const c=buildCurl(clone,activeEnv()); curlBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; curlBox.appendChild(pre); navigator.clipboard&&navigator.clipboard.writeText(c); };
-  close.onclick=()=>{ panel.remove(); app.classList.remove("focus-saved"); };
+  close.onclick=()=>{ panel.remove(); app.classList.remove("focus-saved"); document.body.classList.remove("focus-saved"); };
   row.append(sendBtn, curlBtn, close);
   bodyEl.append(row, curlBox, out);
   card.appendChild(bodyEl); panel.appendChild(card);
@@ -3005,7 +3146,7 @@ async function runAllRest() {
   for (const path of Object.keys(paths).sort())
     for (const m of methodOrder) {
       const op = paths[path][m];
-      if (!op || op["x-specter-realtime"]) continue; // realtime upgrades never "respond"
+      if (!op || op["x-spector-realtime"]) continue; // realtime upgrades never "respond"
       all.push({ path, m, op, kind: m.toUpperCase() });
     }
   const dest = ((activeEnv().vars.baseUrl || "") || location.origin) + " (env: " + activeEnv().name + ")";

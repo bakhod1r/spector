@@ -58,7 +58,7 @@ func TestGrpcStreamContract(t *testing.T) {
 func TestExportFormatConstants(t *testing.T) {
 	page := string(Page)
 	for _, want := range []string{
-		`const EXPORT_FORMAT = "specter.collection"`,
+		`const EXPORT_FORMAT = "spector.collection"`,
 		`const EXPORT_VERSION = 1`,
 	} {
 		if !strings.Contains(page, want) {

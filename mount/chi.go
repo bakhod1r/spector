@@ -13,7 +13,7 @@ import (
 // chi routes the whole subtree in one call, so unlike gin and echo there is no
 // per-endpoint registration here: anything the console adds later is served
 // without touching this function.
-func Chi(r chi.Router, cfg specter.Config) {
+func Chi(r chi.Router, cfg spector.Config) {
 	base, h := prepare(cfg)
 
 	r.Get(base, func(w http.ResponseWriter, req *http.Request) {

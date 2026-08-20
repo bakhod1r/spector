@@ -99,7 +99,7 @@ func HAR(doc *core.Document) ([]byte, error) {
 	}
 	log := harFile{Log: harLog{
 		Version: "1.2",
-		Creator: harCreator{Name: "specter", Version: "1"},
+		Creator: harCreator{Name: "spector", Version: "1"},
 		Entries: []harEntry{},
 	}}
 	for _, path := range sortedPaths(doc) {

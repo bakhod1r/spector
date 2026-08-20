@@ -340,6 +340,37 @@ func TestAddParamSkipsDuplicatesAndDynamicNames(t *testing.T) {
 
 // ---- InspectHandler ----
 
+// The explicit-binding forms carry the payload in the first argument and name
+// the binder in the second. Reading only the one-argument spellings left every
+// handler written this way with no documented request body.
+func TestInspectHandlerExplicitBinders(t *testing.T) {
+	for _, src := range []string{
+		"var req LoginReq\nc.ShouldBindWith(&req, binding.JSON)",
+		"var req LoginReq\nc.BindWith(&req, binding.JSON)",
+		"var req LoginReq\nc.MustBindWith(&req, binding.JSON)",
+		"var req LoginReq\nc.ShouldBindBodyWith(&req, binding.JSON)",
+		"var req LoginReq\nc.ShouldBindBodyWithJSON(&req)",
+	} {
+		h := InspectHandler(parseBody(t, src))
+		if h.Request.Name != "LoginReq" {
+			t.Errorf("%s: request = %+v, want LoginReq", src, h.Request)
+		}
+	}
+}
+
+// chi's render.Bind takes the request first and the payload last. Reading the
+// first argument would document *http.Request as the body of every chi handler
+// written this way.
+func TestInspectHandlerRenderBind(t *testing.T) {
+	h := InspectHandler(parseBody(t, `
+		data := &LoginReq{}
+		render.Bind(r, data)
+	`))
+	if h.Request.Name != "LoginReq" {
+		t.Errorf("request = %+v, want LoginReq", h.Request)
+	}
+}
+
 func TestInspectHandlerGinConventions(t *testing.T) {
 	h := InspectHandler(parseBody(t, `
 		var req CreateUserReq

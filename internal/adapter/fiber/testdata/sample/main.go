@@ -20,7 +20,7 @@ type CreateUserReq struct {
 // listUsers returns every user.
 //
 // Supports free-text search and a page size.
-// specter:tags users
+// spector:tags users
 func listUsers(c *fiber.Ctx) error {
 	q := c.Query("q")
 	limit := c.Query("limit")

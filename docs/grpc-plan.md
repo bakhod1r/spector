@@ -1,8 +1,8 @@
-# Specter — Proto/gRPC qo'llab-quvvatlash + tab-view UI rejasi
+# Spector — Proto/gRPC qo'llab-quvvatlash + tab-view UI rejasi
 
 ## Maqsad
 
-Hozir Specter faqat REST (gin/chi/stdlib AST). Qo'shiladigan:
+Hozir Spector faqat REST (gin/chi/stdlib AST). Qo'shiladigan:
 1. `.proto` fayllarni o'qib, gRPC **service**, **rpc method**, **message** larni ajratish.
 2. Ularni UI'da alohida **gRPC** tab ostida ko'rsatish (REST | gRPC tab-view).
 3. Har method uchun input/output message schema, streaming turi, va **grpcurl**
@@ -14,7 +14,7 @@ server minimal, UI bitta self-contained fayl.
 ## Kutubxona tanlovi
 
 `github.com/emicklei/proto` — sof Go proto3 parser (protoc/compiler kerak emas,
-AST darajasida o'qiydi). Specter falsafasiga mos (AST scan). `go.mod`ga qo'shiladi.
+AST darajasida o'qiydi). Spector falsafasiga mos (AST scan). `go.mod`ga qo'shiladi.
 (Muqobil: `jhump/protoreflect/desc/protoparse` — kuchliroq, lekin og'irroq;
 importlarni resolve qilishi kerak. Boshda emicklei yetarli.)
 
@@ -86,7 +86,7 @@ service input/output'lardan boshlab `$ref` grafini kuzatib yopiq to'plam.
 
 ## Server / kutubxona API o'zgarishi
 
-- `specter.Config`ga: `ProtoDir string` (bo'sh bo'lsa `Dir`dan `*.proto` qidiriladi).
+- `spector.Config`ga: `ProtoDir string` (bo'sh bo'lsa `Dir`dan `*.proto` qidiriladi).
 - `Handler`:
   - `/openapi.json` — avvalgidek REST.
   - `/grpc.json` — `GrpcDoc` (proto topilsa; aks holda `{services:[]}`).
@@ -106,7 +106,7 @@ on tab gRPC  -> fetch("grpc.json"); har Service = kategoriya (yig'iladigan),
              [Copy as grpcurl] [Execute]   // Execute server orqali proxy qilinadi
     Pastda:  gRPC Messages bo'limi (REST Models kabi, $ref havolalar)
 
-Tab holati localStorage'da ("specter.activeTab").
+Tab holati localStorage'da ("spector.activeTab").
 gRPC yo'q bo'lsa (grpc.json bo'sh) -> gRPC tab ko'rsatilmaydi yoki "no protos" hint.
 ```
 
@@ -121,7 +121,7 @@ grpcurl -plaintext \
 ## Bosqichlar
 
 1. `emicklei/proto` qo'shish + `internal/proto` parser (message/enum/service -> GrpcDoc) + test (testdata `.proto`).
-2. `specter.Generate`/`Handler`ga `/grpc.json` + `GrpcDoc` (faqat ishlatilgan message).
+2. `spector.Generate`/`Handler`ga `/grpc.json` + `GrpcDoc` (faqat ishlatilgan message).
 3. UI tab-view: REST | gRPC almashish; gRPC service = kategoriya, method = card, schema toggle.
 4. **Copy as grpcurl** + env `grpcHost`.
 5. gRPC Messages bo'limi + `$ref` havolalar.
@@ -153,7 +153,7 @@ Messages: User, GetUserRequest, ListUsersRequest, ListUsersResponse.
 - Import'lar orasidagi type-resolve boshda oddiy (bir paket / nom bo'yicha); to'liq
   FileDescriptor resolve keyin.
 - Execute BAJARILDI (`internal/grpcx/invoke.go`), lekin brauzerdan emas: konsol
-  Specter serveriga so'rov yuboradi, server `grpcurl` kutubxonasi bilan chaqiradi
+  Spector serveriga so'rov yuboradi, server `grpcurl` kutubxonasi bilan chaqiradi
   va javobni qaytaradi. Brauzerdan to'g'ridan-to'g'ri gRPC hamon mumkin emas.
   Hozirgi cheklovlari: unary va server-streaming ishlaydi (tekshirilgan);
   client-stream/bidi konsoldan chaqirilmaydi, chunki UI bitta xabar yuboradi.

@@ -22,7 +22,7 @@ from an existing fragment — over one shared merge function.
 - One merge function, two front doors (`-proxy-merge`, `-merge-learned`).
 - Merge rule: gap-fill **and** status enrichment.
   - An observed `(method, path)` absent from the base document is added whole,
-    marked `x-specter-observed`.
+    marked `x-spector-observed`.
   - An observed `(method, path)` present in the base has its **new** observed
     status codes appended; existing responses are never overwritten (the source
     spec wins per response).
@@ -45,7 +45,7 @@ Add to `internal/proxy`:
 func MergeObserved(base, observed *core.Document) *core.Document
 ```
 
-Exposed as `specter.MergeObserved` (alias/wrapper in `specter.go`, matching how
+Exposed as `spector.MergeObserved` (alias/wrapper in `spector.go`, matching how
 `MockHandler`/`ServeMock` are surfaced).
 
 Algorithm:
@@ -73,17 +73,17 @@ Add one field to `core.Operation`:
 ```go
 // Observed marks an operation that came from observed traffic (via merge),
 // not from source. "x-" makes it a vendor extension consumers ignore.
-Observed bool `json:"x-specter-observed,omitempty"`
+Observed bool `json:"x-spector-observed,omitempty"`
 ```
 
 `omitempty` keeps every existing document byte-identical.
 
 ## Front door 1 — live during a proxy run
 
-- New bool flag `-proxy-merge` in `cmd/specter/main.go`, threaded into
+- New bool flag `-proxy-merge` in `cmd/spector/main.go`, threaded into
   `proxyConfig`.
-- In `runProxy` (`cmd/specter/proxy.go`), the learner-write branch: when
-  `-proxy-merge` is set, write `specter.MergeObserved(doc, learner.Document(...))`
+- In `runProxy` (`cmd/spector/proxy.go`), the learner-write branch: when
+  `-proxy-merge` is set, write `spector.MergeObserved(doc, learner.Document(...))`
   to the `-proxy-learn` file instead of the bare fragment (`doc` is the scanned
   source document `runProxy` already holds). The stderr message says a merged
   document was written rather than a fragment.
@@ -92,10 +92,10 @@ Observed bool `json:"x-specter-observed,omitempty"`
 
 ## Front door 2 — offline from a fragment
 
-- New flag `-merge-learned <fragment.json>` in `cmd/specter/main.go`.
+- New flag `-merge-learned <fragment.json>` in `cmd/spector/main.go`.
 - When set, after the base document is generated from `-dir` (the normal scan
   path), read and JSON-decode the fragment file into a `*core.Document`, compute
-  `specter.MergeObserved(base, fragment)`, and write it to `-o` (or stdout) using
+  `spector.MergeObserved(base, fragment)`, and write it to `-o` (or stdout) using
   the same output path the normal document takes. A missing/!JSON fragment is a
   fatal error naming the file.
 - It composes with nothing else exotic: it is a post-scan transform of the base
@@ -126,10 +126,10 @@ on exit `MergeObserved(base, learner.Document())` → `f`.
     (source wins).
   - Dedup: identical `(method, path)` present in both does not duplicate the op.
   - Immutability: base and observed are unchanged after the call.
-- `cmd/specter` CLI:
+- `cmd/spector` CLI:
   - `-merge-learned`: `writeTree` a small source + a fragment JSON with one
     undocumented path and one extra status on a documented path; assert stdout
-    contains the observed path, `x-specter-observed`, and the enriched status.
+    contains the observed path, `x-spector-observed`, and the enriched status.
   - `-proxy-merge` without `-proxy-learn` exits non-zero.
 - Proxy exit path: extend an existing `proxy_test`/`runProxy` test (or add one)
   to assert the merged file contains both a documented and an observed route when

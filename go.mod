@@ -1,6 +1,6 @@
 module github.com/bakhod1r/spector
 
-go 1.26.2
+go 1.26.6
 
 require (
 	github.com/bakhod1r/oneenv v1.1.0

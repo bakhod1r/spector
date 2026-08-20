@@ -12,7 +12,7 @@ import (
 // Naming is a convention rather than a guarantee, so everything matched here is
 // reported as inferred. The alternative — saying nothing — is worse: an API
 // where every route is protected and the document says none of them are is
-// actively misleading, and that is the state Specter was in before this.
+// actively misleading, and that is the state Spector was in before this.
 //
 // Order matters: the more specific names come first, because "auth" appears
 // inside "oauth" and "basicauth" too.

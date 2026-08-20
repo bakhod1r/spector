@@ -154,8 +154,7 @@ func (r *Resolver) applyLocalBindings(body *ast.BlockStmt, env map[string]bindin
 	// same name instead, and we cannot tell without full positional scope
 	// tracking. Conservative fix: mask it, never resolve it.
 	nestedDeclared := map[string]bool{}
-	var walkNested func(n ast.Node)
-	walkNested = func(n ast.Node) {
+	walkNested := func(n ast.Node) {
 		ast.Inspect(n, func(n ast.Node) bool {
 			switch s := n.(type) {
 			case *ast.FuncLit:

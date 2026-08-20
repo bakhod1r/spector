@@ -1,12 +1,12 @@
-// Package mount attaches the Specter console to a router the caller already
+// Package mount attaches the Spector console to a router the caller already
 // built. Nothing here starts a server, opens a port, or spawns a goroutine:
 // each function registers routes on the router it is given, so the console
 // shares that server's port, middleware, and TLS, and stops when it stops.
 //
 // One function per framework, all in one package. Importing this package
 // therefore compiles every supported framework into your binary. That cost is
-// contained — the root specter package does not import this one, so callers
-// who wrap specter.Handler themselves pay nothing.
+// contained — the root spector package does not import this one, so callers
+// who wrap spector.Handler themselves pay nothing.
 package mount
 
 import (
@@ -39,9 +39,9 @@ var endpoints = []struct {
 // prepare returns the normalized mount point and the console handler with the
 // mount prefix stripped, so the handler sees the same paths regardless of how
 // deeply it was mounted.
-func prepare(cfg specter.Config) (base string, h http.Handler) {
+func prepare(cfg spector.Config) (base string, h http.Handler) {
 	base = cfg.BasePathOrDefault()
-	return base, http.StripPrefix(strings.TrimSuffix(base, "/"), specter.Handler(cfg))
+	return base, http.StripPrefix(strings.TrimSuffix(base, "/"), spector.Handler(cfg))
 }
 
 // redirectTarget is where a request for the bare mount point goes. The console

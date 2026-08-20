@@ -4,7 +4,7 @@
 
 **Goal:** Make all four gRPC method kinds (unary, server-stream, client-stream, bidi) invocable through a live, interactive WebSocket session in the console, so request messages are sent incrementally and responses stream back in real time.
 
-**Architecture:** A new `grpcx.Stream` function drives one RPC per WebSocket connection. It reuses grpcurl's existing JSON request parser by feeding it an `io.Pipe`: WebSocket `send` frames write JSON messages into the pipe, `halfClose` closes the writer (→ `io.EOF`), and a custom `InvocationEventHandler` pushes each received response back over the socket. `specter.Handler` upgrades requests whose path ends in `grpc/stream`. The console's per-method gRPC panel becomes a live session with Connect / Send / Half-close / Cancel and an incremental response log.
+**Architecture:** A new `grpcx.Stream` function drives one RPC per WebSocket connection. It reuses grpcurl's existing JSON request parser by feeding it an `io.Pipe`: WebSocket `send` frames write JSON messages into the pipe, `halfClose` closes the writer (→ `io.EOF`), and a custom `InvocationEventHandler` pushes each received response back over the socket. `spector.Handler` upgrades requests whose path ends in `grpc/stream`. The console's per-method gRPC panel becomes a live session with Connect / Send / Half-close / Cancel and an incremental response log.
 
 **Tech Stack:** Go, `github.com/fullstorydev/grpcurl` v1.9.3, `github.com/gorilla/websocket` v1.5.3, `google.golang.org/grpc`, the shop example proto (`examples/shop/proto/shop.proto` → `examples/shop/shoppb`), single embedded HTML console (`internal/ui/ui.html`).
 
@@ -26,8 +26,8 @@
 - `internal/grpcx/stream.go` — new: frame types, `Stream`, the pipe-backed request flow, the custom event handler, the writer goroutine.
 - `internal/grpcx/stream_test.go` — new: WebSocket-level integration tests using a real gRPC test server and a real `httptest` WebSocket endpoint.
 - `internal/grpcx/live_test.go` — add a `Chat` bidi handler to the in-test `userServer` so the streaming tests have a bidi method (mirror of the example server handler).
-- `specter.go` — add the `grpc/stream` branch to `Handler`: auth gate, upgrade, call `grpcx.Stream`.
-- `specter_grpc_stream_test.go` (or extend an existing handler test file) — the upgrade auth-gate test.
+- `spector.go` — add the `grpc/stream` branch to `Handler`: auth gate, upgrade, call `grpcx.Stream`.
+- `spector_grpc_stream_test.go` (or extend an existing handler test file) — the upgrade auth-gate test.
 - `internal/ui/ui.html` — replace the batch invoke flow in the gRPC method panel with a live session; add controls.
 - `internal/ui/ui_test.go` — pin the new control ids and the `grpc/stream` contract.
 
@@ -643,8 +643,8 @@ git commit -m "test(grpcx): cover cancel and bad-init frames"
 ### Task 5: Wire the `grpc/stream` WebSocket endpoint into the console handler
 
 **Files:**
-- Modify: `specter.go` (inside `Handler`, near the `grpc/invoke` branch ~line 862)
-- Create: `specter_grpc_stream_test.go`
+- Modify: `spector.go` (inside `Handler`, near the `grpc/invoke` branch ~line 862)
+- Create: `spector_grpc_stream_test.go`
 
 **Interfaces:**
 - Consumes: `grpcx.Stream`, existing `authorized(r, cfg.AccessKey)`, `protoDir` (already computed in `Handler`).
@@ -652,10 +652,10 @@ git commit -m "test(grpcx): cover cancel and bad-init frames"
 
 - [ ] **Step 1: Write the failing auth-gate test**
 
-Create `specter_grpc_stream_test.go`:
+Create `spector_grpc_stream_test.go`:
 
 ```go
-package specter
+package spector
 
 import (
 	"net/http"
@@ -696,7 +696,7 @@ Expected: FAIL — no `grpc/stream` route yet, so the dial does not 404 as expec
 
 - [ ] **Step 3: Add the upgrader and route**
 
-At the top of `specter.go`, add to the import block:
+At the top of `spector.go`, add to the import block:
 
 ```go
 	"github.com/gorilla/websocket"
@@ -750,7 +750,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add specter.go specter_grpc_stream_test.go
+git add spector.go spector_grpc_stream_test.go
 git commit -m "feat: route grpc/stream to the live gRPC WebSocket handler"
 ```
 
