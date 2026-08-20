@@ -186,9 +186,24 @@
   .item .m { font-size:10px; font-weight:700; text-transform:uppercase; margin-right:6px; }
   .item .p { font-family:ui-monospace,monospace; font-size:12px; }
   .item .sub { color:var(--muted); font-size:11px; margin-top:2px; }
-  .test { font-size:12px; padding:3px 0; }
-  .test.pass::before { content:"✓ "; color:var(--green); }
-  .test.fail::before { content:"✗ "; color:var(--red); }
+  .test { font-size:12px; padding:3px 0; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .test.pass::before { content:"✓"; color:var(--green); }
+  .test.fail::before { content:"✗"; color:var(--red); }
+  .test .tk { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .test .tsub { font-family:ui-monospace,monospace; }
+  .test .tsep { color:var(--muted); }
+  .test .tval { font-family:ui-monospace,monospace; padding:1px 6px; border-radius:4px; background:var(--input-bg); border:1px solid var(--border); max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .test .tval.bad { color:var(--red); border-color:var(--red); }
+  .chainbox { margin-top:12px; border:1px solid var(--border); border-radius:7px; background:var(--input-bg); }
+  .chainbox > summary { cursor:pointer; padding:8px 11px; font-size:12px; color:var(--muted); list-style:none; }
+  .chainbox > summary::-webkit-details-marker { display:none; }
+  .chainbox > summary::before { content:"▶"; font-size:9px; margin-right:7px; display:inline-block; }
+  .chainbox[open] > summary::before { transform:rotate(90deg); }
+  .chainbox > summary .cnt { color:var(--accent); }
+  .chainbox .chainbody { padding:0 11px 11px; }
+  .chainval { font-size:11px; color:var(--muted); font-family:ui-monospace,monospace; margin:-2px 0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chainval.miss { color:var(--red); }
+  #app.focus-saved > .cat { display:none; }
   .hidden { display:none !important; }
   .log { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:8px; margin-top:8px; height:260px; overflow-y:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
   .log .ln { display:flex; gap:8px; padding:2px 0; border-bottom:1px solid var(--border); }
@@ -1078,15 +1093,25 @@ function pick(obj, path) {
   return nodes;
 }
 function pickOne(obj, path) { const r = pick(obj, path); return r.length ? r[0] : undefined; }
+// runTest evaluates one assertion and reports its parts separately, so the
+// renderer can show "expected ≠ got" as two distinct values instead of one
+// string a reader has to parse.
 function runTest(t, res, bodyJson) {
-  let ok = false, actual = "";
-  if (t.kind === "status") { actual = String(res.status); ok = actual === String(t.expected); }
-  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); actual = JSON.stringify(v.length ? v[0] : undefined); ok = v.length > 0; }
+  let ok = false, actual = "", expected = String(t.expected == null ? "" : t.expected);
+  if (t.kind === "status") { actual = String(res.status); ok = actual === expected; }
+  else if (t.kind === "jsonExists") { const v = pick(bodyJson, t.target); ok = v.length > 0; expected = "found"; actual = ok ? "found" : "missing"; }
   else if (t.kind === "jsonEquals") { const v = pickOne(bodyJson, t.target); actual = JSON.stringify(v); ok = actual === JSON.stringify(coerce(t.expected)); }
-  else if (t.kind === "headerEquals") { actual = res.headers.get(t.target) || ""; ok = actual === t.expected; }
-  return { ok, label: `${t.kind} ${t.target||""} = ${t.expected}  (got ${actual})` };
+  else if (t.kind === "headerEquals") { actual = res.headers.get(t.target) || ""; ok = actual === expected; }
+  return { ok, kind: t.kind, subject: t.kind === "status" ? "" : (t.target || ""), expected, actual };
 }
 function coerce(s) { if (s==="true")return true; if (s==="false")return false; if (s!=="" && !isNaN(s))return Number(s); return s; }
+
+// cleanReq deep-copies a request without _last: that field is the previous
+// response, and it has no business in a saved collection or a history entry.
+function cleanReq(req) {
+  const copy = JSON.parse(JSON.stringify(req, (k, v) => k === "_last" ? undefined : v));
+  return copy;
+}
 
 async function send(req, out) {
   const env = activeEnv();
@@ -1121,11 +1146,15 @@ async function send(req, out) {
     // tests
     const results = (req.tests||[]).map(t => runTest(t, res, json));
 
-    let hdrs = ""; res.headers.forEach((v,k)=>hdrs+=k+": "+v+"\n");
-    renderResponse(out, res, ms, bytes, pretty, hdrs.trim(), extracted, results, json);
+    let hdrs = ""; const hdrMap = {}; res.headers.forEach((v,k)=>{ hdrs+=k+": "+v+"\n"; hdrMap[k.toLowerCase()] = v; });
+    // Kept off the persisted shape on purpose (see persistOpState): it is the
+    // last call's result, and it is what lets the chaining rows below the
+    // response preview the value each rule would actually capture.
+    req._last = { json, headers: hdrMap, status: res.status };
+    renderResponse(out, res, ms, bytes, pretty, hdrs.trim(), extracted, results, json, req);
 
     // history
-    store.history.unshift({ at: Date.now(), method: req.method, url, status: res.status, durationMs: ms, snapshot: JSON.parse(JSON.stringify(req)), responseBody: pretty.slice(0, 4000) });
+    store.history.unshift({ at: Date.now(), method: req.method, url, status: res.status, durationMs: ms, snapshot: cleanReq(req), responseBody: pretty.slice(0, 4000) });
     store.history = store.history.slice(0, 40);
     saveStore(); renderHistory();
   } catch (e) {
@@ -1133,7 +1162,7 @@ async function send(req, out) {
     out.querySelector("pre").textContent = String(e);
   }
 }
-function renderResponse(out, res, ms, bytes, body, hdrs, extracted, results, json) {
+function renderResponse(out, res, ms, bytes, body, hdrs, extracted, results, json, req) {
   out.innerHTML = "";
   const line = document.createElement("div");
   const cls = res.ok ? "s-ok" : "s-err";
@@ -1141,15 +1170,49 @@ function renderResponse(out, res, ms, bytes, body, hdrs, extracted, results, jso
   out.appendChild(line);
   if (results && results.length) {
     const box = document.createElement("div"); box.style.margin = "8px 0";
-    for (const r of results) { const d = document.createElement("div"); d.className = "test " + (r.ok?"pass":"fail"); d.textContent = r.label; box.appendChild(d); }
+    for (const r of results) box.appendChild(testRow(r));
     out.appendChild(box);
   }
   if (extracted && extracted.length) {
     const e = document.createElement("div"); e.className = "hint"; e.textContent = "Extracted → " + extracted.join(", "); out.appendChild(e);
   }
-  addBody(out, "Response body", body, json);
+  // Headers first: they say what the body is before the body scrolls past.
   if (hdrs) addLabeled(out, "Response headers", hdrs);
-  addSaveVar(out, json);
+  addBody(out, "Response body", body, json);
+  if (req) addChainBox(out, req);
+}
+
+// testRow renders one assertion: the value that was expected and, only when
+// they differ, the value that actually came back.
+function testRow(r) {
+  const d = document.createElement("div"); d.className = "test " + (r.ok ? "pass" : "fail");
+  const chip = (text, bad) => { const s = document.createElement("span"); s.className = "tval" + (bad ? " bad" : ""); s.textContent = text; s.title = text; return s; };
+  const kind = document.createElement("span"); kind.className = "tk"; kind.textContent = r.kind;
+  d.appendChild(kind);
+  if (r.subject) { const s = document.createElement("span"); s.className = "tsub"; s.textContent = r.subject; d.appendChild(s); }
+  d.appendChild(chip(r.expected === "" ? '""' : r.expected, false));
+  if (!r.ok) {
+    const sep = document.createElement("span"); sep.className = "tsep"; sep.textContent = "≠"; d.appendChild(sep);
+    d.appendChild(chip(r.actual === "" ? '""' : String(r.actual), true));
+  }
+  return d;
+}
+
+// addChainBox puts the chaining rules directly under the response, where the
+// values they capture are on screen. Same rules as the Chaining tab — one
+// array, two views — so editing either place edits the request itself.
+function addChainBox(parent, req) {
+  const box = document.createElement("details"); box.className = "chainbox";
+  const n = (req.extract || []).length;
+  box.open = n > 0;
+  const sum = document.createElement("summary");
+  sum.innerHTML = 'Chaining — <span class="cnt"></span>';
+  const setCount = () => { const c = (req.extract||[]).length; sum.querySelector(".cnt").textContent = c ? c + (c === 1 ? " rule" : " rules") : "no rules"; };
+  setCount();
+  const body = document.createElement("div"); body.className = "chainbody";
+  box.append(sum, body);
+  extractEditor(body, req, setCount);
+  parent.appendChild(box);
 }
 function addLabeled(parent, label, text) {
   const l = document.createElement("label"); l.textContent = label; parent.appendChild(l);
@@ -1195,6 +1258,9 @@ function addBody(parent, label, text, json) {
   parent.appendChild(pre);
 }
 
+// addSaveVar is the one-off "grab this field into a variable" control. The
+// REST response uses the chaining rules instead (they persist); this stays for
+// the GraphQL and gRPC panes, which have no chaining rules of their own.
 function addSaveVar(parent, json) {
   if (json === null || json === undefined) return;
   const lbl = document.createElement("label"); lbl.textContent = "Save a response field to a variable (then reuse as {{name}})"; parent.appendChild(lbl);
@@ -1378,19 +1444,41 @@ function authEditor(pane, auth) {
   rerender();
 }
 
-function extractEditor(pane, req) {
+// ruleValue resolves what a chaining rule would capture from the last
+// response, so a rule can be checked against a real value instead of guessed.
+function ruleValue(rule, last) {
+  if (!last) return undefined;
+  if (rule.from === "status") return last.status;
+  if (rule.from === "header") return last.headers[String(rule.jsonPath||"").toLowerCase()];
+  return pickOne(last.json, rule.jsonPath);
+}
+
+// extractEditor renders the chaining rules. It is mounted twice — in the
+// Chaining tab and under the response — against the same req.extract array;
+// onChange lets the caller (the response panel) refresh its own summary.
+function extractEditor(pane, req, onChange) {
   const rerender = () => {
     pane.innerHTML = "";
     const p = document.createElement("div"); p.className="hint"; p.textContent = "Extract a value from the response into an env variable, then reuse it as {{var}} in later requests."; pane.appendChild(p);
     (req.extract||[]).forEach((rule, i) => {
       const row = document.createElement("div"); row.className="kv"; row.style.gridTemplateColumns="90px 1fr 1fr 28px";
-      const from = document.createElement("select"); ["body","header","status"].forEach(x=>{const o=document.createElement("option");o.value=x;o.textContent=x;if(rule.from===x)o.selected=true;from.appendChild(o);}); from.onchange=()=>{rule.from=from.value; persistOpState(req);};
-      const jp = document.createElement("input"); jp.className="mono"; jp.value=rule.jsonPath||""; jp.placeholder="$.id"; jp.oninput=()=>{rule.jsonPath=jp.value; persistOpState(req);};
+      const val = document.createElement("div"); val.className="chainval";
+      const refresh = () => {
+        if (!req._last) { val.className="chainval"; val.textContent = "no response yet — press Send"; return; }
+        const v = ruleValue(rule, req._last);
+        if (v === undefined || v === null) { val.className="chainval miss"; val.textContent = rule.from === "header" ? "header not present" : "path not found"; return; }
+        val.className="chainval";
+        const text = "value: " + JSON.stringify(v);
+        val.textContent = text; val.title = text;
+      };
+      const from = document.createElement("select"); ["body","header","status"].forEach(x=>{const o=document.createElement("option");o.value=x;o.textContent=x;if(rule.from===x)o.selected=true;from.appendChild(o);}); from.onchange=()=>{rule.from=from.value; persistOpState(req); refresh();};
+      const jp = document.createElement("input"); jp.className="mono"; jp.value=rule.jsonPath||""; jp.placeholder="$.id"; jp.oninput=()=>{rule.jsonPath=jp.value; persistOpState(req); refresh();};
       const sv = document.createElement("input"); sv.className="mono"; sv.value=rule.setVar||""; sv.placeholder="var name"; sv.oninput=()=>{rule.setVar=sv.value; persistOpState(req);};
-      const del = document.createElement("button"); del.textContent="×"; del.onclick=()=>{ req.extract.splice(i,1); persistOpState(req); rerender(); };
+      const del = document.createElement("button"); del.textContent="×"; del.onclick=()=>{ req.extract.splice(i,1); persistOpState(req); rerender(); if (onChange) onChange(); };
       row.append(from, jp, sv, del); pane.appendChild(row);
+      refresh(); pane.appendChild(val);
     });
-    const add = document.createElement("button"); add.textContent="+ Add rule"; add.onclick=()=>{ (req.extract=req.extract||[]).push({from:"body",jsonPath:"$.id",setVar:"id"}); persistOpState(req); rerender(); };
+    const add = document.createElement("button"); add.textContent="+ Add rule"; add.onclick=()=>{ (req.extract=req.extract||[]).push({from:"body",jsonPath:"$.id",setVar:"id"}); persistOpState(req); rerender(); if (onChange) onChange(); const ins=pane.querySelectorAll("input.mono"); if (ins.length) ins[ins.length-2].focus(); };
     pane.appendChild(add);
   };
   rerender();
@@ -1472,8 +1560,17 @@ function requestEditor(spec, req, op) {
     if (Object.keys(req.pathParams).length) tabs.push({ label:"Path", build:p=>kvEditor(p, req.pathParams, true) });
     tabs.push({ label:"Query", build:p=>kvEditor(p, req.queryParams, false) });
     tabs.push({ label:"Headers", build:p=>kvEditor(p, req.headers, false) });
+    // A documented schema is the good case. Where the AST could not find one,
+    // the method still carries a body over the wire — POST/PUT/PATCH with no
+    // Body tab is a console that cannot make the call at all.
     const rb = op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
-    if (rb) tabs.push({ label:"Body", build:p=>{ const ta=document.createElement("textarea"); ta.value=req.body; ta.oninput=()=>req.body=ta.value; p.appendChild(ta); addGenBodyBtn(p, req, ta); const s=document.createElement("pre"); s.textContent=schemaText(spec,rb.schema); s.style.marginTop="8px"; p.appendChild(s); } });
+    const takesBody = ["post","put","patch","delete"].includes(req.method);
+    if (rb || takesBody) tabs.push({ label:"Body", build:p=>{
+      const ta=document.createElement("textarea"); ta.value=req.body; ta.oninput=()=>req.body=ta.value; p.appendChild(ta);
+      addGenBodyBtn(p, req, ta);
+      if (rb) { const s=document.createElement("pre"); s.textContent=schemaText(spec,rb.schema); s.style.marginTop="8px"; p.appendChild(s); }
+      else { const h=document.createElement("div"); h.className="hint"; h.style.marginTop="8px"; h.textContent="No request body documented for this operation — send whatever JSON the handler expects."; p.appendChild(h); }
+    } });
   } else {
     tabs.push({ label:"Query", build:p=>kvEditor(p, req.queryParams, false) });
     tabs.push({ label:"Headers", build:p=>kvEditor(p, req.headers, false) });
@@ -1570,7 +1667,7 @@ function opCard(spec, path, method, op) {
   const out = document.createElement("div"); out.className="resp";
   const curlBox = document.createElement("div");
   sendBtn.onclick = () => send(req, out);
-  saveBtn.onclick = () => { const name = prompt("Save request as:", req.name); if (name===null) return; const copy = JSON.parse(JSON.stringify(req)); copy.id = uid(); copy.name = name; store.collections[0].requests.push(copy); saveStore(); renderCollections(); alert("Saved to Collections."); };
+  saveBtn.onclick = () => { const name = prompt("Save request as:", req.name); if (name===null) return; const copy = cleanReq(req); copy.id = uid(); copy.name = name; store.collections[0].requests.push(copy); saveStore(); renderCollections(); alert("Saved to Collections."); };
   curlBtn.onclick = () => { const c = buildCurl(req, activeEnv()); curlBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; curlBox.appendChild(pre); navigator.clipboard && navigator.clipboard.writeText(c).then(()=>{ curlBtn.textContent="Copied!"; setTimeout(()=>curlBtn.textContent="Copy as cURL",1200); }); };
   row.append(sendBtn, saveBtn, curlBtn);
 
@@ -2625,10 +2722,13 @@ function renderHistory() {
   });
 }
 function openSaved(req) {
-  const clone = JSON.parse(JSON.stringify(req)); clone.id = uid();
+  const clone = cleanReq(req); clone.id = uid();
   const app = document.getElementById("app");
   let panel = document.getElementById("savedPanel");
   if (!panel) { panel = document.createElement("div"); panel.id="savedPanel"; app.prepend(panel); }
+  // One request is open and it is the whole point of the view; the endpoint
+  // categories below it are noise until it is closed again.
+  app.classList.add("focus-saved");
   panel.innerHTML = "";
   const card = document.createElement("div"); card.className="op open";
   const head = document.createElement("div"); head.className="op-head";
@@ -2643,7 +2743,7 @@ function openSaved(req) {
   const out = document.createElement("div"); out.className="resp"; const curlBox=document.createElement("div");
   sendBtn.onclick=()=>send(clone,out);
   curlBtn.onclick=()=>{ const c=buildCurl(clone,activeEnv()); curlBox.innerHTML=""; const pre=document.createElement("pre"); pre.textContent=c; curlBox.appendChild(pre); navigator.clipboard&&navigator.clipboard.writeText(c); };
-  close.onclick=()=>panel.remove();
+  close.onclick=()=>{ panel.remove(); app.classList.remove("focus-saved"); };
   row.append(sendBtn, curlBtn, close);
   bodyEl.append(row, curlBox, out);
   card.appendChild(bodyEl); panel.appendChild(card);

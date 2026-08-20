@@ -138,3 +138,15 @@ func TestCredentialsWildcardWithoutOrigin(t *testing.T) {
 		t.Errorf("= %q, %v; want empty and allowed", value, allowed)
 	}
 }
+
+// An operation whose only response is "default" — the scanner saw a body but
+// could not read the status — still has a body worth serving.
+func TestPrimaryUsesTheDefaultResponse(t *testing.T) {
+	op := core.NewOperation("op")
+	op.SetResponse(0, core.NewResponse("Response"))
+
+	status, resp := primary(op)
+	if status != 200 || resp == nil {
+		t.Errorf("primary = (%d, %v), want 200 with the default response", status, resp)
+	}
+}

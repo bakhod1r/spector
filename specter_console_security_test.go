@@ -183,3 +183,15 @@ func rewrite(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+
+// AdapterName answers what the scan will actually use, which is what an empty
+// result has to be explained with.
+func TestAdapterName(t *testing.T) {
+	dir := writeTree(t, map[string]string{"main.go": ginSrc})
+	if got := (Config{Dir: dir}).AdapterName(); got != "gin" {
+		t.Errorf("detected = %q, want gin", got)
+	}
+	if got := (Config{Dir: dir, Adapter: "chi"}).AdapterName(); got != "chi" {
+		t.Errorf("named = %q, want chi", got)
+	}
+}
