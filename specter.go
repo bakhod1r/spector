@@ -1015,7 +1015,9 @@ func sameOrigin(origin, host string) bool {
 // size nor mtime does not happen in practice.
 func fingerprint(dir string) string {
 	h := fnv.New64a()
-	filepath.WalkDir(dir, func(path string, d iofs.DirEntry, err error) error {
+	// The error is deliberately dropped: a tree that cannot be walked simply
+	// hashes to less, and the scan that follows reports the real problem.
+	_ = filepath.WalkDir(dir, func(path string, d iofs.DirEntry, err error) error {
 		if err != nil {
 			return nil // a vanished file is itself a change the next pass sees
 		}

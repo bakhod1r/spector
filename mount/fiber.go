@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bakhod1r/spector"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
-	"github.com/bakhod1r/spector"
 )
 
 // Fiber registers the console on a fiber app under cfg.BasePath

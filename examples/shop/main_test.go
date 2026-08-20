@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/bakhod1r/spector"
+	"github.com/gin-gonic/gin"
 )
 
 func TestMain(m *testing.M) {

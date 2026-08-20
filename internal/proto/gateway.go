@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/emicklei/proto"
 	"github.com/bakhod1r/spector/internal/core"
+	"github.com/emicklei/proto"
 )
 
 // httpOption is the annotation gRPC-Gateway (and Google's own API tooling)

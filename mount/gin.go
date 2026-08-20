@@ -3,8 +3,8 @@ package mount
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/bakhod1r/spector"
+	"github.com/gin-gonic/gin"
 )
 
 // Gin registers the console on a gin router under cfg.BasePath

@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/gin-gonic/gin"
 	"github.com/bakhod1r/spector"
 	"github.com/bakhod1r/spector/mount"
+	"github.com/gin-gonic/gin"
 )
 
 type User struct {

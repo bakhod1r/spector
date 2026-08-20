@@ -3,8 +3,8 @@ package mount
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
 	"github.com/bakhod1r/spector"
+	"github.com/labstack/echo/v4"
 )
 
 // Echo registers the console on an echo router under cfg.BasePath

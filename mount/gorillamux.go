@@ -3,8 +3,8 @@ package mount
 import (
 	"net/http"
 
-	"github.com/gorilla/mux"
 	"github.com/bakhod1r/spector"
+	"github.com/gorilla/mux"
 )
 
 // GorillaMux registers the console on a gorilla/mux router under cfg.BasePath

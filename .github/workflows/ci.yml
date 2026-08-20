@@ -24,7 +24,9 @@ jobs:
 
       - name: gofmt
         run: |
-          unformatted="$(gofmt -l .)"
+          # testdata/broken/*.go are intentionally unparseable fixtures:
+          # gofmt reports them on stderr and exits 2, so ignore its status.
+          unformatted="$(gofmt -l . 2>/dev/null || true)"
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"
             echo "$unformatted"

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -22,6 +23,27 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatal("condition never became true")
+}
+
+// syncBuffer is a bytes.Buffer a test can read while the code under test is
+// still writing to it. The watch tests run the CLI in a goroutine and poll its
+// stderr for progress, which is a data race on a plain buffer — the race
+// detector fails the suite for it, and it is a real one.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // -all with -watch writes once and then keeps watching.
@@ -91,7 +113,7 @@ func TestRunWatchRegenFailureIsReported(t *testing.T) {
 	src := filepath.Join(dir, "app", "main.go")
 	out := filepath.Join(t.TempDir(), "openapi.json")
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- run([]string{"-dir", filepath.Join(dir, "app"), "-o", out, "-watch"}, &stdout, &stderr)
@@ -119,7 +141,7 @@ func TestRunWatchWriteFailureIsReported(t *testing.T) {
 	outDir := t.TempDir()
 	out := filepath.Join(outDir, "openapi.json")
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- run([]string{"-dir", filepath.Join(dir, "app"), "-o", out, "-watch"}, &stdout, &stderr)
@@ -146,7 +168,7 @@ func TestRunWatchRewritesOnChange(t *testing.T) {
 	src := filepath.Join(dir, "app", "main.go")
 	out := filepath.Join(t.TempDir(), "openapi.json")
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- run([]string{"-dir", filepath.Join(dir, "app"), "-o", out, "-watch"}, &stdout, &stderr)
@@ -179,7 +201,7 @@ func TestRunMCPStdioFailureExits1(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = old })
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 	if code := run([]string{"-mcp"}, &stdout, &stderr); code != 1 {
 		t.Errorf("exit = %d, want 1 (%s)", code, stderr.String())
 	}
