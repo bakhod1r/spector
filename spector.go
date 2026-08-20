@@ -1061,6 +1061,11 @@ func Handler(cfg Config) http.Handler {
 		qerr error
 	)
 	var mockHandler http.Handler
+	// consoleMock answers the console's own mock route. It exists whatever
+	// cfg.Mock says: the console's Mock button is a switch a reader flips while
+	// reading, and requiring a restart with -serve-mock to make it work would
+	// make it a switch that usually does nothing.
+	var consoleMock http.Handler
 	var (
 		mu    sync.Mutex
 		built bool
@@ -1073,9 +1078,12 @@ func Handler(cfg Config) http.Handler {
 		doc, err = Generate(cfg)
 		gdoc, gerr = GenerateGrpc(cfg)
 		qdoc, qerr = GenerateGraphql(cfg)
-		mockHandler = nil
-		if cfg.Mock && err == nil {
-			mockHandler = MockHandler(doc, MockOptions{})
+		mockHandler, consoleMock = nil, nil
+		if err == nil {
+			consoleMock = MockHandler(doc, MockOptions{})
+			if cfg.Mock {
+				mockHandler = consoleMock
+			}
 		}
 	}
 	// ensure keeps the console showing the code as it is now. A once.Do would
@@ -1118,6 +1126,23 @@ func Handler(cfg Config) http.Handler {
 	mountRoot := strings.TrimSuffix(basePath, "/")
 	endpoint := func(p, name string) bool {
 		return p == "/"+name || p == mountRoot+"/"+name
+	}
+	// mockPath matches the console's mock route and returns the documented path
+	// underneath it. Unlike endpoint this is a prefix match: everything below
+	// the route is a path the mock has to answer, not a name of its own.
+	mockPath := func(p string) (string, bool) {
+		for _, prefix := range []string{mountRoot + "/mock", "/mock"} {
+			if prefix == "" {
+				continue
+			}
+			if p == prefix {
+				return "/", true
+			}
+			if strings.HasPrefix(p, prefix+"/") {
+				return p[len(prefix):], true
+			}
+		}
+		return "", false
 	}
 
 	// page is the embedded console, with the mock flag flipped on when mounted
@@ -1285,6 +1310,24 @@ func Handler(cfg Config) http.Handler {
 		}
 		if endpoint(r.URL.Path, "openapi.json") {
 			writeJSON(w, doc)
+			return
+		}
+		// The console's Mock button sends the request here instead of to the
+		// environment's base URL, so a documented endpoint can be exercised
+		// with no backend running at all. The path below the route is the
+		// documented one; the mock is handed a copy of the request wearing it,
+		// because the caller's request is not ours to rewrite.
+		if p, ok := mockPath(r.URL.Path); ok {
+			if consoleMock == nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				writeJSON(w, map[string]string{"error": "spector: the mock has no document to answer from"})
+				return
+			}
+			mr := r.Clone(r.Context())
+			u := *r.URL
+			u.Path = p
+			mr.URL = &u
+			consoleMock.ServeHTTP(w, mr)
 			return
 		}
 		// In mock mode, anything that is not the console page is a call to the

@@ -24,13 +24,11 @@ type Scope struct {
 	Index *FuncIndex
 	Pkg   Pkg
 
-	// fields is the wire name of each struct field, needed to rewrite the
-	// payload property of a response envelope.
-	fields map[string]map[string]string
-
-	// fieldTypes is the element type behind each indexable struct field, so a
-	// handler that answers out of its receiver's own store names a payload.
-	fieldTypes map[string]map[string]TypeInfo
+	// structs is every struct declaration, grouped by the package it is in:
+	// the wire name of each field, for rewriting a response envelope, and the
+	// element type behind each indexable field, so a handler that answers out
+	// of its receiver's own store names a payload.
+	structs *StructIndex
 
 	// decls is every function in a file, ordered by position, so the function
 	// enclosing a route registration can be found without a parent map.
@@ -44,13 +42,12 @@ type Scope struct {
 // NewScope builds the resolution context for one scan.
 func NewScope(fset *token.FileSet, files []*ast.File) *Scope {
 	s := &Scope{
-		Fset:       fset,
-		Index:      NewFuncIndex(fset, files),
-		Pkg:        Pkg{Returns: Returns(files), Funcs: FuncDecls(files)},
-		fields:     StructFields(files),
-		fieldTypes: StructFieldTypes(files),
-		decls:      map[string][]*ast.FuncDecl{},
-		byName:     map[string]*ast.File{},
+		Fset:    fset,
+		Index:   NewFuncIndex(fset, files),
+		Pkg:     Pkg{Returns: Returns(files), Funcs: FuncDecls(files)},
+		structs: NewStructIndex(fset, files),
+		decls:   map[string][]*ast.FuncDecl{},
+		byName:  map[string]*ast.File{},
 	}
 	for _, f := range files {
 		name := fset.Position(f.Pos()).Filename
@@ -126,17 +123,29 @@ func (s *Scope) Inspect(fd *ast.FuncDecl, schemas map[string]*core.Schema) Handl
 		return Handler{}
 	}
 	pkg := Pkg{}
-	fields := map[string]map[string]string{}
+	var structs *StructIndex
+	var dir string
 	if s != nil {
 		pkg = s.Index.PkgAt(fd, s.Pkg)
-		pkg.RecvFields = s.fieldTypes[recvTypeName(fd.Recv)]
-		fields = s.fields
+		// The receiver's own package decides what its fields are; two contexts
+		// both calling their handler `Handler` is the normal case, not an
+		// exception.
+		dir = s.Index.DirOf(fd)
+		pkg.RecvFields = s.structs.Elems(dir, recvTypeName(fd.Recv))
+		// Calls out of the handler are resolved by the same rules the handler
+		// itself was, from the position of the call — which is inside whatever
+		// helper the walk has reached, not inside the handler.
+		pkg.Resolve = func(call *ast.CallExpr) *ast.FuncDecl {
+			pos := call.Pos()
+			return s.Index.Lookup(s.FileAt(pos), s.EnclosingFunc(pos), call.Fun)
+		}
+		structs = s.structs
 	}
 	h := InspectBodiesIn(HandlerBody(fd), pkg)
 	if schemas == nil {
 		return h
 	}
-	return envelopes{schemas: schemas, fields: fields}.apply(h)
+	return envelopes{schemas: schemas, structs: structs, dir: dir}.apply(h)
 }
 
 // RouterHandoff reports a call that hands the router being walked to another

@@ -20,6 +20,9 @@
   header .ver { color:var(--muted); font-size:13px; }
   header .mockurl { font-family:ui-monospace,monospace; font-size:11px; color:var(--muted); border:1px solid var(--border); border-radius:5px; padding:2px 7px; margin-left:6px; cursor:pointer; }
   header .mockurl:hover { color:var(--accent); border-color:var(--accent); }
+  header .mocktoggle { font-size:11px; font-weight:700; letter-spacing:.5px; color:var(--muted); background:transparent; border:1px solid var(--border); border-radius:5px; padding:2px 7px; margin-left:6px; cursor:pointer; }
+  header .mocktoggle:hover { color:var(--accent); border-color:var(--accent); }
+  header .mocktoggle.on { color:#000; background:var(--accent); border-color:var(--accent); }
   header .mockbadge { font-size:11px; font-weight:700; letter-spacing:.5px; color:#000; background:var(--accent); padding:2px 7px; border-radius:5px; cursor:default; }
   header .spacer { flex:1; }
   select, input, textarea { background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-family:inherit; font-size:13px; }
@@ -269,7 +272,7 @@
 </head>
 <body>
 <header>
-  <h1 id="title">API</h1><span class="ver" id="ver"></span><span class="mockbadge" id="mockBadge" title="Responses come from Spector's built-in mock — shaped from the schema, not a live backend." hidden>MOCK</span><span class="mockurl" id="mockUrl" title="The mock answers documented paths on this origin — click to copy." hidden></span>
+  <h1 id="title">API</h1><span class="ver" id="ver"></span><button class="mocktoggle" id="mockToggle" title="Answer Send from Spector's built-in mock instead of the environment's base URL — bodies are shaped from the schema, not live." hidden>MOCK</button><span class="mockbadge" id="mockBadge" title="Responses come from Spector's built-in mock — shaped from the schema, not a live backend." hidden>MOCK</span><span class="mockurl" id="mockUrl" title="The mock answers documented paths on this origin — click to copy." hidden></span>
   <div class="apitabs">
     <button id="tabRest" class="on">REST</button>
     <button id="tabGrpc">gRPC</button>
@@ -593,6 +596,40 @@ let GRPC = null;
 let GRAPHQL = null;
 let mode = localStorage.getItem("spector.mode") || "rest";
 
+// MOCK_ON routes Send at the console's own mock instead of the environment's
+// base URL, so an endpoint can be exercised with nothing running behind it.
+// When the whole origin is already a mock (window.__MOCK__) the switch has
+// nothing to switch: the button stays out of the header and the badge is the
+// only thing shown, so the two cannot disagree about where a request went.
+let MOCK_ON = window.__MOCK__ || localStorage.getItem("spector.mock") === "1";
+
+// mockBase resolves against the document base, same as fetch("openapi.json")
+// does, so the route lands on the console's mount even under a path prefix.
+function mockBase() {
+  return new URL("mock", location.href).href.replace(/\/$/, "");
+}
+
+// wireMockToggle shows the header switch and keeps the badge honest: the badge
+// means "this answer came from the mock", so it is lit exactly while the
+// switch is on.
+function wireMockToggle() {
+  const btn = document.getElementById("mockToggle");
+  const badge = document.getElementById("mockBadge");
+  if (!btn) return;
+  const paint = () => {
+    btn.hidden = false;
+    btn.classList.toggle("on", MOCK_ON);
+    btn.setAttribute("aria-pressed", String(MOCK_ON));
+    if (badge) badge.hidden = !MOCK_ON;
+  };
+  btn.onclick = () => {
+    MOCK_ON = !MOCK_ON;
+    localStorage.setItem("spector.mock", MOCK_ON ? "1" : "0");
+    paint();
+  };
+  paint();
+}
+
 async function load() {
   SPEC = await (await fetch("openapi.json")).json();
   try { GRPC = await (await fetch("grpc.json")).json(); } catch (e) { GRPC = null; }
@@ -611,6 +648,8 @@ async function load() {
       const prev = mu.textContent; mu.textContent = "copied \u2713";
       setTimeout(() => { mu.textContent = prev; }, 1200);
     };
+  } else {
+    wireMockToggle();
   }
   renderEnvSelector();
   renderSide();
@@ -699,18 +738,33 @@ function applyRoute(route, { rerender = true } = {}) {
 // advertises 5 while showing 3 is lying about the result of the search.
 function applyFilter(q) {
   const needle = q.trim().toLowerCase();
+  // Only cards that carry a filter key are part of the endpoint list. The
+  // saved-request and ad-hoc panels reuse the .op class for their styling and
+  // have no key: reading one used to throw on the first card, which killed the
+  // whole filter — every category left showing its full count and every
+  // operation left visible, as if nothing had been typed. They are not
+  // endpoints and are never hidden by an endpoint search.
   document.querySelectorAll(".op").forEach(op => {
+    if (op.dataset.key === undefined) return;
     op.classList.toggle("hidden", !op.dataset.key.includes(needle));
   });
   document.querySelectorAll(".cat").forEach(cat => {
-    const ops = [...cat.querySelectorAll(".op")];
+    const ops = [...cat.querySelectorAll(".op")].filter(op => op.dataset.key !== undefined);
+    // A category whose own name matches keeps all of its operations, the rule
+    // the sidebar already followed. Without it the two disagreed: the sidebar
+    // listed a matched category's five operations while the pane beside it
+    // showed none of them, because a tag taken from op.tags need not appear in
+    // any path the category holds.
+    if (!!needle && (cat.dataset.tag || "").includes(needle)) {
+      for (const op of ops) op.classList.remove("hidden");
+    }
     const shown = ops.filter(op => !op.classList.contains("hidden")).length;
     const badge = cat.querySelector(".cat-head .count");
     if (badge) {
       if (badge.dataset.total === undefined) badge.dataset.total = String(ops.length);
       badge.textContent = needle ? String(shown) : badge.dataset.total;
     }
-    cat.classList.toggle("hidden", !!needle && shown === 0);
+    cat.classList.toggle("hidden", !!needle && ops.length > 0 && shown === 0);
     // A match inside a collapsed category is a match nobody can see.
     if (needle && shown) cat.classList.remove("collapsed");
   });
@@ -781,6 +835,11 @@ function renderActive() {
   else if (mode === "graphql") renderGraphql();
   else if (mode === "realtime") renderRealtime();
   else render(SPEC);
+  // A rebuilt pane starts unfiltered, but the search box keeps whatever was
+  // typed. Switching tabs mid-search used to leave the box saying "users" over
+  // a list showing everything, so the filter had to be retyped to mean
+  // anything. The panes are all built synchronously, so the pass lands.
+  applyFilter(currentFilter());
 }
 function resolveRef(spec, ref) { return (spec.components.schemas || {})[ref.replace("#/components/schemas/","")]; }
 function sample(spec, schema, seen) {
@@ -1099,7 +1158,9 @@ function buildURL(req, env) {
   for (const k in req.pathParams) p = p.replace(`{${k}}`, encodeURIComponent(interpolate(req.pathParams[k], env) || ""));
   const qs = [];
   for (const k in req.queryParams) { const v = interpolate(req.queryParams[k], env); if (v !== "") qs.push(encodeURIComponent(k)+"="+encodeURIComponent(v)); }
-  const base = (env.vars.baseUrl || "").replace(/\/$/, "");
+  // The mock answers documented paths, so only the base changes: the path,
+  // its parameters and the query string are the ones the endpoint declares.
+  const base = MOCK_ON && !window.__MOCK__ ? mockBase() : (env.vars.baseUrl || "").replace(/\/$/, "");
   return base + p + (qs.length ? "?"+qs.join("&") : "");
 }
 function buildHeaders(req, env) {
@@ -1490,6 +1551,7 @@ function render(spec) {
     const cat = document.createElement("div");
     cat.className = "cat collapsed";
     cat.id = "cat-" + tag;
+    cat.dataset.tag = String(tag).toLowerCase();
     const head = document.createElement("div");
     head.className = "cat-head";
     head.innerHTML = `<span class="caret">▼</span><span class="name">${tag}</span><span class="count">${groups[tag].length}</span>`;
@@ -2065,7 +2127,7 @@ function renderGrpc() {
 
   const cats = [];
   for (const svc of services) {
-    const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + svc.name;
+    const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + svc.name; cat.dataset.tag = String(svc.name).toLowerCase();
     const head = document.createElement("div"); head.className = "cat-head";
     head.innerHTML = `<span class="caret">▼</span><span class="name">${svc.name}</span><span class="count">${svc.methods.length}</span>`;
     head.onclick = () => cat.classList.toggle("collapsed");
@@ -2314,7 +2376,7 @@ function renderGraphql() {
 
   const cats = [];
   for (const g of groups) {
-    const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + g.name;
+    const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + g.name; cat.dataset.tag = String(g.name).toLowerCase();
     const head = document.createElement("div"); head.className = "cat-head";
     head.innerHTML = `<span class="caret">▼</span><span class="name">${g.name}</span><span class="count">${g.fields.length}</span>`;
     head.onclick = () => cat.classList.toggle("collapsed");
@@ -2564,7 +2626,7 @@ function rtLog(box, kind, text) {
 // Connect/Disconnect, a log with Clear, and a send row when the protocol
 // supports sending. `build` wires the protocol-specific bits.
 function rtPane(opts) {
-  const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + opts.tag;
+  const cat = document.createElement("div"); cat.className = "cat"; cat.id = "cat-" + opts.tag; cat.dataset.tag = String(opts.tag).toLowerCase();
   const head = document.createElement("div"); head.className = "cat-head";
   head.innerHTML = `<span class="caret">▼</span><span class="name">${opts.tag}</span><span class="count">${opts.proto}</span>`;
   head.onclick = () => cat.classList.toggle("collapsed");
