@@ -256,14 +256,6 @@ func (ix *FuncIndex) lookupSelector(file *ast.File, enclosing *ast.FuncDecl, sel
 	return unique(ix.global[name])
 }
 
-// recvType reports the package directory and type name of the value an
-// expression denotes, for the shapes a route registration actually uses:
-// a receiver, a parameter, a local built by a constructor, and a constructor
-// called inline.
-func (ix *FuncIndex) recvType(file *ast.File, enclosing *ast.FuncDecl, expr ast.Expr) (string, string, bool) {
-	return ix.recvTypeAt(file, enclosing, expr, 0)
-}
-
 // recvTypeDepth bounds recvTypeAt. Values reach a route registration through
 // one or two hops — a receiver, or a local built by a constructor — and the
 // bound is what stops source that assigns two names from each other,
@@ -275,6 +267,10 @@ func (ix *FuncIndex) recvType(file *ast.File, enclosing *ast.FuncDecl, expr ast.
 // reads what is on disk, including a file mid-edit.
 const recvTypeDepth = 8
 
+// recvTypeAt reports the package directory and type name of the value an
+// expression denotes, for the shapes a route registration actually uses:
+// a receiver, a parameter, a local built by a constructor, and a constructor
+// called inline.
 func (ix *FuncIndex) recvTypeAt(file *ast.File, enclosing *ast.FuncDecl, expr ast.Expr, depth int) (string, string, bool) {
 	if depth >= recvTypeDepth {
 		return "", "", false

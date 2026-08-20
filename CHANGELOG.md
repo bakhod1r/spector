@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The lint job runs. `.golangci.yml` is a `version: "2"` config and the action
+  installed the newest v1, which rejected it outright; the config had therefore
+  never been enforced, and it caught a dead method (`FuncIndex.recvType`) on
+  its first successful run.
+- The browser job starts its broker. Installing the mosquitto package also
+  starts one under systemd on port 1883, so the suite's own broker exited on
+  "Address already in use" and its websocket listener on 9001 never opened —
+  which the wait loop reported only as "broker never came up". The packaged
+  service is stopped first, and a broker that still refuses to start is now
+  run in the foreground so it says why.
+
 ## [0.5.0] - 2026-08-20
 
 ### Changed

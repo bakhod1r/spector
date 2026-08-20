@@ -43,6 +43,10 @@ jobs:
           git diff --exit-code go.mod go.sum
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          # .golangci.yml is a `version: "2"` config, which only golangci-lint
+          # v2 can read. The v6 action installs the newest v1 (1.64.8), and it
+          # refuses the config outright: "the Go language version (go1.24) used
+          # to build golangci-lint is lower than the targeted Go version".
+          version: v2.6.0

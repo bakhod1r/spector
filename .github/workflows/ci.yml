@@ -35,12 +35,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mosquitto
+          # The package starts a broker of its own on 1883 under systemd. Ours
+          # wants that port too, so it exits on "Address already in use" and
+          # the websocket listener on 9001 never opens — which the wait loop
+          # below can only report as a broker that never came up.
+          sudo systemctl stop mosquitto
           mosquitto -c "$GITHUB_WORKSPACE/e2e/mosquitto.conf" -d
           for i in $(seq 1 20); do
             if nc -z 127.0.0.1 9001; then echo "broker up"; exit 0; fi
             sleep 1
           done
-          echo "broker never came up"; exit 1
+          # Without this the failure is one unexplained line. Run it in the
+          # foreground to make the broker say why it refused to start.
+          echo "broker never came up; mosquitto says:"
+          mosquitto -c "$GITHUB_WORKSPACE/e2e/mosquitto.conf" || true
+          exit 1
 
       - name: Install browser suite
         working-directory: e2e
