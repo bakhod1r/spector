@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented as answering 200 — and the linter no longer advises "consider 201
   Created" about work already done.
 
+- `examples/shop/shoppb` is regenerated with protoc-gen-go v1.36.11. The
+  checked-in stubs panicked at package init against the protobuf runtime the
+  module requires, which took the example's tests and the root package's tests
+  down with them.
+
 ### Added
 - `c.DefaultQuery("limit", "20")` puts the fallback in the parameter schema as
   `default`.
