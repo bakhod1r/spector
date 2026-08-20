@@ -714,6 +714,43 @@ function applyFilter(q) {
     // A match inside a collapsed category is a match nobody can see.
     if (needle && shown) cat.classList.remove("collapsed");
   });
+  applyNavFilter(needle);
+}
+
+// applyNavFilter is applyFilter for the category sidebar.
+//
+// The sidebar is the index of the same list, so leaving it alone during a
+// search left it contradicting the pane beside it: every category still
+// advertising its full count, and every operation still listed — including the
+// ones the search had just hidden. Clicking one of those scrolled to an
+// element the filter had removed from view, which reads as a broken link.
+function applyNavFilter(needle) {
+  document.querySelectorAll(".catnav-group").forEach(grp => {
+    // A category whose own name matches keeps all of its operations: the
+    // search names the group, not one endpoint inside it.
+    const tagHit = !!needle && (grp.dataset.tag || "").includes(needle);
+    const rows = [...grp.querySelectorAll(".catnav-op")];
+    let shown = 0;
+    for (const row of rows) {
+      const hit = !needle || tagHit || (row.dataset.key || "").includes(needle);
+      row.classList.toggle("hidden", !hit);
+      if (hit) shown++;
+    }
+    const badge = grp.querySelector(".catnav-item .ct");
+    if (badge) {
+      if (badge.dataset.total === undefined) badge.dataset.total = badge.textContent;
+      // The realtime tab labels its groups "ws"/"sse"/"mqtt" rather than
+      // counting them, and lists no rows to count; overwriting that with 0
+      // would replace a label with a wrong number.
+      badge.textContent = needle && rows.length ? String(shown) : badge.dataset.total;
+    }
+    // A group that lists nothing is matched on its own name alone. It has no
+    // rows to survive a search, so counting them would hide every such group
+    // the moment anything is typed.
+    grp.classList.toggle("hidden", !!needle && (rows.length ? shown === 0 : !tagHit));
+    // A match inside a collapsed group is a match nobody can see.
+    if (needle && shown) grp.classList.remove("collapsed");
+  });
 }
 
 // The pane is rebuilt asynchronously in some modes, so retry briefly before
@@ -1485,6 +1522,7 @@ function renderCatNav(cats) {
   for (const { tag, count, ops } of cats) {
     const grp = document.createElement("div");
     grp.className = "catnav-group collapsed";
+    grp.dataset.tag = String(tag).toLowerCase();
 
     const it = document.createElement("div");
     it.className = "catnav-item";
@@ -1511,6 +1549,10 @@ function renderCatNav(cats) {
 
       row.append(badge, label);
       row.title = entry.title || entry.label;
+      // The same key the main pane filters on, so a search cannot show a row
+      // in one place and hide it in the other.
+      row.dataset.key = (entry.title || "").toLowerCase() + " " +
+        (entry.badge || "").toLowerCase() + " " + entry.label.toLowerCase();
       row.onclick = () => {
         const cat = document.getElementById("cat-" + tag);
         if (cat) cat.classList.remove("collapsed");

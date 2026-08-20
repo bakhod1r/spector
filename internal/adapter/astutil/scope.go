@@ -28,6 +28,10 @@ type Scope struct {
 	// payload property of a response envelope.
 	fields map[string]map[string]string
 
+	// fieldTypes is the element type behind each indexable struct field, so a
+	// handler that answers out of its receiver's own store names a payload.
+	fieldTypes map[string]map[string]TypeInfo
+
 	// decls is every function in a file, ordered by position, so the function
 	// enclosing a route registration can be found without a parent map.
 	decls map[string][]*ast.FuncDecl
@@ -40,12 +44,13 @@ type Scope struct {
 // NewScope builds the resolution context for one scan.
 func NewScope(fset *token.FileSet, files []*ast.File) *Scope {
 	s := &Scope{
-		Fset:   fset,
-		Index:  NewFuncIndex(fset, files),
-		Pkg:    Pkg{Returns: Returns(files), Funcs: FuncDecls(files)},
-		fields: StructFields(files),
-		decls:  map[string][]*ast.FuncDecl{},
-		byName: map[string]*ast.File{},
+		Fset:       fset,
+		Index:      NewFuncIndex(fset, files),
+		Pkg:        Pkg{Returns: Returns(files), Funcs: FuncDecls(files)},
+		fields:     StructFields(files),
+		fieldTypes: StructFieldTypes(files),
+		decls:      map[string][]*ast.FuncDecl{},
+		byName:     map[string]*ast.File{},
 	}
 	for _, f := range files {
 		name := fset.Position(f.Pos()).Filename
@@ -124,6 +129,7 @@ func (s *Scope) Inspect(fd *ast.FuncDecl, schemas map[string]*core.Schema) Handl
 	fields := map[string]map[string]string{}
 	if s != nil {
 		pkg = s.Index.PkgAt(fd, s.Pkg)
+		pkg.RecvFields = s.fieldTypes[recvTypeName(fd.Recv)]
 		fields = s.fields
 	}
 	h := InspectBodiesIn(HandlerBody(fd), pkg)

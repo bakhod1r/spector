@@ -76,3 +76,63 @@ func wireName(field *ast.Field, goName string) string {
 	}
 	return name
 }
+
+// StructFieldTypes indexes, per struct type, the Go type of each field.
+//
+// A handler that answers out of its own state — `u, ok := h.users[id]` — names
+// the payload type nowhere in its body: the type lives on the receiver's field
+// declaration. Without it such an endpoint documents no response at all, and
+// keeping a store on the handler is how most services are written.
+func StructFieldTypes(files []*ast.File) map[string]map[string]TypeInfo {
+	out := map[string]map[string]TypeInfo{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok || st.Fields == nil {
+					continue
+				}
+				if _, taken := out[ts.Name.Name]; taken {
+					continue
+				}
+				fields := map[string]TypeInfo{}
+				for _, field := range st.Fields.List {
+					info, ok := containerElem(field.Type)
+					if !ok {
+						continue
+					}
+					for _, id := range field.Names {
+						fields[id.Name] = info
+					}
+				}
+				if len(fields) > 0 {
+					out[ts.Name.Name] = fields
+				}
+			}
+		}
+	}
+	return out
+}
+
+// containerElem is the element type behind a field an index expression reads:
+// a map's value or a slice's element. Anything else reports false — indexing
+// it is not how a payload is produced.
+func containerElem(expr ast.Expr) (TypeInfo, bool) {
+	switch t := expr.(type) {
+	case *ast.MapType:
+		info := TypeName(t.Value)
+		return info, info.Name != ""
+	case *ast.ArrayType:
+		info := TypeName(t.Elt)
+		return info, info.Name != ""
+	}
+	return TypeInfo{}, false
+}

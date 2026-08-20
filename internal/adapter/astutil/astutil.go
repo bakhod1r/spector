@@ -344,6 +344,12 @@ func LocalTypes(body *ast.BlockStmt) map[string]TypeInfo {
 // LocalTypesWith resolves local variable types, using returns to follow the
 // results of function calls when it is supplied.
 func LocalTypesWith(body *ast.BlockStmt, returns map[string]TypeInfo) map[string]TypeInfo {
+	return localTypes(body, returns, nil)
+}
+
+// localTypes is LocalTypesWith that also resolves an index into one of the
+// receiver's fields.
+func localTypes(body *ast.BlockStmt, returns map[string]TypeInfo, recvFields map[string]TypeInfo) map[string]TypeInfo {
 	types := map[string]TypeInfo{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch t := n.(type) {
@@ -378,10 +384,17 @@ func LocalTypesWith(body *ast.BlockStmt, returns map[string]TypeInfo) map[string
 					types[id.Name] = info
 				} else if info := callType(t.Rhs[0], returns); info.Name != "" {
 					types[id.Name] = info
+				} else if info := indexType(t.Rhs[0], recvFields); info.Name != "" {
+					types[id.Name] = info
 				}
 				return true
 			}
 			info := callType(t.Rhs[0], returns)
+			if info.Name == "" {
+				// `u, ok := h.users[id]` is the other two-value shape, and the
+				// only one whose payload is not a call result.
+				info = indexType(t.Rhs[0], recvFields)
+			}
 			if info.Name == "" {
 				return true
 			}
@@ -479,6 +492,12 @@ type Pkg struct {
 	// Funcs indexes callable declarations by name. Leave it nil to inspect the
 	// handler body alone.
 	Funcs map[string]*ast.FuncDecl
+
+	// RecvFields is the element type behind each indexable field of the
+	// handler's receiver, so `u, ok := h.users[id]` names a type. A handler
+	// that answers out of its own state says nothing about the payload
+	// anywhere in its body; the declaration is on the struct.
+	RecvFields map[string]TypeInfo
 }
 
 // FuncDecls indexes every function and method with a body, by name. Plain
@@ -552,7 +571,7 @@ func InspectBodiesIn(bodies []*ast.BlockStmt, pkg Pkg) Handler {
 		if body == nil {
 			continue
 		}
-		in.walk(body, scope{types: LocalTypesWith(body, pkg.Returns)}, 0)
+		in.walk(body, scope{types: localTypes(body, pkg.Returns, pkg.RecvFields)}, 0)
 	}
 	h := in.h
 	h.Responses = dedupeResponses(h.Responses)
@@ -827,7 +846,7 @@ func (in *inspection) descend(call *ast.CallExpr, sc scope, depth int) {
 // stronger fact — the argument is what the handler actually passed.
 func (in *inspection) bind(fd *ast.FuncDecl, call *ast.CallExpr, caller scope) scope {
 	sc := scope{
-		types:  LocalTypesWith(fd.Body, in.pkg.Returns),
+		types:  localTypes(fd.Body, in.pkg.Returns, in.pkg.RecvFields),
 		status: map[string]int{},
 	}
 	params := paramNames(fd)
@@ -1010,6 +1029,25 @@ func callType(expr ast.Expr, returns map[string]TypeInfo) TypeInfo {
 	return TypeInfo{}
 }
 
+// indexType resolves h.users[id] to the map's value type — or the slice's
+// element type — from the receiver's field declarations. The receiver name is
+// not checked: a handler has one, and requiring the right identifier would
+// only fail on the projects that call it something other than `h`.
+func indexType(expr ast.Expr, recvFields map[string]TypeInfo) TypeInfo {
+	if len(recvFields) == 0 {
+		return TypeInfo{}
+	}
+	idx, ok := expr.(*ast.IndexExpr)
+	if !ok {
+		return TypeInfo{}
+	}
+	sel, ok := idx.X.(*ast.SelectorExpr)
+	if !ok {
+		return TypeInfo{}
+	}
+	return recvFields[sel.Sel.Name]
+}
+
 func exprType(expr ast.Expr) TypeInfo {
 	switch t := expr.(type) {
 	case *ast.CompositeLit:
@@ -1017,6 +1055,19 @@ func exprType(expr ast.Expr) TypeInfo {
 	case *ast.UnaryExpr:
 		if t.Op == token.AND {
 			return exprType(t.X)
+		}
+	case *ast.CallExpr:
+		// make([]UserResponse, 0, len(m)) is how a handler that returns a list
+		// builds it — more often than []UserResponse{} is, because the length
+		// is usually known. Without this the slice has no type and the
+		// endpoint documents its payload as nothing at all.
+		//
+		// new(T) is the same statement about a single value.
+		if id, ok := t.Fun.(*ast.Ident); ok && len(t.Args) >= 1 {
+			switch id.Name {
+			case "make", "new":
+				return TypeName(t.Args[0])
+			}
 		}
 	}
 	return TypeInfo{}
