@@ -13,6 +13,23 @@ from `.graphql` SDL or gqlgen-generated Go code.
 go install github.com/bakhod1r/spector/cmd/specter@latest
 ```
 
+Two features are behind build tags because they are the only reason the
+install would be large. Everything described below is in the default build;
+these two are not:
+
+```sh
+# Live gRPC calling from the console ("try it" on a gRPC method).
+# Pulls grpcurl, grpc-go, protoreflect, go-spiffe and the envoy protos.
+# Scanning .proto and writing grpc.json need none of this and are always built.
+go install -tags grpclive github.com/bakhod1r/spector/cmd/specter@latest
+
+# The MCP server (specter -mcp), for editor agents.
+go install -tags mcp github.com/bakhod1r/spector/cmd/specter@latest
+
+# Both
+go install -tags "mcp grpclive" github.com/bakhod1r/spector/cmd/specter@latest
+```
+
 ## Quick start (CLI)
 
 ```sh

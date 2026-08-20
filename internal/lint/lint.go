@@ -18,7 +18,6 @@ package lint
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"sort"
 	"strings"
@@ -191,7 +190,7 @@ func at(s *core.Source) string {
 // compiles, the endpoint quietly stops existing, and nothing says so.
 func orphanHandlers(dir string, routes []core.Route) ([]Finding, error) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
+	files, err := astutil.ParseDir(fset, dir, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -203,23 +202,21 @@ func orphanHandlers(dir string, routes []core.Route) ([]Finding, error) {
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
 	var out []Finding
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				fd, ok := decl.(*ast.FuncDecl)
-				if !ok || fd.Body == nil {
-					continue
-				}
-				if registered[fd.Name.Name] || !looksLikeHandler(fd) {
-					continue
-				}
-				out = append(out, Finding{
-					Kind: OrphanHandler,
-					Message: fmt.Sprintf("%s looks like a handler but no route registers it",
-						fd.Name.Name),
-					Source: loc.Of(fd.Pos()),
-				})
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
 			}
+			if registered[fd.Name.Name] || !looksLikeHandler(fd) {
+				continue
+			}
+			out = append(out, Finding{
+				Kind: OrphanHandler,
+				Message: fmt.Sprintf("%s looks like a handler but no route registers it",
+					fd.Name.Name),
+				Source: loc.Of(fd.Pos()),
+			})
 		}
 	}
 	return out, nil

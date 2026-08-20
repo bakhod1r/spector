@@ -186,8 +186,16 @@ func NewOperation(id string, opts ...OperationOption) *Operation {
 	return op
 }
 
-// SetResponse registers a response under an HTTP status code.
+// SetResponse registers a response under an HTTP status code. Status 0 means
+// the scanner saw a response but could not resolve its code — the handler
+// wrote it through a variable — and OpenAPI has a key for exactly that:
+// "default". Filing it under 200 instead would put a number in the document
+// that the source never contained.
 func (o *Operation) SetResponse(status int, r *Response) {
+	if status <= 0 {
+		o.Responses["default"] = r
+		return
+	}
 	o.Responses[strconv.Itoa(status)] = r
 }
 
@@ -267,9 +275,15 @@ type Schema struct {
 	// Description and Example are pure documentation, read from `doc:` and
 	// `example:` tags. They constrain nothing, which is exactly why they are
 	// worth reading: there is no way for them to make a document wrong.
-	Description string    `json:"description,omitempty"`
-	Example     any       `json:"example,omitempty"`
-	AllOf       []*Schema `json:"allOf,omitempty"`
+	Description string `json:"description,omitempty"`
+	Example     any    `json:"example,omitempty"`
+
+	// Default is what the server uses when the caller omits the value, read
+	// from c.DefaultQuery("limit", "20"). It is documentation of an existing
+	// behaviour, not a constraint: the endpoint already behaves this way and
+	// the client had no way to find out.
+	Default any       `json:"default,omitempty"`
+	AllOf   []*Schema `json:"allOf,omitempty"`
 
 	// Constraints read from validation tags. Every one is omitempty, so a
 	// document generated from code without tags is byte-identical to before.
@@ -328,6 +342,9 @@ type Route struct {
 	ResponseType  string // Go type name returned, "" if none
 	ResponseArray bool   // response is []ResponseType
 	QueryParams   []string
+	// QueryDefaults holds the fallback value of the query parameters that have
+	// one, keyed by name; parameters without a default are absent.
+	QueryDefaults map[string]string
 	HeaderParams  []string
 	Summary       string          // first line of the handler doc comment
 	Description   string          // remaining lines of the handler doc comment

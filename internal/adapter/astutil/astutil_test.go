@@ -442,10 +442,17 @@ func TestInspectHandlerBareJSONDefaultsTo200(t *testing.T) {
 	}
 }
 
-func TestInspectHandlerUnresolvableStatusFallsBackTo200(t *testing.T) {
+// A status the source states through a variable is unknown, and it is reported
+// as unknown (status 0, rendered as OpenAPI's "default"). Calling it 200 would
+// document a handler that answers 201 as answering 200 — a client believes
+// that, so it is worse than an unspecified code.
+func TestInspectHandlerUnresolvableStatusIsUnknown(t *testing.T) {
 	h := InspectHandler(parseBody(t, `c.JSON(code, User{})`))
-	if len(h.Responses) != 1 || h.Responses[0].Status != 200 {
-		t.Errorf("responses = %+v, want 200 when the code is dynamic", h.Responses)
+	if len(h.Responses) != 1 || h.Responses[0].Status != 0 {
+		t.Errorf("responses = %+v, want a single unknown-status response", h.Responses)
+	}
+	if h.Responses[0].Type.Name != "User" {
+		t.Errorf("type = %+v, want User", h.Responses[0].Type)
 	}
 }
 

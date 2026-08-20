@@ -34,7 +34,7 @@ func (a *Adapter) Name() string { return "fiber" }
 
 func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -42,14 +42,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
 	mw := middleware.NewIndex()
-	var files []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			files = append(files, file)
-			scanner.Collect(file)
-			index.Collect(file)
-			mw.Collect(file)
-		}
+	for _, file := range files {
+		scanner.Collect(file)
+		index.Collect(file)
+		mw.Collect(file)
 	}
 
 	handlers := map[string]*ast.FuncDecl{}

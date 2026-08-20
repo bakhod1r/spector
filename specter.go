@@ -15,13 +15,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bakhod1r/synth"
-	"github.com/gorilla/websocket"
 	"github.com/bakhod1r/spector/internal/coverage"
 	"github.com/bakhod1r/spector/internal/export"
 	"github.com/bakhod1r/spector/internal/testgen"
+	"github.com/bakhod1r/synth"
+	"github.com/gorilla/websocket"
 	"gopkg.in/yaml.v3"
 
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
 	bunrouteradapter "github.com/bakhod1r/spector/internal/adapter/bunrouter"
 	chiadapter "github.com/bakhod1r/spector/internal/adapter/chi"
 	echoadapter "github.com/bakhod1r/spector/internal/adapter/echo"
@@ -231,6 +232,16 @@ func mustAbs(dir string) string {
 	return abs
 }
 
+// AdapterName is the framework this config scans with: the one it names, or
+// the one detected from the project's imports. It is what a caller needs to
+// explain an empty scan, which is nearly always the wrong adapter.
+func (c Config) AdapterName() string {
+	if c.Adapter != "" {
+		return c.Adapter
+	}
+	return detect(c.withDefaults().Dir)
+}
+
 // adapterFor never fails: an unrecognised name falls back to gin rather than
 // erroring, so there is nothing for a caller to handle.
 func adapterFor(cfg Config) core.Adapter {
@@ -260,12 +271,12 @@ func adapterFor(cfg Config) core.Adapter {
 
 func detect(dir string) string {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ImportsOnly)
+	files, err := astutil.ParseDir(fset, dir, parser.ImportsOnly)
 	if err != nil {
 		return "gin"
 	}
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
+	{
+		for _, file := range files {
 			for _, imp := range file.Imports {
 				p := strings.Trim(imp.Path.Value, `"`)
 				switch {

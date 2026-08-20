@@ -1,3 +1,5 @@
+//go:build grpclive
+
 package grpcx
 
 import (

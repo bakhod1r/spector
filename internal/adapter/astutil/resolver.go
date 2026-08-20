@@ -60,6 +60,19 @@ func (r *Resolver) Resolve(expr ast.Expr) (string, bool) {
 	return r.eval(expr, env)
 }
 
+// EnclosingFunc reports the function declaration a node lies in, or nil when it
+// lies outside one. Callers that resolve a name need it because a name means
+// what the function it appears in says it means: two functions can both call
+// their router `r` without meaning the same router.
+func (r *Resolver) EnclosingFunc(n ast.Node) *ast.FuncDecl {
+	for _, f := range r.funcChain(n) {
+		if fd, ok := f.(*ast.FuncDecl); ok {
+			return fd
+		}
+	}
+	return nil
+}
+
 // funcChain walks parent links from n upward, collecting every enclosing
 // *ast.FuncDecl/*ast.FuncLit, innermost first.
 func (r *Resolver) funcChain(n ast.Node) []ast.Node {

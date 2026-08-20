@@ -36,20 +36,16 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	// ParseComments is required, not optional: summaries, descriptions and the
 	// specter: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
-	var files []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			files = append(files, file)
-			scanner.Collect(file)
-			index.Collect(file)
-		}
+	for _, file := range files {
+		scanner.Collect(file)
+		index.Collect(file)
 	}
 
 	handlers := map[string]*ast.FuncDecl{}

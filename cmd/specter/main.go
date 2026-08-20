@@ -69,7 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	mockOrigins := fs.String("mock-origin", "", "comma-separated origins allowed to call the mock (default any)")
 	mockCreds := fs.Bool("mock-credentials", false, "allow cookies and Authorization headers on mock requests")
 	mockMaxAge := fs.Int("mock-max-age", 0, "seconds a browser may cache the mock's CORS preflight")
-	mcpFlag := fs.Bool("mcp", false, "serve specter as an MCP server over stdio")
+	mcpFlag := fs.Bool("mcp", false, "serve specter as an MCP server over stdio (requires a build with -tags mcp)")
 	oasVersion := fs.String("openapi-version", "3.0", "OpenAPI version to emit: 3.0 or 3.1")
 	postman := fs.Bool("postman", false, "export a Postman collection v2.1 (Insomnia imports it too)")
 	postmanEnv := fs.Bool("postman-env", false, "export a Postman environment (baseUrl and auth placeholders) instead of the collection")
@@ -134,6 +134,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// A warning names the directory so the cause is obvious.
 	warnEmpty := func(what, scanDir string) {
 		fmt.Fprintf(stderr, "specter: warning: no %s found in %s\n", what, scanDir)
+		if what == "routes" {
+			// The scan reads the tree below scanDir, so an empty result is
+			// usually the wrong framework rather than the wrong directory —
+			// and the adapter is guessed from imports, which a root package
+			// that imports no router does not have.
+			fmt.Fprintf(stderr, "specter: the scan is recursive; try -adapter %s (gin, chi, echo, fiber, gorillamux, httprouter, bunrouter, stdlib) or point -dir at the package that registers routes\n",
+				cfg.AdapterName())
+		}
 	}
 	orDir := func(specific string) string {
 		if specific == "" {

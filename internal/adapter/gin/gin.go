@@ -31,7 +31,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	// ParseComments is required, not optional: summaries, descriptions and the
 	// specter: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -39,14 +39,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
 	mw := middleware.NewIndex()
-	var files []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			files = append(files, file)
-			scanner.Collect(file)
-			index.Collect(file)
-			mw.Collect(file)
-		}
+	for _, file := range files {
+		scanner.Collect(file)
+		index.Collect(file)
+		mw.Collect(file)
 	}
 
 	// Handlers are indexed by name, and a method must never displace a plain
@@ -86,10 +82,14 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	var diags astutil.Diagnostics
 	loc := astutil.Locator{Fset: fset, Dir: dir}
 	groups := collectGroups(files, res, &diags, loc)
+	params := groupParams(files, res, groups, &diags, loc)
 	// Handlers that return a value from a store or service — the normal shape
 	// in real code — need the package's function result types to be
 	// documentable at all.
-	returns := astutil.Returns(files)
+	// pkg carries what the handler body alone does not: the result types of the
+	// package's functions, and their declarations, so a handler that binds and
+	// responds through wrappers is inspected through them too.
+	pkg := astutil.Pkg{Returns: astutil.Returns(files), Funcs: astutil.FuncDecls(files)}
 
 	var routes []core.Route
 	for _, file := range files {
@@ -113,7 +113,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 			}
 			prefix := ""
 			if recv, ok := sel.X.(*ast.Ident); ok {
-				prefix = resolveGroup(recv.Name, groups)
+				prefix = resolveGroup(recv.Name, res.EnclosingFunc(call), groups, params)
 			}
 			name := astutil.HandlerName(call.Args[len(call.Args)-1])
 			route := core.Route{
@@ -132,7 +132,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 			fd := handlers[name]
 			route.Source = loc.Handler(fd, call)
 			if fd != nil {
-				inspectHandler(fd, &route, returns)
+				inspectHandler(fd, &route, pkg)
 				route.Calls = calls.Analyze(fd, index)
 				route.Realtime = realtime.Detect(fd, handlers)
 			}
@@ -147,6 +147,9 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 type groupDef struct {
 	recv   string
 	prefix string
+	// fn is the function the assignment appears in, so the receiver name is
+	// resolved in the scope that gave it meaning.
+	fn *ast.FuncDecl
 }
 
 func collectGroups(files []*ast.File, res *astutil.Resolver, diags *astutil.Diagnostics, loc astutil.Locator) map[string]groupDef {
@@ -178,26 +181,38 @@ func collectGroups(files []*ast.File, res *astutil.Resolver, diags *astutil.Diag
 			if id, ok := sel.X.(*ast.Ident); ok {
 				recv = id.Name
 			}
-			groups[lhs.Name] = groupDef{recv: recv, prefix: prefix}
+			groups[lhs.Name] = groupDef{recv: recv, prefix: prefix, fn: res.EnclosingFunc(as)}
 			return true
 		})
 	}
 	return groups
 }
 
-func resolveGroup(name string, groups map[string]groupDef) string {
+// resolveGroup is the prefix a router variable carries, seen from inside fn.
+//
+// Group variables are indexed by name alone, as they always have been: they are
+// assignments in the file being read and a collision between two packages is
+// bounded by how the same name is used. Parameters are different — every second
+// project names its router parameter `r` — so those are looked up per function,
+// and a name that is neither resolves to nothing, the root router.
+func resolveGroup(name string, fn *ast.FuncDecl, groups map[string]groupDef, params map[*ast.FuncDecl]map[string]string) string {
 	seen := map[string]bool{}
 	prefix := ""
 	for {
+		if p, ok := params[fn][name]; ok {
+			// A parameter's prefix is already composed at the call site, so
+			// there is nothing above it to walk to.
+			return p + prefix
+		}
 		g, ok := groups[name]
 		if !ok || seen[name] {
-			break
+			return prefix
 		}
 		seen[name] = true
 		prefix = g.prefix + prefix
 		name = g.recv
+		fn = g.fn
 	}
-	return prefix
 }
 
 // recvName is the router variable a route was registered on, which is what
@@ -229,8 +244,25 @@ func normalizePath(path string) string {
 	return strings.Join(parts, "/")
 }
 
-func inspectHandler(fd *ast.FuncDecl, route *core.Route, returns map[string]astutil.TypeInfo) {
-	astutil.InspectHandlerWith(fd.Body, returns).Apply(route)
+func inspectHandler(fd *ast.FuncDecl, route *core.Route, pkg astutil.Pkg) {
+	astutil.InspectHandlerIn(fd.Body, pkg).Apply(route)
 	route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
 	applyDirectives(route, fd)
+}
+
+// groupParams is the prefix each function parameter that receives a router
+// group carries — registerMFARoutes(private.Group("/auth/mfa"), c) — keyed by
+// the function it belongs to. Without it every route registered inside such a
+// function is documented at its bare path.
+func groupParams(files []*ast.File, res *astutil.Resolver, groups map[string]groupDef, diags *astutil.Diagnostics, loc astutil.Locator) map[*ast.FuncDecl]map[string]string {
+	params := map[*ast.FuncDecl]map[string]string{}
+	astutil.GroupParams(files, res, params, func(name string, in *ast.FuncDecl) (string, bool) {
+		if _, ok := params[in][name]; !ok {
+			if _, ok := groups[name]; !ok {
+				return "", false
+			}
+		}
+		return resolveGroup(name, in, groups, params), true
+	}, diags, loc)
+	return params
 }

@@ -331,7 +331,10 @@ type Handler struct {
 	Request  TypeInfo
 	Response TypeInfo // first response body, kept for backward compatibility
 	Query    []string
-	Header   []string
+	// QueryDefaults records the fallback of a c.DefaultQuery("limit", "20"),
+	// keyed by parameter name.
+	QueryDefaults map[string]string
+	Header        []string
 	// Responses lists every status-coded response the handler emits, in source
 	// order: gin c.JSON(201, x), net/http w.WriteHeader(code) + Encode(x), etc.
 	Responses []Response
@@ -351,6 +354,7 @@ func (h Handler) Apply(route *core.Route) {
 	route.RequestType, route.RequestArray = h.Request.Name, h.Request.Array
 	route.ResponseType, route.ResponseArray = h.Response.Name, h.Response.Array
 	route.QueryParams = h.Query
+	route.QueryDefaults = h.QueryDefaults
 	route.HeaderParams = h.Header
 	for _, r := range h.Responses {
 		route.Responses = append(route.Responses, core.RouteResponse{
@@ -371,12 +375,100 @@ func InspectHandler(body *ast.BlockStmt) Handler {
 // InspectHandlerWith is InspectHandler with a package-level index of function
 // result types, so handlers that write the result of a call are documented too.
 func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handler {
-	types := LocalTypesWith(body, returns)
-	var h Handler
-	pending := 0 // net/http status set by a preceding w.WriteHeader(code)
-	addResp := func(status int, t TypeInfo) {
-		h.Responses = append(h.Responses, Response{Status: status, Type: t})
+	return InspectHandlerIn(body, Pkg{Returns: returns})
+}
+
+// Pkg is what a handler's own body does not contain: the result types of the
+// functions it calls, and the declarations of those functions so their bodies
+// can be looked at too.
+type Pkg struct {
+	Returns map[string]TypeInfo
+	// Funcs indexes callable declarations by name. Leave it nil to inspect the
+	// handler body alone.
+	Funcs map[string]*ast.FuncDecl
+}
+
+// FuncDecls indexes every function and method with a body, by name. Plain
+// functions win a name over methods, and the first declaration wins over a
+// later one, so the index does not depend on file order (ParseDir returns
+// files sorted by path).
+func FuncDecls(files []*ast.File) map[string]*ast.FuncDecl {
+	out := map[string]*ast.FuncDecl{}
+	methods := map[string]*ast.FuncDecl{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			table := out
+			if fd.Recv != nil {
+				table = methods
+			}
+			if _, taken := table[fd.Name.Name]; !taken {
+				table[fd.Name.Name] = fd
+			}
+		}
 	}
+	for name, fd := range methods {
+		if _, taken := out[name]; !taken {
+			out[name] = fd
+		}
+	}
+	return out
+}
+
+// maxHelperDepth is how many calls deep the inspection follows out of a
+// handler. Nearly every project wraps the framework in a helper —
+//
+//	func bindJSON(c *gin.Context, out any) bool { return c.ShouldBindJSON(out) == nil }
+//	func ok(c *gin.Context, body any)           { c.JSON(200, body) }
+//
+// — and a scanner that stops at the handler body documents those handlers with
+// no request body, no response type and no schema at all: the exact endpoints a
+// client needs most. Two levels covers a helper that calls a helper, which is
+// where real code stops; going deeper mostly finds shared error plumbing whose
+// responses belong to no one endpoint.
+const maxHelperDepth = 2
+
+// InspectHandlerIn is InspectHandlerWith that also follows calls out of the
+// handler into the package's own functions, up to maxHelperDepth, carrying the
+// caller's argument types and status codes into the callee's parameters. It is
+// what makes a handler written through wrappers document the same as one that
+// calls the framework directly.
+func InspectHandlerIn(body *ast.BlockStmt, pkg Pkg) Handler {
+	in := &inspection{pkg: pkg, seen: map[*ast.FuncDecl]bool{}}
+	in.walk(body, scope{types: LocalTypesWith(body, pkg.Returns)}, 0)
+	h := in.h
+	h.Responses = dedupeResponses(h.Responses)
+	h.Response = primaryResponse(h.Responses, h.Response)
+	return h
+}
+
+// scope is what a body's identifiers mean: the Go type behind a name, and the
+// numeric status behind one. Both are filled from the caller's arguments when
+// the inspection steps into a helper, which is how `ok(c, TokenResponse{})`
+// and `respond(c, http.StatusCreated, body)` keep their meaning inside a
+// function whose own source says only `body` and `code`.
+type scope struct {
+	types  map[string]TypeInfo
+	status map[string]int
+}
+
+type inspection struct {
+	pkg  Pkg
+	h    Handler
+	seen map[*ast.FuncDecl]bool
+}
+
+func (in *inspection) addResp(status int, t TypeInfo) {
+	in.h.Responses = append(in.h.Responses, Response{Status: status, Type: t})
+}
+
+func (in *inspection) walk(body *ast.BlockStmt, sc scope, depth int) {
+	types := sc.types
+	pending := 0 // net/http status set by a preceding w.WriteHeader(code)
+	statusValue := func(expr ast.Expr) int { return sc.statusValue(expr) }
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -384,9 +476,16 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok {
+			in.descend(call, sc, depth)
 			return true
 		}
+		h := &in.h
+		addResp := in.addResp
 		switch sel.Sel.Name {
+		default:
+			// Not a framework verb: it may be one of the project's own
+			// wrappers around one.
+			in.descend(call, sc, depth)
 		case "Decode", "DecodeJSON", "Unmarshal":
 			if h.Request.Name == "" && len(call.Args) >= 1 {
 				h.Request = ArgType(call.Args[len(call.Args)-1], types)
@@ -409,12 +508,17 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 		case "JSON", "IndentedJSON", "AbortWithStatusJSON", "PureJSON", "XML", "YAML":
 			// gin c.JSON(code, body): first arg is the status code.
 			if len(call.Args) >= 2 {
-				status := statusValue(call.Args[0])
+				// A code that does not resolve stays 0, which the document
+				// renders as the default response. Assuming 200 would state
+				// something the source never said, and a handler that in fact
+				// answers 201 would be documented as returning 200 — worse
+				// than saying nothing, because a client believes it.
+				status := sc.statusValue(call.Args[0])
 				t := ArgType(call.Args[len(call.Args)-1], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
-				addResp(statusOr(status, 200), t)
+				addResp(status, t)
 			} else if len(call.Args) == 1 {
 				// render.JSON(w, r, x) style handled via Encode; here a bare
 				// JSON(x) is treated as a 200 body — unless it chains off
@@ -452,6 +556,22 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 			"QueryParam", "QueryParams":
 			// The last two are echo's spelling.
 			addParam(&h.Query, call)
+			// gin c.DefaultQuery("limit", "20") / echo c.QueryParam with a
+			// fallback: the second argument is what the server uses when the
+			// caller omits the parameter, and nothing else in the document
+			// would tell a client that.
+			if sel.Sel.Name == "DefaultQuery" && len(call.Args) == 2 {
+				if name, ok := StringLit(call.Args[0]); ok {
+					if def, ok := StringLit(call.Args[1]); ok {
+						if h.QueryDefaults == nil {
+							h.QueryDefaults = map[string]string{}
+						}
+						if _, seen := h.QueryDefaults[name]; !seen {
+							h.QueryDefaults[name] = def
+						}
+					}
+				}
+			}
 		case "GetHeader":
 			addParam(&h.Header, call)
 		case "Get":
@@ -469,9 +589,74 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 		}
 		return true
 	})
-	h.Responses = dedupeResponses(h.Responses)
-	h.Response = primaryResponse(h.Responses, h.Response)
-	return h
+}
+
+// descend follows a call into one of the package's own functions, so a handler
+// that speaks to the framework through a wrapper is read as if it had spoken
+// directly. The callee is matched by name — bindJSON(...) and httpx.Created(...)
+// alike — because knowing the receiver's type would need a full type check.
+//
+// A name that resolves to the wrong function only costs a response or a type
+// picked up from a body that was never called; stopping at the handler costs
+// the request body, the response type and the schemas of every endpoint in a
+// project that has such a helper, which is most of them.
+func (in *inspection) descend(call *ast.CallExpr, sc scope, depth int) {
+	if depth >= maxHelperDepth || len(in.pkg.Funcs) == 0 {
+		return
+	}
+	var name string
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		name = fun.Name
+	case *ast.SelectorExpr:
+		name = fun.Sel.Name
+	default:
+		return
+	}
+	fd, ok := in.pkg.Funcs[name]
+	// seen guards recursion: a helper that calls itself, or two that call each
+	// other, would otherwise walk until the stack ends.
+	if !ok || fd.Body == nil || in.seen[fd] {
+		return
+	}
+	in.seen[fd] = true
+	defer delete(in.seen, fd)
+	in.walk(fd.Body, in.bind(fd, call, sc), depth+1)
+}
+
+// bind builds the callee's scope: its own locals, then its parameters filled in
+// from the caller's arguments. Parameters are applied last because they are the
+// stronger fact — the argument is what the handler actually passed.
+func (in *inspection) bind(fd *ast.FuncDecl, call *ast.CallExpr, caller scope) scope {
+	sc := scope{
+		types:  LocalTypesWith(fd.Body, in.pkg.Returns),
+		status: map[string]int{},
+	}
+	params := paramNames(fd)
+	for i, arg := range call.Args {
+		if i >= len(params) || params[i] == "" || params[i] == "_" {
+			continue
+		}
+		if t := ArgType(arg, caller.types); t.Name != "" {
+			sc.types[params[i]] = t
+		}
+		if s := caller.statusValue(arg); s != 0 {
+			sc.status[params[i]] = s
+		}
+	}
+	return sc
+}
+
+// statusValue resolves a status expression in this scope, so a code the caller
+// passed in — respond(c, http.StatusCreated, body) — is still known inside the
+// helper that names it `code`.
+func (sc scope) statusValue(expr ast.Expr) int {
+	if id, ok := expr.(*ast.Ident); ok {
+		if s, found := sc.status[id.Name]; found {
+			return s
+		}
+	}
+	return statusValue(expr)
 }
 
 // chainedStatus reads the code out of fiber's c.Status(201).JSON(x) chain: the

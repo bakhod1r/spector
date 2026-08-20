@@ -1,3 +1,5 @@
+//go:build mcp
+
 package main
 
 import (
@@ -9,9 +11,9 @@ import (
 	"net/http/httptest"
 	"strings"
 
+	"github.com/bakhod1r/spector"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/bakhod1r/spector"
 )
 
 // runMCP serves specter's generators and linter as MCP tools over stdio, so an

@@ -1,6 +1,9 @@
+//go:build mcp
+
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -470,5 +473,23 @@ func TestMCPMockRequestMissingPathIsToolError(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("missing path did not produce a tool error")
+	}
+}
+
+// -mcp serves over stdio; with stdin already at EOF the server returns at once
+// and the CLI exits cleanly.
+func TestRunMCPServesAndExits(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	old := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = old; r.Close() })
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-mcp"}, &stdout, &stderr); code != 0 {
+		t.Errorf("exit = %d, want 0 (%s)", code, stderr.String())
 	}
 }
