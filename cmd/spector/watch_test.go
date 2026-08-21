@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -60,16 +61,22 @@ func TestFingerprintSkipsVendorAndGit(t *testing.T) {
 
 // The loop regenerates on a change and leaves the output alone otherwise.
 func TestWatchLoopRegeneratesOnChange(t *testing.T) {
-	fastWatch(t, 4)
+	// The budget is the loop's whole lifetime (interval x iterations), so it
+	// has to cover the scheduling jitter between the goroutine starting and
+	// the edit landing. A budget tight enough to expire first turns a slow
+	// runner into "emit was never called".
+	fastWatch(t, 40)
 	dir := writeTree(t, map[string]string{"app/main.go": ginSrc})
 
-	calls := 0
-	var stderr bytes.Buffer
+	var calls atomic.Int64
+	var stderr syncBuffer
 	done := make(chan int, 1)
-	go func() { done <- watchLoop(dir, &stderr, func() int { calls++; return 0 }) }()
+	go func() { done <- watchLoop(dir, &stderr, func() int { calls.Add(1); return 0 }) }()
 
 	// One edit inside the loop's lifetime; the poll after it must fire emit.
-	time.Sleep(10 * time.Millisecond)
+	// Waiting for the banner is what proves the loop is running — sleeping a
+	// fixed 10ms only guesses at it, and spends part of the budget guessing.
+	waitFor(t, func() bool { return strings.Contains(stderr.String(), "watching") })
 	if err := os.WriteFile(filepath.Join(dir, "app/main.go"), []byte(ginSrc+"\n// v2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +90,7 @@ func TestWatchLoopRegeneratesOnChange(t *testing.T) {
 		t.Fatal("watchLoop did not return")
 	}
 
-	if calls == 0 {
+	if calls.Load() == 0 {
 		t.Error("emit was never called after a change")
 	}
 	if !strings.Contains(stderr.String(), "watching") {
@@ -110,26 +117,33 @@ func TestWatchLoopQuietWithoutChanges(t *testing.T) {
 
 // A failing regeneration keeps the watch alive: the next save may fix it.
 func TestWatchLoopSurvivesEmitFailure(t *testing.T) {
-	fastWatch(t, 6)
+	fastWatch(t, 60)
 	dir := writeTree(t, map[string]string{"app/main.go": ginSrc})
 
-	calls := 0
-	var stderr bytes.Buffer
+	var calls atomic.Int64
+	var stderr syncBuffer
 	done := make(chan int, 1)
-	go func() { done <- watchLoop(dir, &stderr, func() int { calls++; return 1 }) }()
+	go func() { done <- watchLoop(dir, &stderr, func() int { calls.Add(1); return 1 }) }()
 
-	time.Sleep(10 * time.Millisecond)
-	os.WriteFile(filepath.Join(dir, "app/main.go"), []byte(ginSrc+"\n// v2\n"), 0o644)
-	time.Sleep(15 * time.Millisecond)
-	os.WriteFile(filepath.Join(dir, "app/main.go"), []byte(ginSrc+"\n// v3 longer\n"), 0o644)
+	// Two edits, each waited for rather than timed: the second must land after
+	// the first has already been picked up, or the fingerprint changes once
+	// and the "kept watching after a failure" property is never exercised.
+	waitFor(t, func() bool { return strings.Contains(stderr.String(), "watching") })
+	if err := os.WriteFile(filepath.Join(dir, "app/main.go"), []byte(ginSrc+"\n// v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return calls.Load() >= 1 })
+	if err := os.WriteFile(filepath.Join(dir, "app/main.go"), []byte(ginSrc+"\n// v3 longer\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("watchLoop did not return")
 	}
-	if calls < 2 {
-		t.Errorf("emit called %d times; a failure ended the watch", calls)
+	if got := calls.Load(); got < 2 {
+		t.Errorf("emit called %d times; a failure ended the watch", got)
 	}
 }
 

@@ -143,7 +143,7 @@ func (w *walker) collectIn(node ast.Node, prefix string, scope []ast.Expr, route
 			w.diags.Add(w.loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			return true
 		}
-		handlerArg := call.Args[1]
+		handlerArg := astutil.SpreadArg(call.Args[1], call)
 		name := astutil.HandlerName(handlerArg)
 		route := core.Route{
 			Method:      method,

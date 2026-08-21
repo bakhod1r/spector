@@ -1,9 +1,11 @@
 package main
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -24,6 +26,55 @@ func freePort(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return port
+}
+
+// proxyClient is pinned to a single connection per host on purpose. The proxy
+// inspects an exchange *after* the client already has its response, so a test
+// that stops the proxy as soon as its last Get returns can beat the inspection
+// to the report. With one connection, the transport cannot start the next
+// request until the previous handler has returned — inspection included — so
+// a follow-up request through this client is an exact barrier rather than a
+// guessed sleep.
+var proxyClient = &http.Client{
+	Transport: &http.Transport{MaxConnsPerHost: 1, DisableKeepAlives: false},
+	Timeout:   10 * time.Second,
+}
+
+// sendGet and sendPost drive traffic at the proxy and then drain and close the
+// body. Draining is not politeness here: proxyClient holds a single
+// connection, and a body left open never returns it to the pool, so the next
+// request through the client — the settle barrier — would block until its
+// timeout.
+func sendGet(t *testing.T, url string) {
+	t.Helper()
+	res, err := proxyClient.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	_, _ = io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+}
+
+func sendPost(t *testing.T, url, contentType, body string) {
+	t.Helper()
+	res, err := proxyClient.Post(url, contentType, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	_, _ = io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+}
+
+// settle blocks until the proxy has finished observing every exchange sent
+// through proxyClient before it. See proxyClient for why one more request is
+// enough.
+func settle(t *testing.T, base string) {
+	t.Helper()
+	res, err := proxyClient.Get(base + "/__settle")
+	if err != nil {
+		t.Fatalf("settling the proxy: %v", err)
+	}
+	res.Body.Close()
 }
 
 // waitForListener blocks until the proxy is accepting connections, so traffic

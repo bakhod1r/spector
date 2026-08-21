@@ -30,9 +30,10 @@ func runProxyCLI(t *testing.T, upstream string, extraArgs []string, traffic func
 	base := "http://" + addr
 	waitForListener(t, base)
 	traffic(base)
-	// Give the proxy a moment to finish inspecting the last response, which
-	// happens after the client already has it.
-	time.Sleep(150 * time.Millisecond)
+	// The proxy inspects the last response after the client already has it,
+	// so the interrupt has to wait for that to finish or the report is written
+	// without it.
+	settle(t, base)
 
 	interruptSelf(t)
 
@@ -54,7 +55,7 @@ func TestProxyReportsUndocumentedTraffic(t *testing.T) {
 	report := filepath.Join(t.TempDir(), "drift.json")
 	code, stderr := runProxyCLI(t, upstream.URL, []string{"-proxy-report", report}, func(base string) {
 		// The gin fixture documents GET /widgets; this is neither.
-		http.Get(base + "/internal/secret")
+		sendGet(t, base+"/internal/secret")
 	})
 	if code != 0 {
 		t.Fatalf("exit = %d (no -proxy-strict), stderr:\n%s", code, stderr)
@@ -92,7 +93,7 @@ func TestProxyStrictExitsNonZeroOnDrift(t *testing.T) {
 	defer upstream.Close()
 
 	code, stderr := runProxyCLI(t, upstream.URL, []string{"-proxy-strict"}, func(base string) {
-		http.Get(base + "/internal/secret")
+		sendGet(t, base+"/internal/secret")
 	})
 	if code != 1 {
 		t.Errorf("exit = %d, want 1 under -proxy-strict with drift\nstderr:\n%s", code, stderr)
@@ -110,7 +111,7 @@ func TestProxyRecordWarnsAndLocksTheFile(t *testing.T) {
 
 	rec := filepath.Join(t.TempDir(), "traffic.jsonl")
 	_, stderr := runProxyCLI(t, upstream.URL, []string{"-proxy-record", rec}, func(base string) {
-		http.Get(base + "/widgets")
+		sendGet(t, base+"/widgets")
 	})
 
 	if !strings.Contains(stderr, "Do not commit") {
@@ -136,7 +137,7 @@ func TestProxyLearnWritesAReviewableFragment(t *testing.T) {
 
 	learn := filepath.Join(t.TempDir(), "observed.json")
 	_, stderr := runProxyCLI(t, upstream.URL, []string{"-proxy-learn", learn}, func(base string) {
-		http.Post(base+"/internal/reindex", "application/json", strings.NewReader("{}"))
+		sendPost(t, base+"/internal/reindex", "application/json", "{}")
 	})
 
 	data, err := os.ReadFile(learn)

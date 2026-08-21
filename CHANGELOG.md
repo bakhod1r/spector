@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-21
+
+### Fixed
+- A route registered through a project's own chain helper is documented against
+  its real handler. `router.POST("/signup", chain(guards, h.SignUp)...)` names a
+  call, and only `append` and `slices.Concat` were stepped into, so the helper's
+  own declaration answered for the route: every endpoint registered that way
+  carried the helper's doc comment as its summary ("builds one route's handler
+  slice…", repeated verbatim across the group) and had no request or response
+  type at all. The spread is the signal — Go only accepts `f(x)...` in a
+  variadic position when `x` is a `[]HandlerFunc`, so a spread call builds a
+  handler chain whatever it is named, and its last argument is the handler.
+  Wired through gin, chi, echo, fiber and bunrouter.
+- Generated request bodies read like the data the endpoint takes. Every
+  unformatted `type: string` property came back as lorem ipsum, so a login body
+  generated as `{"password": "eiusmod sed do", "phone_number": "do adipiscing"}`
+  — the field's name is the only signal such a property has, and it was not
+  read. Qualified names (`access_token`, `device_id`) fall back to their head
+  word, which is what a real payload is made of.
+- The mock answers with values, not placeholders. Every unformatted string was
+  the literal `"string"`, so a token response said nothing about what it held.
+  Values are derived from the field name and seeded by it, so a document still
+  mocks to the same body on every run — exports and generated contract tests
+  render the same output they always did.
+- The console header no longer shows two identical **MOCK** chips. With the mock
+  switch on, the lit switch and the badge both rendered; the badge is now only
+  for a whole-origin mock, where there is no switch to light up.
+
+### Changed
+- An operation card puts the request and its **Send** controls first, with the
+  documented response models below them in a collapsed **Expected responses**
+  section. Sending a request is the console's constant need; reading the shapes
+  is the occasional one, and a screen of models between the body editor and
+  Send made the console scroll for its own main action.
+
+## [0.5.2] - 2026-08-21
+
+### Changed
+- Dependency updates only: `synth` 1.3.2 to 1.7.0, `mcp-go` 0.56.0 to 0.58.0,
+  `protobuf` 1.36.11 to 1.36.12, `sqlite` 1.54.0 to 1.56.0, Playwright 1.61.1 to
+  1.62.1, and the `setup-go`, `setup-node`, `goreleaser` and `golangci-lint`
+  actions. The tag was cut before the fixes below were merged, so this release
+  carries none of them.
+
 ## [0.5.1] - 2026-08-20
 
 ### Fixed
@@ -224,7 +268,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public baseline: zero-config OpenAPI generation from Go router source,
 a browser console, mock and verifying-proxy modes, and typed client SDKs.
 
-[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/bakhod1r/spector/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/bakhod1r/spector/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/bakhod1r/spector/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/bakhod1r/spector/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/bakhod1r/spector/compare/v0.3.0...v0.4.0
