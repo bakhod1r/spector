@@ -42,3 +42,4 @@ graphql.json
 # Editors / OS
 .DS_Store
 *.swp
+./docs
