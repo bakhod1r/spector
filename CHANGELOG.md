@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.2] - 2026-08-21
+## [0.5.3] - 2026-08-21
 
 ### Fixed
 - A route registered through a project's own chain helper is documented against
@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section. Sending a request is the console's constant need; reading the shapes
   is the occasional one, and a screen of models between the body editor and
   Send made the console scroll for its own main action.
+
+## [0.5.2] - 2026-08-21
+
+### Changed
+- Dependency updates only: `synth` 1.3.2 to 1.7.0, `mcp-go` 0.56.0 to 0.58.0,
+  `protobuf` 1.36.11 to 1.36.12, `sqlite` 1.54.0 to 1.56.0, Playwright 1.61.1 to
+  1.62.1, and the `setup-go`, `setup-node`, `goreleaser` and `golangci-lint`
+  actions. The tag was cut before the fixes below were merged, so this release
+  carries none of them.
 
 ## [0.5.1] - 2026-08-20
 
@@ -259,7 +268,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public baseline: zero-config OpenAPI generation from Go router source,
 a browser console, mock and verifying-proxy modes, and typed client SDKs.
 
-[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/bakhod1r/spector/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/bakhod1r/spector/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/bakhod1r/spector/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/bakhod1r/spector/compare/v0.4.0...v0.5.0
