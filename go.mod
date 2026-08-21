@@ -16,7 +16,7 @@ require (
 	github.com/graphql-go/graphql v0.8.1
 	github.com/jhump/protoreflect v1.18.0
 	github.com/labstack/echo/v4 v4.15.4
-	github.com/mark3labs/mcp-go v0.56.0
+	github.com/mark3labs/mcp-go v0.58.0
 	github.com/vektah/gqlparser/v2 v2.5.36
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.12
