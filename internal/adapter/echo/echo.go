@@ -139,6 +139,9 @@ func addRoute(method, path string, handlerArg ast.Expr, inline []ast.Expr, sel *
 		prefix = groups.Prefix(recv.Name, scope.EnclosingFunc(call.Pos()))
 	}
 
+	if c, ok := call.(*ast.CallExpr); ok {
+		handlerArg = astutil.SpreadArg(handlerArg, c)
+	}
 	name := astutil.HandlerName(handlerArg)
 	route := core.Route{
 		Method:      method,

@@ -102,6 +102,23 @@ func (s *Scope) FileAt(pos token.Pos) *ast.File {
 // cannot decide — which is the case for a single-package project, where a bare
 // name is unambiguous anyway.
 func (s *Scope) Handler(expr ast.Expr, fallback map[string]*ast.FuncDecl) *ast.FuncDecl {
+	fd := s.handler(expr, fallback)
+	// A project helper that assembles a chain — chain(mw, h.Signup) — is a call
+	// like any other, so the name resolved above is the helper's, not the
+	// handler's. Its declaration is a real function, so nothing downstream
+	// noticed: every route registered through it was documented with the
+	// helper's doc comment ("builds one route's handler slice…") as its summary
+	// and with none of the handler's own request or response types. The handler
+	// is the helper's last argument, exactly as it is in a registration.
+	if call, ok := HandlerExpr(expr).(*ast.CallExpr); ok && len(call.Args) > 0 && !LooksLikeHandler(fd) {
+		if inner := s.handler(call.Args[len(call.Args)-1], fallback); LooksLikeHandler(inner) {
+			return inner
+		}
+	}
+	return fd
+}
+
+func (s *Scope) handler(expr ast.Expr, fallback map[string]*ast.FuncDecl) *ast.FuncDecl {
 	if s == nil || expr == nil {
 		return fallback[HandlerName(expr)]
 	}

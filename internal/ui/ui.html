@@ -268,6 +268,17 @@
   .run-detail h4 { margin:6px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
   .run-kv { font-family:ui-monospace,monospace; font-size:12px; color:var(--text); word-break:break-all; }
   .run-detail pre { margin:4px 0 0; padding:8px; background:var(--code-bg); border-radius:6px; font-size:12px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+  /* Reference material inside an operation — the response models and the
+     status codes. It sits below the request because sending one is what the
+     console is for; it is collapsed because a reader who wants the shapes asks
+     for them, while one who wants to send a request should not scroll past
+     them. */
+  .opsec { margin-top:12px; border-top:1px solid var(--border); }
+  .opsec-head { display:flex; align-items:center; gap:6px; width:100%; margin-top:8px; padding:0; background:none; border:0; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; cursor:pointer; text-align:left; }
+  .opsec-head:hover { color:var(--accent); }
+  .opsec-chev { font-size:10px; }
+  .opsec-body { display:none; margin-top:8px; }
+  .opsec-body.on { display:block; }
 </style>
 </head>
 <body>
@@ -609,18 +620,17 @@ function mockBase() {
   return new URL("mock", location.href).href.replace(/\/$/, "");
 }
 
-// wireMockToggle shows the header switch and keeps the badge honest: the badge
-// means "this answer came from the mock", so it is lit exactly while the
-// switch is on.
+// wireMockToggle shows the header switch. The lit switch is itself the "answers
+// come from the mock" indicator, so the badge stays hidden here — showing both
+// puts two identical MOCK chips in the header. The badge is for the
+// window.__MOCK__ case, where there is no switch to light up.
 function wireMockToggle() {
   const btn = document.getElementById("mockToggle");
-  const badge = document.getElementById("mockBadge");
   if (!btn) return;
   const paint = () => {
     btn.hidden = false;
     btn.classList.toggle("on", MOCK_ON);
     btn.setAttribute("aria-pressed", String(MOCK_ON));
-    if (badge) badge.hidden = !MOCK_ON;
   };
   btn.onclick = () => {
     MOCK_ON = !MOCK_ON;
@@ -1892,18 +1902,6 @@ function opCard(spec, path, method, op) {
   const req = fromSpec(spec, path, method, op);
   body.appendChild(requestEditor(spec, req, op));
 
-  const responses = op.responses || {};
-  if (Object.keys(responses).length) {
-    const lbl = document.createElement("label"); lbl.textContent = "Expected responses"; body.appendChild(lbl);
-    for (const code of Object.keys(responses).sort()) {
-      const r = responses[code]; const row = document.createElement("div"); row.className="expected";
-      const media = r.content && r.content["application/json"];
-      row.innerHTML = `<div class="ecode">${code}${r.description?" — "+r.description:""}</div>`;
-      if (media) { const pre=document.createElement("pre"); colorJson(pre, sample(spec,media.schema), 0); row.appendChild(pre); }
-      body.appendChild(row);
-    }
-  }
-
   const row = document.createElement("div"); row.className = "btnrow";
   const sendBtn = document.createElement("button"); sendBtn.className="primary"; sendBtn.textContent="Send";
   const saveBtn = document.createElement("button"); saveBtn.textContent="Save";
@@ -1926,8 +1924,50 @@ function opCard(spec, path, method, op) {
   }
 
   body.append(row, curlBox, srcBox, out);
+
+  // The documented responses come after the send controls, not before them:
+  // reading the shapes is the occasional need, sending the request is the
+  // constant one, and a screen of models between the body editor and Send made
+  // the console scroll for its own main action.
+  const responses = op.responses || {};
+  const codes = Object.keys(responses).sort();
+  if (codes.length) {
+    const sec = opSection("Expected responses (" + codes.join(", ") + ")");
+    for (const code of codes) {
+      const r = responses[code]; const line = document.createElement("div"); line.className="expected";
+      const media = r.content && r.content["application/json"];
+      line.innerHTML = `<div class="ecode">${code}${r.description?" — "+r.description:""}</div>`;
+      if (media) { const pre=document.createElement("pre"); colorJson(pre, sample(spec,media.schema), 0); line.appendChild(pre); }
+      sec.body.appendChild(line);
+    }
+    body.appendChild(sec.el);
+  }
+
   el.appendChild(body);
   return el;
+}
+
+// opSection is a titled, collapsed-by-default block inside an operation card.
+// It returns the element to append and the body to fill, so a caller builds its
+// content the same way it would have built it inline.
+function opSection(title) {
+  const el = document.createElement("div"); el.className = "opsec";
+  const head = document.createElement("button"); head.className = "opsec-head"; head.type = "button";
+  const chev = document.createElement("span"); chev.className = "opsec-chev"; chev.textContent = "▶";
+  const label = document.createElement("span"); label.textContent = title;
+  head.append(chev, label);
+  const body = document.createElement("div"); body.className = "opsec-body";
+  head.setAttribute("aria-expanded", "false");
+  head.onclick = (e) => {
+    // The card's own header toggles the card; a click in here is about this
+    // section only.
+    e.stopPropagation();
+    const open = body.classList.toggle("on");
+    chev.textContent = open ? "▼" : "▶";
+    head.setAttribute("aria-expanded", String(open));
+  };
+  el.append(head, body);
+  return { el, body };
 }
 
 // adviceView renders one recommendation. The standard it comes from is shown

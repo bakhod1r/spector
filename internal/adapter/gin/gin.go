@@ -111,7 +111,11 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 			if recv, ok := sel.X.(*ast.Ident); ok {
 				prefix = groups.Prefix(recv.Name, res.EnclosingFunc(call))
 			}
-			handlerArg := call.Args[len(call.Args)-1]
+			// A spread argument is a type guarantee: Go only accepts f(x)... in a
+			// variadic position when x is a []gin.HandlerFunc, so the call builds a
+			// handler chain whatever it is named, and the handler is its last
+			// argument — the same idiom as append, without the name allowlist.
+			handlerArg := astutil.SpreadArg(call.Args[len(call.Args)-1], call)
 			name := astutil.HandlerName(handlerArg)
 			route := core.Route{
 				Method:      method,

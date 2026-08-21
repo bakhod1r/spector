@@ -142,6 +142,24 @@ func TestStreamUsersPropagatesSendError(t *testing.T) {
 	}
 }
 
+// startGRPC is launched in a goroutine, so the port is not accepting yet when
+// the test returns from `go startGRPC(addr)`. grpc.NewClient connects lazily
+// and the first RPC fails fast with Unavailable if nothing is listening, which
+// made this test flaky on CI. Poll the port until it accepts instead.
+func waitForListener(t *testing.T, addr string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("nothing listening on %s after 5s", addr)
+}
+
 // startGRPC must serve on the address it is given, and must return rather than
 // block when the port is already taken.
 func TestStartGRPCServes(t *testing.T) {
@@ -153,6 +171,7 @@ func TestStartGRPCServes(t *testing.T) {
 	lis.Close()
 
 	go startGRPC(addr)
+	waitForListener(t, addr)
 
 	cc, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

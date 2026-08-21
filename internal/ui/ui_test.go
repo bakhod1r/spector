@@ -84,6 +84,27 @@ func TestRunAllDetailContract(t *testing.T) {
 	}
 }
 
+// An operation card puts the request and its Send controls first, and the
+// documented response models below them in a collapsed section. The order is
+// the feature: a rename or a stray move would put a screen of models back
+// between the body editor and Send.
+func TestOperationSectionOrder(t *testing.T) {
+	page := string(Page)
+	for _, want := range []string{"function opSection(", "opsec-body", "Expected responses ("} {
+		if !strings.Contains(page, want) {
+			t.Errorf("operation card missing %s", want)
+		}
+	}
+	send := strings.Index(page, `sendBtn.onclick = () => send(req, out);`)
+	models := strings.Index(page, `const sec = opSection("Expected responses (`)
+	if send < 0 || models < 0 {
+		t.Fatal("could not find both the send wiring and the responses section")
+	}
+	if models < send {
+		t.Error("the response models are built before the send controls; they belong below them")
+	}
+}
+
 // The page fetches these from the handler; the handler must keep serving them.
 func TestFetchedEndpoints(t *testing.T) {
 	page := string(Page)

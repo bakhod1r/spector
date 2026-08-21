@@ -161,6 +161,7 @@ func (w *walker) collectIn(node ast.Node, prefix string, scope []ast.Expr, route
 }
 
 func (w *walker) add(method, path string, handler ast.Expr, call *ast.CallExpr, scope []ast.Expr) {
+	handler = astutil.SpreadArg(handler, call)
 	name := astutil.HandlerName(handler)
 	route := core.Route{
 		Method:      method,

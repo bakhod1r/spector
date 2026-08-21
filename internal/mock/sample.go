@@ -19,7 +19,7 @@ import (
 // with id 42 instead of a fabricated one. Echoing the caller's own value back is
 // the one piece of realism available without inventing state.
 func Sample(doc *core.Document, schema *core.Schema, params map[string]string) any {
-	return sample(doc, schema, params, map[string]bool{}, 0)
+	return sample(doc, "", schema, params, map[string]bool{}, 0)
 }
 
 // maxDepth stops a self-referential schema (a Category with children, a Node
@@ -32,7 +32,10 @@ func Sample(doc *core.Document, schema *core.Schema, params map[string]string) a
 // looks like a bug in the API rather than a limit in the mock.
 const maxDepth = 20
 
-func sample(doc *core.Document, schema *core.Schema, params map[string]string, seen map[string]bool, depth int) any {
+// name is the property this schema sits under ("" at the root). It is the only
+// signal an unformatted string carries about what it holds, so it travels down
+// with the schema.
+func sample(doc *core.Document, name string, schema *core.Schema, params map[string]string, seen map[string]bool, depth int) any {
 	if schema == nil || depth > maxDepth {
 		return nil
 	}
@@ -49,7 +52,7 @@ func sample(doc *core.Document, schema *core.Schema, params map[string]string, s
 		}
 		seen[name] = true
 		defer delete(seen, name)
-		return sample(doc, resolved, params, seen, depth+1)
+		return sample(doc, name, resolved, params, seen, depth+1)
 	}
 
 	// Composed schemas are merged: allOf means the value satisfies all of them,
@@ -57,14 +60,14 @@ func sample(doc *core.Document, schema *core.Schema, params map[string]string, s
 	if len(schema.AllOf) > 0 {
 		merged := map[string]any{}
 		for _, part := range schema.AllOf {
-			if sub, ok := sample(doc, part, params, seen, depth+1).(map[string]any); ok {
+			if sub, ok := sample(doc, name, part, params, seen, depth+1).(map[string]any); ok {
 				for k, v := range sub {
 					merged[k] = v
 				}
 			}
 		}
-		for name, prop := range schema.Properties {
-			merged[name] = sample(doc, prop, params, seen, depth+1)
+		for prop, ps := range schema.Properties {
+			merged[prop] = sample(doc, prop, ps, params, seen, depth+1)
 		}
 		return merged
 	}
@@ -85,18 +88,18 @@ func sample(doc *core.Document, schema *core.Schema, params map[string]string, s
 	switch schema.Type {
 	case "object":
 		obj := map[string]any{}
-		for name, prop := range schema.Properties {
+		for prop, ps := range schema.Properties {
 			// A property named like a path parameter is filled from the request,
 			// so the response is about the resource that was asked for.
-			if v, ok := params[name]; ok {
-				if typed, usable := coerce(prop, v); usable {
-					obj[name] = typed
+			if v, ok := params[prop]; ok {
+				if typed, usable := coerce(ps, v); usable {
+					obj[prop] = typed
 					continue
 				}
 				// The requested value cannot be what the document says this
 				// property is, so a generated one is the only honest answer.
 			}
-			obj[name] = sample(doc, prop, params, seen, depth+1)
+			obj[prop] = sample(doc, prop, ps, params, seen, depth+1)
 		}
 		return obj
 
@@ -110,7 +113,7 @@ func sample(doc *core.Document, schema *core.Schema, params map[string]string, s
 		}
 		out := make([]any, 0, n)
 		for i := 0; i < n; i++ {
-			out = append(out, sample(doc, schema.Items, params, seen, depth+1))
+			out = append(out, sample(doc, name, schema.Items, params, seen, depth+1))
 		}
 		return out
 
@@ -121,7 +124,7 @@ func sample(doc *core.Document, schema *core.Schema, params map[string]string, s
 	case "boolean":
 		return true
 	case "string":
-		return stringValue(schema)
+		return stringValue(name, schema)
 	}
 	return nil
 }
@@ -163,11 +166,18 @@ var formatSamples = map[string]string{
 	"byte":      "c3BlY3Rlcg==",
 }
 
-func stringValue(schema *core.Schema) string {
+func stringValue(name string, schema *core.Schema) string {
+	// A declared format is the document stating the shape outright, so it wins
+	// over anything inferred from the name.
 	if s, ok := formatSamples[schema.Format]; ok {
 		return s
 	}
 	s := "string"
+	// Nothing but the name says what an unformatted string holds. When it says
+	// something, that beats the placeholder.
+	if v, ok := namedString(name, schema); ok {
+		return v
+	}
 	// The length bounds are part of the schema too, so a value that violates
 	// them is as wrong as one of the wrong type.
 	if schema.MinLength != nil && len(s) < *schema.MinLength {

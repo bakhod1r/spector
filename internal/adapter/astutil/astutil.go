@@ -223,6 +223,19 @@ var sliceBuilders = map[string]bool{
 // handler". Everything downstream (naming, body lookup, inspection) is
 // unchanged and therefore fixed for every adapter at once.
 func HandlerExpr(expr ast.Expr) ast.Expr {
+	return HandlerExprSpread(expr, false)
+}
+
+// HandlerExprSpread is HandlerExpr told whether the registration spread the
+// argument: r.POST("/signup", chain(guards, h.SignUp)...).
+//
+// The spread is a type guarantee, not a guess. Go only accepts `f(x)...` in a
+// variadic position when x is a slice of the parameter's element type, so a
+// spread call in a route registration returns []gin.HandlerFunc whatever it is
+// named — it builds a handler chain, and the handler is its last argument,
+// exactly as it is in append. Without a spread the old rule stands: only the
+// known slice builders are stepped into.
+func HandlerExprSpread(expr ast.Expr, spread bool) ast.Expr {
 	for i := 0; i < handlerUnwrapDepth; i++ {
 		switch t := expr.(type) {
 		case *ast.ParenExpr:
@@ -233,6 +246,7 @@ func HandlerExpr(expr ast.Expr) ast.Expr {
 			if t.Elt == nil {
 				return expr
 			}
+			spread = true
 			expr = t.Elt
 		case *ast.CompositeLit:
 			// []gin.HandlerFunc{mw, h.Create}: the handler is last, as it is
@@ -240,17 +254,68 @@ func HandlerExpr(expr ast.Expr) ast.Expr {
 			if len(t.Elts) == 0 {
 				return expr
 			}
+			// The spread applied to the literal, not to whatever its last
+			// element turns out to be.
+			spread = false
 			expr = t.Elts[len(t.Elts)-1]
 		case *ast.CallExpr:
-			if len(t.Args) == 0 || !sliceBuilders[calleeName(t.Fun)] {
+			if len(t.Args) == 0 || !(spread || sliceBuilders[calleeName(t.Fun)]) {
 				return expr
 			}
+			spread = false
 			expr = t.Args[len(t.Args)-1]
 		default:
 			return expr
 		}
 	}
 	return expr
+}
+
+// SpreadArg marks a registration's handler argument as spread, so everything
+// downstream — naming, declaration lookup, inspection — sees the fact without
+// a spread-aware variant of each of those functions.
+//
+// It is the argument wearing the `...` the registration wrote, which is where
+// the AST would put it had it been written as a node. call is the registration;
+// a nil or unspread call returns the argument untouched.
+func SpreadArg(arg ast.Expr, call *ast.CallExpr) ast.Expr {
+	if arg == nil || call == nil || !call.Ellipsis.IsValid() {
+		return arg
+	}
+	// The position is the argument's own: a synthetic node with no position
+	// would break the file and enclosing-function lookups that resolve it.
+	return &ast.Ellipsis{Ellipsis: arg.Pos(), Elt: arg}
+}
+
+// LooksLikeHandler reports whether a declaration is a request handler rather
+// than something that merely produces one: it either takes a request context
+// (gin.Context, echo.Context, fiber.Ctx, http.ResponseWriter) or returns a
+// handler value (gin.HandlerFunc, http.Handler, and the slices of those a chain
+// helper builds).
+//
+// It reads the declaration's own signature, not the types behind it, because a
+// scanner that type-checks the whole program is a different tool. That is
+// enough to tell a handler from a helper, which is all any caller needs.
+func LooksLikeHandler(fd *ast.FuncDecl) bool {
+	if fd == nil || fd.Type == nil {
+		return false
+	}
+	if fd.Type.Params != nil {
+		for _, p := range fd.Type.Params.List {
+			switch n := TypeName(p.Type).Name; n {
+			case "Context", "Ctx", "ResponseWriter":
+				return true
+			}
+		}
+	}
+	if fd.Type.Results != nil {
+		for _, r := range fd.Type.Results.List {
+			if strings.Contains(TypeName(r.Type).Name, "Handler") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // calleeName is the bare name a call names, for both f(...) and pkg.f(...).

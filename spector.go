@@ -20,8 +20,8 @@ import (
 
 	"github.com/bakhod1r/spector/internal/coverage"
 	"github.com/bakhod1r/spector/internal/export"
+	"github.com/bakhod1r/spector/internal/synthx"
 	"github.com/bakhod1r/spector/internal/testgen"
-	"github.com/bakhod1r/synth"
 	"github.com/gorilla/websocket"
 	"gopkg.in/yaml.v3"
 
@@ -1288,17 +1288,7 @@ func Handler(cfg Config) http.Handler {
 				http.Error(w, "method and path are required", http.StatusBadRequest)
 				return
 			}
-			specBytes, merr := json.Marshal(doc)
-			if merr != nil {
-				writeJSON(w, map[string]string{"error": merr.Error()})
-				return
-			}
-			api, aerr := synth.OpenAPIBytes(specBytes)
-			if aerr != nil {
-				writeJSON(w, map[string]string{"error": aerr.Error()})
-				return
-			}
-			body, perr := api.PayloadJSON(method, path)
+			body, perr := synthx.PayloadJSON(doc, method, path)
 			if perr != nil {
 				w.WriteHeader(http.StatusUnprocessableEntity)
 				writeJSON(w, map[string]string{"error": perr.Error()})
