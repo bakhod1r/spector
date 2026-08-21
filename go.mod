@@ -19,7 +19,7 @@ require (
 	github.com/mark3labs/mcp-go v0.56.0
 	github.com/vektah/gqlparser/v2 v2.5.36
 	google.golang.org/grpc v1.82.1
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.56.0
 )
