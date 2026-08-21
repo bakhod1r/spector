@@ -4,8 +4,8 @@ github.com/bakhod1r/devicex v0.2.1 h1:yBn/wKBVz88AekX8sduShG0nuZ6Rpi/XAUv6Uk2jGE
 github.com/bakhod1r/devicex v0.2.1/go.mod h1:PJeMTr55ThTCaExQW+uaEYSE0k8/ZWhBvdKGrnPkT8w=
 github.com/bakhod1r/emailx v0.4.0 h1:S3VV47b8SFsT/u1SXrVTGyP6k2rv21UTPcjSUG1wW6E=
 github.com/bakhod1r/emailx v0.4.0/go.mod h1:lPK7Gfy0x+O+3UC/tPY0Vatf8tC7VEnpB1gZuren9S8=
-github.com/bakhod1r/oneenv v1.1.0 h1:FVhlmEfnW70jKwIhvDdJVYkomwwkkrFgZpvhGhAG3ac=
-github.com/bakhod1r/oneenv v1.1.0/go.mod h1:Aq5r9/qRrRjmpS6ZM/iy4NluN4feID+XuEgMulxNi8o=
+github.com/bakhod1r/oneenv v1.10.2 h1:8iMsj1ggMt5dqQDppq7C2PWMrhuNncUuwI/fe8EHZto=
+github.com/bakhod1r/oneenv v1.10.2/go.mod h1:Aq5r9/qRrRjmpS6ZM/iy4NluN4feID+XuEgMulxNi8o=
 github.com/bakhod1r/phonex v0.1.0 h1:VblnmDNE9Yntb3/Zfp/+bYEMD9LJLdDZGfp6GG170gc=
 github.com/bakhod1r/phonex v0.1.0/go.mod h1:MZHLHpIV3QIy/m/7jL20sFWlJXazxASypbPHJuReBXI=
 github.com/bakhod1r/synth v1.7.0 h1:GmPKghKU/DtWnUzYQAD4+0u/JmsQ5/9aEMbGNEbeMOw=
