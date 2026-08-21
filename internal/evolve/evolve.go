@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // Severity ranks a change by its effect on an existing client.

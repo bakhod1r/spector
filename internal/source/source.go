@@ -1,10 +1,10 @@
 // Package source serves the handler code behind an operation.
 //
-// Specter reads the AST, so it knows the file and line every operation came
+// Spector reads the AST, so it knows the file and line every operation came
 // from. Showing that code in the console is the payoff: the documentation and
 // the implementation cannot drift, because one is read from the other.
 //
-// Serving files is also the one place in Specter that touches the filesystem on
+// Serving files is also the one place in Spector that touches the filesystem on
 // behalf of a request, so the rules here are deliberately narrow: only .go
 // files, only inside the scanned directory, only a window of lines.
 package source

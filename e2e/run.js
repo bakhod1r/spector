@@ -55,9 +55,13 @@ function mqttReachable(wsUrl) {
 (async () => {
   // Build first: `go run` would otherwise interleave compiler output with the
   // server's, and a compile error would look like a startup timeout.
+  //
+  // -tags grpclive: live gRPC calling is behind that tag (internal/grpcx), and
+  // without it the example serves an empty grpc.json — the gRPC suite would be
+  // testing a console that legitimately has nothing to show.
   console.log('building the example server…');
   const bin = path.join(REPO, 'e2e', '.shop-server');
-  const build = spawnSync('go', ['build', '-o', bin, './examples/shop'], {
+  const build = spawnSync('go', ['build', '-tags', 'grpclive', '-o', bin, './examples/shop'], {
     cwd: REPO, stdio: 'inherit',
   });
   if (build.status !== 0) {
@@ -107,7 +111,7 @@ function mqttReachable(wsUrl) {
 
     // examples/shop is deliberately in-memory, so it has no dependencies to
     // draw. examples/deps is the fixture with real ones, and it needs its own
-    // instance because Specter scans the directory it is started in.
+    // instance because Spector scans the directory it is started in.
     const depsBin = path.join(REPO, 'e2e', '.deps-server');
     const depsBuild = spawnSync('go', ['build', '-o', depsBin, './examples/deps'], {
       cwd: REPO, stdio: 'inherit',
@@ -120,7 +124,7 @@ function mqttReachable(wsUrl) {
     // The gate changes how every request is answered, so it needs an instance
     // of its own.
     const KEY = 'e2e-access-key';
-    const gated = await start('the gated server', { SPECTER_KEY: KEY },
+    const gated = await start('the gated server', { SPECTOR_KEY: KEY },
       `/docs/openapi.json?key=${KEY}`);
     results.push(await require('./accesskey.spec')(gated.base, KEY));
 

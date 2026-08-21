@@ -5,7 +5,7 @@ import (
 	"go/token"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // A generated .pb.go enum surfaces its symbolic names, not the raw int32, and

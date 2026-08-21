@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/bakhod1r/spector"
+	"github.com/bakhod1r/spector/mount"
 	"github.com/gin-gonic/gin"
-	"github.com/user/specter"
-	"github.com/user/specter/mount"
 )
 
 type Money struct {
@@ -623,7 +623,7 @@ func deleteOrder(c *gin.Context) {
 }
 
 // listCarts returns every cart.
-// specter:tags carts
+// spector:tags carts
 func listCarts(c *gin.Context) {
 	q := c.Query("q")
 	status := c.DefaultQuery("status", "")
@@ -640,8 +640,8 @@ func getCart(c *gin.Context) {
 }
 
 // createCart opens a new cart.
-// specter:tags carts,write
-// specter:operationId openCart
+// spector:tags carts,write
+// spector:operationId openCart
 func createCart(c *gin.Context) {
 	var req CreateCartReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1417,23 +1417,23 @@ func router() *gin.Engine {
 		r.POST("/graphql", graphqlHandler(schema))
 	}
 
-	mount.Gin(r, specter.Config{
+	mount.Gin(r, spector.Config{
 		Dir:        ".",
 		ProtoDir:   "proto",
 		GraphqlDir: "graphql",
 		Title:      "Shop API",
 		Version:    "2.0.0",
-		// Unset by default so the example stays easy to open. Set SPECTER_KEY
+		// Unset by default so the example stays easy to open. Set SPECTOR_KEY
 		// to see the gate: /docs/ then 404s until you pass ?key=<value>.
 		// Both default when unset: the console lives at /docs and is open.
 		BasePath:  cfg.BasePath,
 		AccessKey: cfg.AccessKey,
 
 		// Neither can be read from source, so they are declared here.
-		Servers: []specter.Server{
+		Servers: []spector.Server{
 			{URL: "http://localhost:8080", Description: "local"},
 		},
-		Security: map[string]specter.SecurityScheme{
+		Security: map[string]spector.SecurityScheme{
 			"bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
 		},
 	})

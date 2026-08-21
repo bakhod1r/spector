@@ -3,13 +3,13 @@ package mount
 import (
 	"net/http"
 
+	"github.com/bakhod1r/spector"
 	"github.com/labstack/echo/v4"
-	"github.com/user/specter"
 )
 
 // Echo registers the console on an echo router under cfg.BasePath
 // (default "/docs").
-func Echo(e *echo.Echo, cfg specter.Config) {
+func Echo(e *echo.Echo, cfg spector.Config) {
 	base, h := prepare(cfg)
 
 	e.GET(base, func(c echo.Context) error {

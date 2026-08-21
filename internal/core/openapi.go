@@ -34,7 +34,7 @@ type Document struct {
 }
 
 // Server is one base URL the API is reachable at. The yaml tags let a YAML
-// config file (specter.yaml) use the same keys as JSON; they never affect the
+// config file (spector.yaml) use the same keys as JSON; they never affect the
 // document's JSON output.
 type Server struct {
 	URL         string `json:"url" yaml:"url"`
@@ -78,21 +78,21 @@ type Operation struct {
 	// Source is where the handler is defined. "x-" marks it as a vendor
 	// extension, which the OpenAPI spec permits anywhere and every validator
 	// and consumer ignores, so carrying it costs compatibility nothing.
-	Source *Source `json:"x-specter-source,omitempty"`
+	Source *Source `json:"x-spector-source,omitempty"`
 
 	// Calls is what the handler reaches outside the process. Also a vendor
 	// extension, and also inferred, so each entry carries its confidence.
-	Calls []Call `json:"x-specter-calls,omitempty"`
+	Calls []Call `json:"x-spector-calls,omitempty"`
 
 	// Realtime marks an operation that upgrades or streams rather than
 	// returning a body. Without it the document describes these endpoints
 	// wrongly, as ordinary GETs that return nothing.
-	Realtime string `json:"x-specter-realtime,omitempty"`
+	Realtime string `json:"x-spector-realtime,omitempty"`
 
 	// Middleware is what runs in front of the handler. Authentication is the
 	// reason this is here: it never appears in the handler body, so without it
 	// a protected endpoint documents as public.
-	Middleware []Middleware `json:"x-specter-middleware,omitempty"`
+	Middleware []Middleware `json:"x-spector-middleware,omitempty"`
 
 	// Security lists the schemes a caller must satisfy, inferred from
 	// authentication middleware. Entries here are requirements, not
@@ -100,21 +100,21 @@ type Operation struct {
 	Security []SecurityRequirement `json:"security,omitempty"`
 
 	// Advice is where this operation diverges from an HTTP or JSON standard.
-	// Recommendations only: Specter documents what the code does and never
+	// Recommendations only: Spector documents what the code does and never
 	// reshapes it to look better than it is.
-	Advice []Advisory `json:"x-specter-advice,omitempty"`
+	Advice []Advisory `json:"x-spector-advice,omitempty"`
 
 	// Observed marks an operation that came from observed traffic, folded in by
 	// MergeObserved, rather than from source. "x-" makes it a vendor extension
 	// consumers ignore; omitempty keeps every source-only document unchanged.
-	Observed bool `json:"x-specter-observed,omitempty"`
+	Observed bool `json:"x-spector-observed,omitempty"`
 
 	// Manual marks an operation declared by hand in the config file's routes:
 	// list rather than found in source. It is how a genuinely dynamic route —
 	// one the AST cannot resolve, which otherwise only emits a diagnostic —
 	// gets into the document, and it stays labelled so a reader can tell an
 	// asserted route from a scanned one.
-	Manual bool `json:"x-specter-manual,omitempty"`
+	Manual bool `json:"x-spector-manual,omitempty"`
 }
 
 // OperationOption configures an Operation built with NewOperation.
@@ -186,8 +186,16 @@ func NewOperation(id string, opts ...OperationOption) *Operation {
 	return op
 }
 
-// SetResponse registers a response under an HTTP status code.
+// SetResponse registers a response under an HTTP status code. Status 0 means
+// the scanner saw a response but could not resolve its code — the handler
+// wrote it through a variable — and OpenAPI has a key for exactly that:
+// "default". Filing it under 200 instead would put a number in the document
+// that the source never contained.
 func (o *Operation) SetResponse(status int, r *Response) {
+	if status <= 0 {
+		o.Responses["default"] = r
+		return
+	}
 	o.Responses[strconv.Itoa(status)] = r
 }
 
@@ -267,9 +275,15 @@ type Schema struct {
 	// Description and Example are pure documentation, read from `doc:` and
 	// `example:` tags. They constrain nothing, which is exactly why they are
 	// worth reading: there is no way for them to make a document wrong.
-	Description string    `json:"description,omitempty"`
-	Example     any       `json:"example,omitempty"`
-	AllOf       []*Schema `json:"allOf,omitempty"`
+	Description string `json:"description,omitempty"`
+	Example     any    `json:"example,omitempty"`
+
+	// Default is what the server uses when the caller omits the value, read
+	// from c.DefaultQuery("limit", "20"). It is documentation of an existing
+	// behaviour, not a constraint: the endpoint already behaves this way and
+	// the client had no way to find out.
+	Default any       `json:"default,omitempty"`
+	AllOf   []*Schema `json:"allOf,omitempty"`
 
 	// Constraints read from validation tags. Every one is omitempty, so a
 	// document generated from code without tags is byte-identical to before.
@@ -328,6 +342,9 @@ type Route struct {
 	ResponseType  string // Go type name returned, "" if none
 	ResponseArray bool   // response is []ResponseType
 	QueryParams   []string
+	// QueryDefaults holds the fallback value of the query parameters that have
+	// one, keyed by name; parameters without a default are absent.
+	QueryDefaults map[string]string
 	HeaderParams  []string
 	Summary       string          // first line of the handler doc comment
 	Description   string          // remaining lines of the handler doc comment
@@ -335,9 +352,9 @@ type Route struct {
 	Source        *Source         // where the handler is defined; nil when unknown
 	Calls         []Call          // what the handler reaches outside the process
 	Realtime      string          // "websocket" | "sse" | "" for an ordinary handler
-	Tags          []string        // from a specter:tags directive; grouping the AST cannot infer
-	Deprecated    bool            // from a specter:deprecated directive
-	OperationID   string          // from a specter:operationId directive; overrides the handler name
+	Tags          []string        // from a spector:tags directive; grouping the AST cannot infer
+	Deprecated    bool            // from a spector:deprecated directive
+	OperationID   string          // from a spector:operationId directive; overrides the handler name
 	Middleware    []Middleware    // what runs in front of the handler
 }
 
@@ -393,7 +410,7 @@ type Middleware struct {
 	Statuses []int    `json:"statuses,omitempty"`
 }
 
-// Source is a position in the scanned code. Specter reads the AST, so it knows
+// Source is a position in the scanned code. Spector reads the AST, so it knows
 // exactly where every operation comes from — a generator driven by annotations
 // cannot know this, and a hand-written spec loses it immediately.
 //

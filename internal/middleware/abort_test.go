@@ -5,7 +5,7 @@ import (
 	"go/token"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // chainFor parses src and reports what the index makes of the middleware

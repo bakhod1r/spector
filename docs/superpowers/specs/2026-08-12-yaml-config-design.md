@@ -3,14 +3,14 @@
 ## Problem
 
 A project's non-derivable settings (title, version, adapter, servers, security,
-basePath, accessKey, production) are read from a `specter.json` file, auto-loaded
+basePath, accessKey, production) are read from a `spector.json` file, auto-loaded
 from the scanned directory or named with `-config`. The loader is JSON-only.
 Teams that keep their other tooling config in YAML must maintain a JSON island
-just for Specter.
+just for Spector.
 
 ## Goal
 
-Accept the same configuration in YAML (`specter.yaml` / `specter.yml`) alongside
+Accept the same configuration in YAML (`spector.yaml` / `spector.yml`) alongside
 JSON, chosen by file extension. Fully backward compatible: JSON behaviour is
 unchanged, and a project with no config still needs none.
 
@@ -25,9 +25,9 @@ unchanged, and a project with no config still needs none.
 ### Auto-lookup order
 
 With no `-config`, `applyConfigFile` looks in the scanned directory for, in
-order: `specter.json`, `specter.yaml`, `specter.yml` — the first that exists is
+order: `spector.json`, `spector.yaml`, `spector.yml` — the first that exists is
 used. JSON is tried first so today's behaviour is byte-for-byte unchanged; YAML
-is a fallback, never a silent override of an existing `specter.json`. A missing
+is a fallback, never a silent override of an existing `spector.json`. A missing
 config is still not an error.
 
 ### Explicit `-config <path>`
@@ -61,7 +61,7 @@ unmarshal call is routed by extension.
 
 ### Servers / security in YAML
 
-`specter.Server` and `specter.SecurityScheme` (core types) carry JSON tags.
+`spector.Server` and `spector.SecurityScheme` (core types) carry JSON tags.
 yaml.v3 decodes into them by matching the lowercased field name when no `yaml:`
 tag is present, which does not match camelCase JSON keys like `bearerFormat`.
 To keep both formats identical, the fields the config actually exposes are
@@ -86,10 +86,10 @@ flag-precedence logic → `cfg`.
 
 ## Testing (TDD)
 
-- `specter.yaml` auto-loaded from `-dir` applies its settings (mirror
+- `spector.yaml` auto-loaded from `-dir` applies its settings (mirror
   `TestConfigFileSetsAdapter`/`TestConfigFileFillsTheDocument` with a YAML body).
 - `-config x.yaml` applies YAML; `-config x.yml` too.
-- A `specter.json` present alongside a `specter.yaml` uses the JSON (documented
+- A `spector.json` present alongside a `spector.yaml` uses the JSON (documented
   precedence); confirming YAML does not override an existing JSON.
 - Malformed YAML exits non-zero and names the file.
 - Existing JSON tests stay green (regression: JSON path untouched).
@@ -102,4 +102,4 @@ flag-precedence logic → `cfg`.
 - Manual route supplements or any new config field.
 - Changing JSON behaviour, precedence of flags over file, or the default
   filename set beyond adding the two YAML names.
-- Writing config (Specter reads config, never writes it).
+- Writing config (Spector reads config, never writes it).

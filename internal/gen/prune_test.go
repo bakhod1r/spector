@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // buildWith runs Build over a single route whose response is the named schema,

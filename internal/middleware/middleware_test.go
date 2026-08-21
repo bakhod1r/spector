@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	ginadapter "github.com/user/specter/internal/adapter/gin"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/middleware"
+	ginadapter "github.com/bakhod1r/spector/internal/adapter/gin"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/middleware"
 )
 
 // scan runs the real gin adapter over the fixture, so these tests exercise the

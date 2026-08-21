@@ -6,7 +6,7 @@ import (
 	"go/token"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // parseExpr parses a single Go expression.
@@ -340,6 +340,37 @@ func TestAddParamSkipsDuplicatesAndDynamicNames(t *testing.T) {
 
 // ---- InspectHandler ----
 
+// The explicit-binding forms carry the payload in the first argument and name
+// the binder in the second. Reading only the one-argument spellings left every
+// handler written this way with no documented request body.
+func TestInspectHandlerExplicitBinders(t *testing.T) {
+	for _, src := range []string{
+		"var req LoginReq\nc.ShouldBindWith(&req, binding.JSON)",
+		"var req LoginReq\nc.BindWith(&req, binding.JSON)",
+		"var req LoginReq\nc.MustBindWith(&req, binding.JSON)",
+		"var req LoginReq\nc.ShouldBindBodyWith(&req, binding.JSON)",
+		"var req LoginReq\nc.ShouldBindBodyWithJSON(&req)",
+	} {
+		h := InspectHandler(parseBody(t, src))
+		if h.Request.Name != "LoginReq" {
+			t.Errorf("%s: request = %+v, want LoginReq", src, h.Request)
+		}
+	}
+}
+
+// chi's render.Bind takes the request first and the payload last. Reading the
+// first argument would document *http.Request as the body of every chi handler
+// written this way.
+func TestInspectHandlerRenderBind(t *testing.T) {
+	h := InspectHandler(parseBody(t, `
+		data := &LoginReq{}
+		render.Bind(r, data)
+	`))
+	if h.Request.Name != "LoginReq" {
+		t.Errorf("request = %+v, want LoginReq", h.Request)
+	}
+}
+
 func TestInspectHandlerGinConventions(t *testing.T) {
 	h := InspectHandler(parseBody(t, `
 		var req CreateUserReq
@@ -442,10 +473,17 @@ func TestInspectHandlerBareJSONDefaultsTo200(t *testing.T) {
 	}
 }
 
-func TestInspectHandlerUnresolvableStatusFallsBackTo200(t *testing.T) {
+// A status the source states through a variable is unknown, and it is reported
+// as unknown (status 0, rendered as OpenAPI's "default"). Calling it 200 would
+// document a handler that answers 201 as answering 200 — a client believes
+// that, so it is worse than an unspecified code.
+func TestInspectHandlerUnresolvableStatusIsUnknown(t *testing.T) {
 	h := InspectHandler(parseBody(t, `c.JSON(code, User{})`))
-	if len(h.Responses) != 1 || h.Responses[0].Status != 200 {
-		t.Errorf("responses = %+v, want 200 when the code is dynamic", h.Responses)
+	if len(h.Responses) != 1 || h.Responses[0].Status != 0 {
+		t.Errorf("responses = %+v, want a single unknown-status response", h.Responses)
+	}
+	if h.Responses[0].Type.Name != "User" {
+		t.Errorf("type = %+v, want User", h.Responses[0].Type)
 	}
 }
 

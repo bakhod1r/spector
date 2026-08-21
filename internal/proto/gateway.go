@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bakhod1r/spector/internal/core"
 	"github.com/emicklei/proto"
-	"github.com/user/specter/internal/core"
 )
 
 // httpOption is the annotation gRPC-Gateway (and Google's own API tooling)
@@ -44,7 +44,9 @@ func ScanGateway(dir string) (*core.Document, error) {
 			return nil, err
 		}
 		def, perr := proto.NewParser(f).Parse()
-		f.Close()
+		// Closing a file opened for reading reports nothing a caller can act
+		// on: the parse above already consumed it, or already failed.
+		_ = f.Close()
 		if perr != nil {
 			return nil, perr
 		}

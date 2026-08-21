@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // composedDoc mirrors what the scanner emits for an embedded struct: the
@@ -138,4 +138,33 @@ func section(src, marker string) string {
 		return rest[:j+3]
 	}
 	return rest
+}
+
+// A response the scanner filed under "default" carries a real body. Ignoring it
+// hands the caller a client method that returns nothing for an endpoint that
+// returns something.
+func TestSuccessSchemaFallsBackToDefault(t *testing.T) {
+	op := core.NewOperation("op")
+	op.SetResponse(0, core.NewResponse("Response",
+		core.WithJSONBody(&core.Schema{Ref: "#/components/schemas/User"})))
+
+	if s := successSchema(op); s == nil || s.Ref == "" {
+		t.Errorf("schema = %v, want the default response's body", s)
+	}
+
+	// A 2xx still wins when there is one.
+	op.SetResponse(200, core.NewResponse("OK",
+		core.WithJSONBody(&core.Schema{Type: "string"})))
+	if s := successSchema(op); s == nil || s.Type != "string" {
+		t.Errorf("schema = %v, want the 2xx body", s)
+	}
+}
+
+// An operation with no JSON body anywhere has no schema to return.
+func TestSuccessSchemaWithoutBodies(t *testing.T) {
+	op := core.NewOperation("op")
+	op.SetResponse(204, core.NewResponse("No Content"))
+	if s := successSchema(op); s != nil {
+		t.Errorf("schema = %v, want nil", s)
+	}
 }

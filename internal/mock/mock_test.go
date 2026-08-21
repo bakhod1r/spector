@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func ptrF(f float64) *float64 { return &f }

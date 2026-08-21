@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bakhod1r/spector/internal/core"
 	"github.com/emicklei/proto"
-	"github.com/user/specter/internal/core"
 )
 
 func Scan(dir string) (*core.GrpcDoc, error) {
@@ -23,7 +23,7 @@ func Scan(dir string) (*core.GrpcDoc, error) {
 			return nil, err
 		}
 		def, err := proto.NewParser(f).Parse()
-		f.Close()
+		_ = f.Close()
 		if err != nil {
 			return nil, err
 		}

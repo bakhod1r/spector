@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // StringConsts indexes package-level string const and var declarations by name.

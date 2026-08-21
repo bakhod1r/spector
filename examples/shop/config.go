@@ -17,8 +17,8 @@ type Config struct {
 	Port      int    `env:"PORT" default:"8080" desc:"HTTP port for the REST API and console"`
 	GRPCAddr  string `env:"GRPC_ADDR" default:":50051" desc:"address the gRPC server listens on"`
 	DB        string `env:"SHOP_DB" default:"shop.db" desc:"SQLite database path (:memory: for ephemeral)"`
-	BasePath  string `env:"SPECTER_BASE_PATH" desc:"where the console mounts; empty means /docs"`
-	AccessKey string `env:"SPECTER_KEY,secret" desc:"gate the console behind ?key=; empty leaves it open"`
+	BasePath  string `env:"SPECTOR_BASE_PATH" desc:"where the console mounts; empty means /docs"`
+	AccessKey string `env:"SPECTOR_KEY,secret" desc:"gate the console behind ?key=; empty leaves it open"`
 }
 
 // loadConfig reads .env (then .env.local, which wins) and the process

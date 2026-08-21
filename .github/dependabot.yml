@@ -1,0 +1,20 @@
+# Dependabot keeps the two ecosystems this repo actually depends on current:
+# the Go modules the tool builds on, and the actions the workflows pin.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # The browser suite has its own manifest.
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly

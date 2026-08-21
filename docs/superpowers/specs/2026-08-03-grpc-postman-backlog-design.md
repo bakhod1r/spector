@@ -1,4 +1,4 @@
-# Specter — gRPC + Postman backlog: qolgan cheklovlarni yopish
+# Spector — gRPC + Postman backlog: qolgan cheklovlarni yopish
 
 Sana: 2026-08-03
 
@@ -172,7 +172,7 @@ Yuqoridagi 4 kengaytma yetarli.
 **Harajat: o'rta.** Hozir faqat o'z format.
 
 Current:
-- `internal/ui/ui.html:303` `EXPORT_FORMAT="specter.collection"`.
+- `internal/ui/ui.html:303` `EXPORT_FORMAT="spector.collection"`.
 - `:319` `parseImport()` — format/version validatsiya (`:324-326`).
 - `:339` `mergeStore()`, `:361` `exportStore()`, `:371` `importStore()`
   (replace/merge confirm dialog `:378-382`).

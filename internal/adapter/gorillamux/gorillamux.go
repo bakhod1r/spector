@@ -11,11 +11,11 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/user/specter/internal/adapter/astutil"
-	"github.com/user/specter/internal/calls"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/middleware"
-	"github.com/user/specter/internal/realtime"
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
+	"github.com/bakhod1r/spector/internal/calls"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/middleware"
+	"github.com/bakhod1r/spector/internal/realtime"
 )
 
 var methods = map[string]string{
@@ -34,7 +34,7 @@ func (a *Adapter) Name() string { return "gorillamux" }
 
 func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -42,14 +42,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
 	mw := middleware.NewIndex()
-	var files []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			files = append(files, file)
-			scanner.Collect(file)
-			index.Collect(file)
-			mw.Collect(file)
-		}
+	for _, file := range files {
+		scanner.Collect(file)
+		index.Collect(file)
+		mw.Collect(file)
 	}
 
 	handlers := map[string]*ast.FuncDecl{}
@@ -62,9 +58,14 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
+	// scope resolves handler names against the package they were written in,
+	// reads handlers through the project's helper packages, and names the
+	// payload inside its response envelope — the parts of a scan that have
+	// nothing to do with which framework is in use.
+	scope := astutil.NewScope(fset, files)
 	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
-	subrouters := collectSubrouters(files, res, loc, &diags)
+	subrouters := astutil.NewGroupResolverWith(scope, files, res, &diags, loc, astutil.SubrouterCall)
 
 	// A HandleFunc that is the receiver of a Methods chain is reported by the
 	// chain, not on its own — otherwise the same route appears twice, once per
@@ -98,7 +99,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 		recvName := ""
 		if recv, ok := sel.X.(*ast.Ident); ok {
 			recvName = recv.Name
-			prefix = resolvePrefix(recv.Name, subrouters)
+			prefix = subrouters.Prefix(recv.Name, scope.EnclosingFunc(reg.Pos()))
 		}
 
 		if len(declared) == 0 {
@@ -114,12 +115,12 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 				HandlerName: name,
 				Middleware:  mw.For(recvName, reg.Pos(), nil),
 			}
-			fd := handlers[name]
+			fd := scope.Handler(reg.Args[1], handlers)
 			route.Source = loc.Handler(fd, reg)
 			if fd != nil {
 				route.Calls = calls.Analyze(fd, index)
 				route.Realtime = realtime.Detect(fd, handlers)
-				astutil.InspectHandler(fd.Body).Apply(&route)
+				scope.Inspect(fd, scanner.Schemas).Apply(&route)
 				route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
 				d := astutil.ParseDirectives(fd.Doc)
 				route.Tags, route.Deprecated, route.OperationID = d.Tags, d.Deprecated, d.OperationID
@@ -176,73 +177,6 @@ func methodsChain(n ast.Node) (*ast.CallExpr, []string) {
 		}
 	}
 	return inner, out
-}
-
-type subDef struct {
-	recv   string
-	prefix string
-}
-
-// collectSubrouters records `s := r.PathPrefix("/api").Subrouter()` so routes
-// registered on s resolve to the full path. Subrouters nest, so each one
-// remembers its receiver.
-func collectSubrouters(files []*ast.File, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) map[string]subDef {
-	subs := map[string]subDef{}
-	for _, file := range files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-				return true
-			}
-			lhs, ok := as.Lhs[0].(*ast.Ident)
-			if !ok {
-				return true
-			}
-			call, ok := as.Rhs[0].(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "Subrouter" {
-				return true
-			}
-			inner, ok := sel.X.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			innerSel, ok := inner.Fun.(*ast.SelectorExpr)
-			if !ok || innerSel.Sel.Name != "PathPrefix" || len(inner.Args) < 1 {
-				return true
-			}
-			prefix, ok := res.Resolve(inner.Args[0])
-			if !ok {
-				diags.Add(loc.Position(inner.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(inner.Args[0]))
-				return true
-			}
-			recv := ""
-			if id, ok := innerSel.X.(*ast.Ident); ok {
-				recv = id.Name
-			}
-			subs[lhs.Name] = subDef{recv: recv, prefix: prefix}
-			return true
-		})
-	}
-	return subs
-}
-
-func resolvePrefix(name string, subs map[string]subDef) string {
-	seen := map[string]bool{}
-	prefix := ""
-	for {
-		s, ok := subs[name]
-		if !ok || seen[name] {
-			break // a subrouter assigned from itself would otherwise loop
-		}
-		seen[name] = true
-		prefix = s.prefix + prefix
-		name = s.recv
-	}
-	return prefix
 }
 
 // normalizePath strips the regex out of `{id:[0-9]+}` — OpenAPI wants `{id}`.

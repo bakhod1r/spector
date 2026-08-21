@@ -1,3 +1,5 @@
+//go:build grpclive
+
 package grpcx
 
 import (
@@ -11,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/user/specter/examples/shop/shoppb"
+	"github.com/bakhod1r/spector/examples/shop/shoppb"
 )
 
 // A target that fails URL parsing is rejected by the client constructor itself.

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bakhod1r/spector"
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gorilla/mux"
 	"github.com/labstack/echo/v4"
-	"github.com/user/specter"
 )
 
 // serveFunc issues one request against a mounted router and reports what came
@@ -24,7 +24,7 @@ type serveFunc func(t *testing.T, method, path string) (status int, header http.
 // are interchangeable from the caller's side: same paths, same redirect, same
 // content — a framework whose helper drifts fails here rather than in a user's
 // browser.
-var mounters = map[string]func(specter.Config) serveFunc{
+var mounters = map[string]func(spector.Config) serveFunc{
 	"gin":        ginServer,
 	"echo":       echoServer,
 	"chi":        chiServer,
@@ -42,32 +42,32 @@ func fromHandler(h http.Handler) serveFunc {
 	}
 }
 
-func ginServer(cfg specter.Config) serveFunc {
+func ginServer(cfg spector.Config) serveFunc {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	Gin(r, cfg)
 	return fromHandler(r)
 }
 
-func echoServer(cfg specter.Config) serveFunc {
+func echoServer(cfg spector.Config) serveFunc {
 	e := echo.New()
 	Echo(e, cfg)
 	return fromHandler(e)
 }
 
-func chiServer(cfg specter.Config) serveFunc {
+func chiServer(cfg spector.Config) serveFunc {
 	r := chi.NewRouter()
 	Chi(r, cfg)
 	return fromHandler(r)
 }
 
-func gorillaMuxServer(cfg specter.Config) serveFunc {
+func gorillaMuxServer(cfg spector.Config) serveFunc {
 	r := mux.NewRouter()
 	GorillaMux(r, cfg)
 	return fromHandler(r)
 }
 
-func stdlibServer(cfg specter.Config) serveFunc {
+func stdlibServer(cfg spector.Config) serveFunc {
 	mux := http.NewServeMux()
 	Stdlib(mux, cfg)
 	return fromHandler(mux)
@@ -75,7 +75,7 @@ func stdlibServer(cfg specter.Config) serveFunc {
 
 // fiber runs on fasthttp, so it cannot be driven with httptest and uses its own
 // in-process Test entry point.
-func fiberServer(cfg specter.Config) serveFunc {
+func fiberServer(cfg spector.Config) serveFunc {
 	app := fiber.New()
 	Fiber(app, cfg)
 	return func(t *testing.T, method, path string) (int, http.Header, string) {
@@ -93,7 +93,7 @@ func fiberServer(cfg specter.Config) serveFunc {
 // forEach runs fn against every framework with the console mounted per cfg.
 // Dir defaults to the repository root; a test that needs real application
 // routes to exist sets it before calling.
-func forEach(t *testing.T, cfg specter.Config, fn func(t *testing.T, serve serveFunc)) {
+func forEach(t *testing.T, cfg spector.Config, fn func(t *testing.T, serve serveFunc)) {
 	t.Helper()
 	if cfg.Dir == "" {
 		cfg.Dir = ".."
@@ -107,7 +107,7 @@ func forEach(t *testing.T, cfg specter.Config, fn func(t *testing.T, serve serve
 // The bare mount point must redirect to the trailing-slash form, or the page's
 // relative fetches resolve one level too high.
 func TestRedirectsToTrailingSlash(t *testing.T) {
-	forEach(t, specter.Config{}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{}, func(t *testing.T, serve serveFunc) {
 		status, header, _ := serve(t, http.MethodGet, "/docs")
 		if status != http.StatusMovedPermanently {
 			t.Fatalf("status = %d, want 301", status)
@@ -122,13 +122,13 @@ func TestRedirectsToTrailingSlash(t *testing.T) {
 // /source legitimately 404s without one, so asking for a real file is the only
 // way to tell "not routed" apart from "nothing to show".
 var probes = map[string]string{
-	"/source": "?file=specter.go&line=1",
+	"/source": "?file=spector.go&line=1",
 }
 
 // Every endpoint the console fetches must be routed. One missing would surface
 // only as a broken pane in the browser.
 func TestEveryEndpointIsReachable(t *testing.T) {
-	forEach(t, specter.Config{}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{}, func(t *testing.T, serve serveFunc) {
 		for _, e := range endpoints {
 			status, _, _ := serve(t, e.method, "/docs"+e.path+probes[e.path])
 			if status == http.StatusNotFound {
@@ -139,7 +139,7 @@ func TestEveryEndpointIsReachable(t *testing.T) {
 }
 
 func TestServesTheConsoleAsHTML(t *testing.T) {
-	forEach(t, specter.Config{}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{}, func(t *testing.T, serve serveFunc) {
 		status, header, body := serve(t, http.MethodGet, "/docs/")
 		if status != http.StatusOK {
 			t.Fatalf("status = %d, want 200", status)
@@ -154,7 +154,7 @@ func TestServesTheConsoleAsHTML(t *testing.T) {
 }
 
 func TestServesTheSpec(t *testing.T) {
-	forEach(t, specter.Config{}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{}, func(t *testing.T, serve serveFunc) {
 		status, _, body := serve(t, http.MethodGet, "/docs/openapi.json")
 		if status != http.StatusOK {
 			t.Fatalf("status = %d, want 200", status)
@@ -170,7 +170,7 @@ func TestServesTheSpec(t *testing.T) {
 // The console follows the configured path rather than a hardcoded /docs, and
 // stops answering on the default once moved.
 func TestCustomBasePath(t *testing.T) {
-	forEach(t, specter.Config{BasePath: "/internal/api-docs"}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{BasePath: "/internal/api-docs"}, func(t *testing.T, serve serveFunc) {
 		for _, path := range []string{"/", "/openapi.json", "/grpc.json", "/graphql.json"} {
 			if status, _, _ := serve(t, http.MethodGet, "/internal/api-docs"+path); status != http.StatusOK {
 				t.Errorf("%s: status = %d, want 200", path, status)
@@ -183,7 +183,7 @@ func TestCustomBasePath(t *testing.T) {
 }
 
 func TestCustomBasePathRedirect(t *testing.T) {
-	forEach(t, specter.Config{BasePath: "/internal/api-docs"}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{BasePath: "/internal/api-docs"}, func(t *testing.T, serve serveFunc) {
 		status, header, _ := serve(t, http.MethodGet, "/internal/api-docs")
 		if status != http.StatusMovedPermanently {
 			t.Fatalf("status = %d, want 301", status)
@@ -196,7 +196,7 @@ func TestCustomBasePathRedirect(t *testing.T) {
 
 // A path written without a leading slash still mounts where the caller meant.
 func TestBasePathWithoutLeadingSlash(t *testing.T) {
-	forEach(t, specter.Config{BasePath: "console"}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{BasePath: "console"}, func(t *testing.T, serve serveFunc) {
 		if status, _, _ := serve(t, http.MethodGet, "/console/"); status != http.StatusOK {
 			t.Errorf("status = %d, want 200", status)
 		}
@@ -206,7 +206,7 @@ func TestBasePathWithoutLeadingSlash(t *testing.T) {
 // The handler routes on path suffixes, so a deep mount point must still have
 // its prefix stripped before the handler sees the request.
 func TestDeepBasePath(t *testing.T) {
-	forEach(t, specter.Config{BasePath: "/a/b/c/docs"}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{BasePath: "/a/b/c/docs"}, func(t *testing.T, serve serveFunc) {
 		status, _, body := serve(t, http.MethodGet, "/a/b/c/docs/openapi.json")
 		if status != http.StatusOK {
 			t.Fatalf("status = %d, want 200", status)
@@ -222,7 +222,7 @@ func TestDeepBasePath(t *testing.T) {
 // A key arriving in the query must survive the redirect. Dropping it would
 // bounce the first visit to a gated console into a 404 with no way back.
 func TestRedirectKeepsQuery(t *testing.T) {
-	forEach(t, specter.Config{AccessKey: "k"}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{AccessKey: "k"}, func(t *testing.T, serve serveFunc) {
 		status, header, _ := serve(t, http.MethodGet, "/docs?key=k")
 		if status != http.StatusMovedPermanently {
 			t.Fatalf("status = %d, want 301", status)
@@ -236,7 +236,7 @@ func TestRedirectKeepsQuery(t *testing.T) {
 // Without the key every mounted route answers 404, including the invoke proxy,
 // whatever the framework.
 func TestGatedWithoutKey(t *testing.T) {
-	forEach(t, specter.Config{AccessKey: "k"}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{AccessKey: "k"}, func(t *testing.T, serve serveFunc) {
 		for _, e := range endpoints {
 			if status, _, _ := serve(t, e.method, "/docs"+e.path); status != http.StatusNotFound {
 				t.Errorf("%s /docs%s: status = %d, want 404", e.method, e.path, status)
@@ -246,7 +246,7 @@ func TestGatedWithoutKey(t *testing.T) {
 }
 
 func TestGatedWithKey(t *testing.T) {
-	forEach(t, specter.Config{AccessKey: "k"}, func(t *testing.T, serve serveFunc) {
+	forEach(t, spector.Config{AccessKey: "k"}, func(t *testing.T, serve serveFunc) {
 		if status, _, _ := serve(t, http.MethodGet, "/docs/?key=k"); status != http.StatusOK {
 			t.Errorf("status = %d, want 200", status)
 		}

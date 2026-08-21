@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	ginadapter "github.com/user/specter/internal/adapter/gin"
-	"github.com/user/specter/internal/core"
+	ginadapter "github.com/bakhod1r/spector/internal/adapter/gin"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func fixture(t *testing.T) []Finding {

@@ -1,7 +1,7 @@
 // Package contract turns a document into artefacts that exercise the API it
 // describes.
 //
-// A generated document is a claim, and nothing in Specter until now could check
+// A generated document is a claim, and nothing in Spector until now could check
 // it. The console's Execute button answers one request at a time; it is not
 // something a repository keeps, a reviewer reads, or CI fails on. So a document
 // and the service it describes drift apart silently, which is the one failure
@@ -29,8 +29,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/mock"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/mock"
 )
 
 //go:embed templates/*.tmpl
@@ -367,13 +367,13 @@ func authOf(doc *core.Document) *auth {
 			// generated file says why.
 			return nil
 		}
-		return &auth{Header: s.Name, Variable: "apiKey", Env: "SPECTER_API_KEY"}
+		return &auth{Header: s.Name, Variable: "apiKey", Env: "SPECTOR_API_KEY"}
 	default:
 		prefix := "Bearer "
 		if s.Scheme == "basic" {
 			prefix = "Basic "
 		}
-		return &auth{Header: "Authorization", Prefix: prefix, Variable: "token", Env: "SPECTER_TOKEN"}
+		return &auth{Header: "Authorization", Prefix: prefix, Variable: "token", Env: "SPECTOR_TOKEN"}
 	}
 }
 

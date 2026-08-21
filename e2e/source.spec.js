@@ -25,11 +25,11 @@ module.exports = async function run(BASE) {
   for (const [p, methods] of Object.entries(spec.paths)) {
     for (const [m, op] of Object.entries(methods)) ops.push({ p, m, op });
   }
-  const withSource = ops.filter(o => o.op['x-specter-source']);
+  const withSource = ops.filter(o => o.op['x-spector-source']);
   check('every operation has a source', withSource.length === ops.length,
         `${withSource.length}/${ops.length}`);
-  check('paths are relative', withSource.every(o => !o.op['x-specter-source'].file.startsWith('/')));
-  check('lines are positive', withSource.every(o => o.op['x-specter-source'].line > 0));
+  check('paths are relative', withSource.every(o => !o.op['x-spector-source'].file.startsWith('/')));
+  check('lines are positive', withSource.every(o => o.op['x-spector-source'].line > 0));
 
   // ---- 2. The button exists and opens a snippet ----
   c.section('[2] View source');
@@ -63,7 +63,7 @@ module.exports = async function run(BASE) {
     };
   }, anchor);
 
-  const src = target.op['x-specter-source'];
+  const src = target.op['x-spector-source'];
   check('header names the file and line', shown.path === `${src.file}:${src.line}`, shown.path);
   check('one line is highlighted', shown.highlighted !== null);
   check('highlighted line declares the handler',

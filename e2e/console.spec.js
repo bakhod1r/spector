@@ -11,7 +11,7 @@ const { Checks } = require('./lib');
 module.exports = async function run(BASE) {
   const c = new Checks('console');
   const check = (n, ok, d) => c.check(n, ok, d);
-  const DL = fs.mkdtempSync(path.join(os.tmpdir(), 'specter-e2e-'));
+  const DL = fs.mkdtempSync(path.join(os.tmpdir(), 'spector-e2e-'));
   {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ acceptDownloads: true });
@@ -50,11 +50,11 @@ module.exports = async function run(BASE) {
   const file = path.join(DL, download.suggestedFilename());
   await download.saveAs(file);
   check('download fired', fs.existsSync(file));
-  check('filename', download.suggestedFilename() === 'specter-collection.json',
+  check('filename', download.suggestedFilename() === 'spector-collection.json',
         download.suggestedFilename());
 
   const exported = JSON.parse(fs.readFileSync(file, 'utf8'));
-  check('format marker', exported.format === 'specter.collection', exported.format);
+  check('format marker', exported.format === 'spector.collection', exported.format);
   check('version', exported.version === 1, String(exported.version));
   check('has environments', Array.isArray(exported.environments) && exported.environments.length > 0);
   check('has collections', Array.isArray(exported.collections));
@@ -74,7 +74,7 @@ module.exports = async function run(BASE) {
   await page.setInputFiles('#importFile', importFile);
   await page.waitForTimeout(600);
 
-  const store = await page.evaluate(() => JSON.parse(localStorage.getItem('specter.state') || '{}'));
+  const store = await page.evaluate(() => JSON.parse(localStorage.getItem('spector.state') || '{}'));
   const names = (store.collections?.[0]?.requests || []).map(r => r.name);
   check('imported request in store', names.includes('IMPORTED REQUEST'), JSON.stringify(names));
   const envNames = (store.environments || []).map(e => e.name);
@@ -92,7 +92,7 @@ module.exports = async function run(BASE) {
   await page.setInputFiles('#importFile', badFile);
   await page.waitForTimeout(500);
   check('alert shown', alertMsg !== null, String(alertMsg));
-  check('alert explains why', /not a specter collection/i.test(alertMsg || ''), String(alertMsg));
+  check('alert explains why', /not a spector collection/i.test(alertMsg || ''), String(alertMsg));
 
   // ---- 3b. Import: Postman v2.1 collection ----
   c.section('[3b] Import (Postman v2.1)');
@@ -121,7 +121,7 @@ module.exports = async function run(BASE) {
   await page.setInputFiles('#importFile', postmanFile);
   await page.waitForTimeout(600);
 
-  const pmStore = await page.evaluate(() => JSON.parse(localStorage.getItem('specter.state') || '{}'));
+  const pmStore = await page.evaluate(() => JSON.parse(localStorage.getItem('spector.state') || '{}'));
   const pmColl = (pmStore.collections || []).find(c => c.name === 'demo');
   check('demo collection imported', !!pmColl, JSON.stringify(pmStore.collections));
   const pmReq = pmColl && pmColl.requests[0];
@@ -161,13 +161,23 @@ module.exports = async function run(BASE) {
   c.section('[6] gRPC Execute');
   await page.goto(BASE + '#/grpc/grpc-UserService-GetUser', { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
+  // Every kind of method runs over one WebSocket now: set the target, connect,
+  // then send. The old single "Invoke" button is gone, and so is the .resp box
+  // it wrote into — the session reports into the log instead.
   const gcard = page.locator('#grpc-UserService-GetUser');
-  await gcard.locator('textarea').first().fill('{"id": 2}');
-  await gcard.locator('button:has-text("Invoke")').click();
-  await page.waitForTimeout(2000);
-  const gresp = (await gcard.locator('.resp').textContent()) || '';
-  check('grpc invoke OK', /OK\s*200/.test(gresp), gresp.slice(0, 120));
-  check('grpc returned Alan', /Alan/.test(gresp), gresp.slice(0, 200));
+  await gcard.locator('input.mono').first().fill('localhost:50051');
+  await gcard.locator('textarea.grpc-msg').first().fill('{"id": 2}');
+  await gcard.locator('#grpcConnect').click();
+  await gcard.locator('#grpcSend').waitFor({ state: 'attached' });
+  await page.waitForFunction(
+    () => !document.querySelector('#grpc-UserService-GetUser #grpcSend').disabled,
+    null, { timeout: 10000 });
+  await gcard.locator('#grpcSend').click();
+  await page.waitForTimeout(2500);
+  const glog = (await gcard.locator('.log').textContent()) || '';
+  check('grpc stream opened', /stream open/.test(glog), glog.slice(0, 200));
+  check('grpc status OK', /status OK/.test(glog), glog.slice(0, 300));
+  check('grpc returned Alan', /Alan/.test(glog), glog.slice(0, 300));
 
   // ---- 7. Router: back / forward ----
   c.section('[7] Router back/forward');
@@ -371,6 +381,72 @@ module.exports = async function run(BASE) {
   check('row shows the request line', /GET\s/.test(detailText), detailText.slice(0, 120));
   check('row expands to a Response block', /response/i.test(detailText), detailText.slice(0, 120));
   check('row shows the response status', /status:\s*\d/.test(detailText), detailText.slice(0, 120));
+
+  // ---- 12. Response views: table and sandboxed HTML preview ----
+  // A JSON array of objects is a table; showing it only as a tree makes the
+  // reader do the transpose by eye. The HTML preview must render without ever
+  // running what came back — the frame is sandboxed for exactly that reason.
+  c.section('[12] Response views');
+  await page.goto(`${BASE}#/rest/op-get--api-v1-users`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  const usersSel = '#op-get--api-v1-users';
+  await page.evaluate(s => document.querySelector(s).classList.add('open'), usersSel);
+  await page.evaluate(s => {
+    const card = document.querySelector(s);
+    [...card.querySelectorAll('button')].find(b => b.textContent === 'Send').click();
+  }, usersSel);
+  await page.waitForSelector(usersSel + ' .resp .viewbar', { timeout: 10000 });
+  const viewNames = await page.evaluate(s => [...document.querySelectorAll(s + ' .resp .viewbar button')].map(b => b.textContent), usersSel);
+  check('JSON offers Pretty/Table/Raw', JSON.stringify(viewNames) === JSON.stringify(['Pretty', 'Table', 'Raw']), JSON.stringify(viewNames));
+
+  await page.evaluate(s => [...document.querySelectorAll(s + ' .resp .viewbar button')].find(b => b.textContent === 'Table').click(), usersSel);
+  await page.waitForSelector(usersSel + ' .resp table.jtable', { timeout: 5000 });
+  const table = await page.evaluate(s => {
+    const t = document.querySelector(s + ' .resp table.jtable');
+    return { cols: [...t.querySelectorAll('thead th')].map(h => h.textContent), rows: t.querySelectorAll('tbody tr').length,
+             firstRow: [...t.querySelectorAll('tbody tr')][0].innerText };
+  }, usersSel);
+  check('table has a column per field', table.cols.includes('name') && table.cols.includes('email'), JSON.stringify(table.cols));
+  check('table has a row per element', table.rows > 0, String(table.rows));
+  check('table shows real values', /ada@example\.com/.test(table.firstRow), table.firstRow.slice(0, 120));
+
+  // The preview is fed a hostile body: it must render, and its script must not
+  // run — no sandbox escape, nothing written back into the console's origin.
+  const preview = await page.evaluate(() => {
+    const out = document.createElement('div');
+    document.body.appendChild(out);
+    addBody(out, 'Response body', '<html><body><h1>hello</h1><script>parent.__pwned = true;<\/script></body></html>', null, 'text/html; charset=utf-8');
+    const names = [...out.querySelectorAll('.viewbar button')].map(b => b.textContent);
+    const frame = out.querySelector('iframe');
+    return { names, sandbox: frame ? frame.getAttribute('sandbox') : null, hasFrame: !!frame };
+  });
+  check('HTML offers Preview/Raw', JSON.stringify(preview.names) === JSON.stringify(['Preview', 'Raw']), JSON.stringify(preview.names));
+  check('preview renders in a frame', preview.hasFrame);
+  check('the frame is fully sandboxed', preview.sandbox === '', String(preview.sandbox));
+  await page.waitForTimeout(500);
+  check('the response script did not run', await page.evaluate(() => window.__pwned === undefined));
+
+  // ---- 13. Search retitles the categories ----
+  // A category badge that keeps its full count during a search states a number
+  // the page is not showing.
+  c.section('[13] Search count');
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  await page.fill('#search', 'users/');
+  await page.waitForTimeout(300);
+  const counts = await page.evaluate(() => [...document.querySelectorAll('.cat')].filter(c => !c.classList.contains('hidden')).map(c => ({
+    badge: c.querySelector('.cat-head .count').textContent,
+    shown: [...c.querySelectorAll('.op')].filter(o => !o.classList.contains('hidden')).length,
+  })));
+  check('every visible category has matches', counts.length > 0 && counts.every(c => c.shown > 0), JSON.stringify(counts));
+  check('the badge counts what is shown', counts.every(c => c.badge === String(c.shown)), JSON.stringify(counts));
+  await page.fill('#search', '');
+  await page.waitForTimeout(300);
+  const restored = await page.evaluate(() => [...document.querySelectorAll('.cat')].map(c => ({
+    badge: c.querySelector('.cat-head .count').textContent,
+    total: c.querySelectorAll('.op').length,
+  })));
+  check('clearing the search restores the totals', restored.every(c => c.badge === String(c.total)), JSON.stringify(restored.slice(0, 4)));
 
   console.log('\n[JS errors]', jsErrors.length ? jsErrors : 'none');
   check('no uncaught JS errors', jsErrors.length === 0, jsErrors.join('; '));

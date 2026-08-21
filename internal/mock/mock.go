@@ -1,6 +1,6 @@
 // Package mock serves a generated document as a working HTTP API.
 //
-// The point is to unblock a frontend before the backend exists. Specter already
+// The point is to unblock a frontend before the backend exists. Spector already
 // knows every path, method, status code and response schema, so the mock is not
 // a new source of truth — it is the document, executed. That is also its
 // limitation, and the honest way to describe it: it returns shaped data, not
@@ -18,8 +18,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/route"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/route"
 )
 
 // Handler serves the document with the default options.
@@ -116,6 +116,12 @@ func primary(op *core.Operation) (int, *core.Response) {
 	}
 	if len(codes) > 0 {
 		return codes[0], op.Responses[strconv.Itoa(codes[0])]
+	}
+	// An operation with only a "default" response still has a body worth
+	// serving; the code the handler really uses is what could not be read, not
+	// the payload.
+	if r, has := op.Responses["default"]; has {
+		return http.StatusOK, r
 	}
 	return http.StatusOK, nil
 }

@@ -7,12 +7,31 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 type TypeInfo struct {
 	Name  string
 	Array bool
+
+	// Wrap is set when the value written to the wire is an envelope built
+	// around a payload the caller supplied:
+	//
+	//	func OK(c *gin.Context, data any) { c.JSON(200, Envelope{Data: data}) }
+	//
+	// Name is then the envelope — the same for every endpoint in the project —
+	// and the payload type, which is the only part a client cares about, is
+	// nowhere in the document. Wrap keeps the pairing so the adapter can
+	// synthesise the schema the endpoint actually returns.
+	Wrap *Wrapped
+}
+
+// Wrapped is an envelope field and the payload type that reaches it.
+type Wrapped struct {
+	// Field is the Go field name in the envelope struct (Data), not its
+	// serialized name — the tag is read where the struct is, not here.
+	Field string
+	Inner TypeInfo
 }
 
 func StringLit(expr ast.Expr) (string, bool) {
@@ -28,19 +47,19 @@ func StringLit(expr ast.Expr) (string, bool) {
 }
 
 // Directives are optional lines in a handler's doc comment that state what the
-// AST cannot infer. Specter's promise is that a project needs no annotations —
+// AST cannot infer. Spector's promise is that a project needs no annotations —
 // and it keeps that promise: omit these and everything still works. Writing one
 // only adds detail that has no other source.
 //
 //	// ListUsers returns every user.
-//	// specter:tags users,admin
-//	// specter:operationId listAllUsers
+//	// spector:tags users,admin
+//	// spector:operationId listAllUsers
 //	func listUsers(c *gin.Context) { ... }
 //
 // The prefix is namespaced so a directive cannot be confused with prose, and
 // directive lines are stripped from the description: they are instructions to
 // the generator, not documentation for a reader.
-const directivePrefix = "specter:"
+const directivePrefix = "spector:"
 
 // Directives holds what a doc comment declared.
 type Directives struct {
@@ -49,8 +68,8 @@ type Directives struct {
 	Deprecated  bool
 }
 
-// ParseDirectives reads the specter: lines out of a doc comment. Unknown
-// directives are ignored rather than reported: a newer Specter may understand
+// ParseDirectives reads the spector: lines out of a doc comment. Unknown
+// directives are ignored rather than reported: a newer Spector may understand
 // one this version does not, and failing on it would make the annotation
 // riskier to adopt than leaving it out.
 func ParseDirectives(doc *ast.CommentGroup) Directives {
@@ -90,7 +109,7 @@ func DocComment(doc *ast.CommentGroup, funcName string) (summary, description st
 		return "", ""
 	}
 	// Directive lines are instructions to the generator, not prose; leaving
-	// them in would put "specter:tags users" in the rendered description.
+	// them in would put "spector:tags users" in the rendered description.
 	var kept []string
 	for _, line := range strings.Split(doc.Text(), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), directivePrefix) {
@@ -171,8 +190,147 @@ func (l Locator) Handler(fd *ast.FuncDecl, call ast.Node) *core.Source {
 	return nil
 }
 
+// handlerUnwrapDepth bounds HandlerExpr's descent. Real route registrations
+// nest one or two levels; the bound is what stops a malformed or adversarial
+// tree from looping.
+const handlerUnwrapDepth = 8
+
+// sliceBuilders are the calls that produce a handler chain whose last element
+// is the handler itself. `append(guards, h.Create)...` is the ordinary way a
+// package attaches shared middleware to a route:
+//
+//	func (h *Handler) Mount(r gin.IRouter, guards ...gin.HandlerFunc) {
+//		r.POST("/register", append(guards, h.Register)...)
+//	}
+//
+// The registration's last argument is then the append call, not the handler,
+// so a scanner that reads the argument directly finds no name, no body, and
+// documents the endpoint with no request type, no response type and no
+// schema — which is exactly what a project using this idiom got.
+var sliceBuilders = map[string]bool{
+	"append": true,
+	// slices.Concat(guards, more, []gin.HandlerFunc{h.Create}).
+	"Concat": true,
+}
+
+// HandlerExpr reduces a route registration's handler argument to the
+// expression that actually names the handler, seeing through the wrappings Go
+// code puts around a handler chain: an append, a slice literal, a parenthesis,
+// a variadic spread.
+//
+// It is deliberately shallow — it does not resolve identifiers or step into
+// functions — because its only job is to answer "which sub-expression is the
+// handler". Everything downstream (naming, body lookup, inspection) is
+// unchanged and therefore fixed for every adapter at once.
+func HandlerExpr(expr ast.Expr) ast.Expr {
+	return HandlerExprSpread(expr, false)
+}
+
+// HandlerExprSpread is HandlerExpr told whether the registration spread the
+// argument: r.POST("/signup", chain(guards, h.SignUp)...).
+//
+// The spread is a type guarantee, not a guess. Go only accepts `f(x)...` in a
+// variadic position when x is a slice of the parameter's element type, so a
+// spread call in a route registration returns []gin.HandlerFunc whatever it is
+// named — it builds a handler chain, and the handler is its last argument,
+// exactly as it is in append. Without a spread the old rule stands: only the
+// known slice builders are stepped into.
+func HandlerExprSpread(expr ast.Expr, spread bool) ast.Expr {
+	for i := 0; i < handlerUnwrapDepth; i++ {
+		switch t := expr.(type) {
+		case *ast.ParenExpr:
+			expr = t.X
+		case *ast.Ellipsis:
+			// A spread written as a node rather than as the call's own
+			// Ellipsis position.
+			if t.Elt == nil {
+				return expr
+			}
+			spread = true
+			expr = t.Elt
+		case *ast.CompositeLit:
+			// []gin.HandlerFunc{mw, h.Create}: the handler is last, as it is
+			// in the registration itself.
+			if len(t.Elts) == 0 {
+				return expr
+			}
+			// The spread applied to the literal, not to whatever its last
+			// element turns out to be.
+			spread = false
+			expr = t.Elts[len(t.Elts)-1]
+		case *ast.CallExpr:
+			if len(t.Args) == 0 || !(spread || sliceBuilders[calleeName(t.Fun)]) {
+				return expr
+			}
+			spread = false
+			expr = t.Args[len(t.Args)-1]
+		default:
+			return expr
+		}
+	}
+	return expr
+}
+
+// SpreadArg marks a registration's handler argument as spread, so everything
+// downstream — naming, declaration lookup, inspection — sees the fact without
+// a spread-aware variant of each of those functions.
+//
+// It is the argument wearing the `...` the registration wrote, which is where
+// the AST would put it had it been written as a node. call is the registration;
+// a nil or unspread call returns the argument untouched.
+func SpreadArg(arg ast.Expr, call *ast.CallExpr) ast.Expr {
+	if arg == nil || call == nil || !call.Ellipsis.IsValid() {
+		return arg
+	}
+	// The position is the argument's own: a synthetic node with no position
+	// would break the file and enclosing-function lookups that resolve it.
+	return &ast.Ellipsis{Ellipsis: arg.Pos(), Elt: arg}
+}
+
+// LooksLikeHandler reports whether a declaration is a request handler rather
+// than something that merely produces one: it either takes a request context
+// (gin.Context, echo.Context, fiber.Ctx, http.ResponseWriter) or returns a
+// handler value (gin.HandlerFunc, http.Handler, and the slices of those a chain
+// helper builds).
+//
+// It reads the declaration's own signature, not the types behind it, because a
+// scanner that type-checks the whole program is a different tool. That is
+// enough to tell a handler from a helper, which is all any caller needs.
+func LooksLikeHandler(fd *ast.FuncDecl) bool {
+	if fd == nil || fd.Type == nil {
+		return false
+	}
+	if fd.Type.Params != nil {
+		for _, p := range fd.Type.Params.List {
+			switch n := TypeName(p.Type).Name; n {
+			case "Context", "Ctx", "ResponseWriter":
+				return true
+			}
+		}
+	}
+	if fd.Type.Results != nil {
+		for _, r := range fd.Type.Results.List {
+			if strings.Contains(TypeName(r.Type).Name, "Handler") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// calleeName is the bare name a call names, for both f(...) and pkg.f(...).
+func calleeName(fun ast.Expr) string {
+	switch f := fun.(type) {
+	case *ast.Ident:
+		return f.Name
+	case *ast.SelectorExpr:
+		return f.Sel.Name
+	}
+	return ""
+}
+
 func HandlerName(expr ast.Expr) string {
-	switch t := expr.(type) {
+	switch t := HandlerExpr(expr).(type) {
 	case *ast.Ident:
 		return t.Name
 	case *ast.SelectorExpr:
@@ -251,6 +409,12 @@ func LocalTypes(body *ast.BlockStmt) map[string]TypeInfo {
 // LocalTypesWith resolves local variable types, using returns to follow the
 // results of function calls when it is supplied.
 func LocalTypesWith(body *ast.BlockStmt, returns map[string]TypeInfo) map[string]TypeInfo {
+	return localTypes(body, returns, nil)
+}
+
+// localTypes is LocalTypesWith that also resolves an index into one of the
+// receiver's fields.
+func localTypes(body *ast.BlockStmt, returns map[string]TypeInfo, recvFields map[string]TypeInfo) map[string]TypeInfo {
 	types := map[string]TypeInfo{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch t := n.(type) {
@@ -285,10 +449,17 @@ func LocalTypesWith(body *ast.BlockStmt, returns map[string]TypeInfo) map[string
 					types[id.Name] = info
 				} else if info := callType(t.Rhs[0], returns); info.Name != "" {
 					types[id.Name] = info
+				} else if info := indexType(t.Rhs[0], recvFields); info.Name != "" {
+					types[id.Name] = info
 				}
 				return true
 			}
 			info := callType(t.Rhs[0], returns)
+			if info.Name == "" {
+				// `u, ok := h.users[id]` is the other two-value shape, and the
+				// only one whose payload is not a call result.
+				info = indexType(t.Rhs[0], recvFields)
+			}
 			if info.Name == "" {
 				return true
 			}
@@ -331,7 +502,10 @@ type Handler struct {
 	Request  TypeInfo
 	Response TypeInfo // first response body, kept for backward compatibility
 	Query    []string
-	Header   []string
+	// QueryDefaults records the fallback of a c.DefaultQuery("limit", "20"),
+	// keyed by parameter name.
+	QueryDefaults map[string]string
+	Header        []string
 	// Responses lists every status-coded response the handler emits, in source
 	// order: gin c.JSON(201, x), net/http w.WriteHeader(code) + Encode(x), etc.
 	Responses []Response
@@ -351,6 +525,7 @@ func (h Handler) Apply(route *core.Route) {
 	route.RequestType, route.RequestArray = h.Request.Name, h.Request.Array
 	route.ResponseType, route.ResponseArray = h.Response.Name, h.Response.Array
 	route.QueryParams = h.Query
+	route.QueryDefaults = h.QueryDefaults
 	route.HeaderParams = h.Header
 	for _, r := range h.Responses {
 		route.Responses = append(route.Responses, core.RouteResponse{
@@ -371,35 +546,252 @@ func InspectHandler(body *ast.BlockStmt) Handler {
 // InspectHandlerWith is InspectHandler with a package-level index of function
 // result types, so handlers that write the result of a call are documented too.
 func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handler {
-	types := LocalTypesWith(body, returns)
-	var h Handler
-	pending := 0 // net/http status set by a preceding w.WriteHeader(code)
-	addResp := func(status int, t TypeInfo) {
-		h.Responses = append(h.Responses, Response{Status: status, Type: t})
+	return InspectHandlerIn(body, Pkg{Returns: returns})
+}
+
+// Pkg is what a handler's own body does not contain: the result types of the
+// functions it calls, and the declarations of those functions so their bodies
+// can be looked at too.
+type Pkg struct {
+	Returns map[string]TypeInfo
+	// Funcs indexes callable declarations by name. Leave it nil to inspect the
+	// handler body alone.
+	Funcs map[string]*ast.FuncDecl
+
+	// RecvFields is the element type behind each indexable field of the
+	// handler's receiver, so `u, ok := h.users[id]` names a type. A handler
+	// that answers out of its own state says nothing about the payload
+	// anywhere in its body; the declaration is on the struct.
+	RecvFields map[string]TypeInfo
+
+	// Resolve decides which declaration a call names, the same way a route's
+	// handler is decided. Leave it nil to fall back to a bare name, which is
+	// what a single-package project has anyway.
+	//
+	// Following calls by name alone is how a handler ends up documented from
+	// a function in an unrelated package: `Handle`, `record`, `encode` and
+	// `decode` are declared once per layer in any real tree, and the first one
+	// parsed answered for all of them. An audit codec's json.Unmarshal then
+	// became an HTTP endpoint's request body.
+	Resolve func(call *ast.CallExpr) *ast.FuncDecl
+}
+
+// FuncDecls indexes every function and method with a body, by name. Plain
+// functions win a name over methods, and the first declaration wins over a
+// later one, so the index does not depend on file order (ParseDir returns
+// files sorted by path).
+func FuncDecls(files []*ast.File) map[string]*ast.FuncDecl {
+	out := map[string]*ast.FuncDecl{}
+	methods := map[string]*ast.FuncDecl{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			table := out
+			if fd.Recv != nil {
+				table = methods
+			}
+			if _, taken := table[fd.Name.Name]; !taken {
+				table[fd.Name.Name] = fd
+			}
+		}
 	}
+	for name, fd := range methods {
+		if _, taken := out[name]; !taken {
+			out[name] = fd
+		}
+	}
+	return out
+}
+
+// maxHelperDepth is how many calls deep the inspection follows out of a
+// handler. Nearly every project wraps the framework in a helper —
+//
+//	func bindJSON(c *gin.Context, out any) bool { return c.ShouldBindJSON(out) == nil }
+//	func ok(c *gin.Context, body any)           { c.JSON(200, body) }
+//
+// — and a scanner that stops at the handler body documents those handlers with
+// no request body, no response type and no schema at all: the exact endpoints a
+// client needs most.
+//
+// Three levels, because a layered project reaches the framework through three
+// hops and not two:
+//
+//	h.moderate(c, fn)   // resolves the path parameter
+//	  h.run(c, err)     // maps the error, or succeeds
+//	    httpx.NoContent(c)
+//
+// At two, the status the endpoint actually answers with is written one call
+// past the horizon and the operation is documented with no response at all.
+// Deeper than three mostly finds shared plumbing whose responses belong to no
+// one endpoint.
+const maxHelperDepth = 3
+
+// InspectHandlerIn is InspectHandlerWith that also follows calls out of the
+// handler into the package's own functions, up to maxHelperDepth, carrying the
+// caller's argument types and status codes into the callee's parameters. It is
+// what makes a handler written through wrappers document the same as one that
+// calls the framework directly.
+func InspectHandlerIn(body *ast.BlockStmt, pkg Pkg) Handler {
+	return InspectBodiesIn([]*ast.BlockStmt{body}, pkg)
+}
+
+// InspectBodiesIn is InspectHandlerIn over several blocks that together make
+// up one handler. A handler factory has two — the function's own body and the
+// literal it returns — and both describe the same endpoint.
+func InspectBodiesIn(bodies []*ast.BlockStmt, pkg Pkg) Handler {
+	in := &inspection{pkg: pkg, seen: map[*ast.FuncDecl]bool{}}
+	for _, body := range bodies {
+		if body == nil {
+			continue
+		}
+		in.walk(body, scope{types: localTypes(body, pkg.Returns, pkg.RecvFields)}, 0)
+	}
+	h := in.h
+	h.Responses = dedupeResponses(h.Responses)
+	h.Response = primaryResponse(h.Responses, h.Response)
+	return h
+}
+
+// scope is what a body's identifiers mean: the Go type behind a name, and the
+// numeric status behind one. Both are filled from the caller's arguments when
+// the inspection steps into a helper, which is how `ok(c, TokenResponse{})`
+// and `respond(c, http.StatusCreated, body)` keep their meaning inside a
+// function whose own source says only `body` and `code`.
+type scope struct {
+	types  map[string]TypeInfo
+	status map[string]int
+}
+
+type inspection struct {
+	pkg  Pkg
+	h    Handler
+	seen map[*ast.FuncDecl]bool
+}
+
+// argType is ArgType plus the package's function results, so a response passed
+// as a call — httpx.OK(c, newTokenResponse(t)) — is typed from the callee's
+// signature. Writing the body through a constructor is the normal way to build
+// one, and without this every such endpoint documents no response type at all.
+func (in *inspection) argType(expr ast.Expr, types map[string]TypeInfo) TypeInfo {
+	t := ArgType(expr, types)
+	if t.Name == "" {
+		t = callType(expr, in.pkg.Returns)
+	}
+	if t.Name != "" {
+		if w := in.wrapped(expr, types); w != nil {
+			t.Wrap = w
+		}
+	}
+	return t
+}
+
+// wrapped reports the payload inside an envelope literal.
+//
+// The shape is `Envelope{Data: data}` written inside a response helper, where
+// `data` is the helper's own parameter and the scope already knows what the
+// caller passed for it. Only a field whose value resolves to a type is
+// considered, and only the first such field: an envelope carries one payload,
+// and its other fields (meta, error) are either absent or literals of their
+// own named types, which the schema already describes.
+func (in *inspection) wrapped(expr ast.Expr, types map[string]TypeInfo) *Wrapped {
+	lit, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		// The payload arrives as a name — the helper's parameter — bound to
+		// the caller's argument type. A composite literal here is a nested
+		// envelope, not a payload, and is left alone.
+		id, ok := kv.Value.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		inner, found := types[id.Name]
+		if !found || inner.Name == "" || inner.Name == litTypeName(lit) {
+			continue
+		}
+		inner.Wrap = nil
+		return &Wrapped{Field: key.Name, Inner: inner}
+	}
+	return nil
+}
+
+// litTypeName is the composite literal's own type name, used to refuse an
+// envelope that would wrap itself.
+func litTypeName(lit *ast.CompositeLit) string {
+	return TypeName(lit.Type).Name
+}
+
+func (in *inspection) addResp(status int, t TypeInfo) {
+	in.h.Responses = append(in.h.Responses, Response{Status: status, Type: t})
+}
+
+func (in *inspection) walk(body *ast.BlockStmt, sc scope, depth int) {
+	types := sc.types
+	pending := 0 // net/http status set by a preceding w.WriteHeader(code)
+	statusValue := func(expr ast.Expr) int { return sc.statusValue(expr) }
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
+		// Every call is a candidate for stepping into, whether or not its name
+		// is also a framework verb. A project's own httpx.BindJSON(c, &req) is
+		// spelled exactly like gin's c.BindJSON(&req) and means the same thing
+		// one level down; matching the verb and stopping there lost the
+		// request body and every status the helper writes.
+		in.descend(call, sc, depth)
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
+		h := &in.h
+		addResp := in.addResp
 		switch sel.Sel.Name {
 		case "Decode", "DecodeJSON", "Unmarshal":
 			if h.Request.Name == "" && len(call.Args) >= 1 {
-				h.Request = ArgType(call.Args[len(call.Args)-1], types)
+				h.Request = in.argType(call.Args[len(call.Args)-1], types)
 			}
 		case "ShouldBindJSON", "BindJSON", "ShouldBind", "Bind", "BodyParser":
 			// "Bind" is echo's spelling of the same thing; "BodyParser" fiber's.
-			if h.Request.Name == "" && len(call.Args) == 1 {
-				h.Request = ArgType(call.Args[0], types)
+			//
+			// chi's render.Bind(r, &req) means it too, but puts the request
+			// first and the payload last. Reading argument zero there would
+			// have documented the *http.Request as the body.
+			if h.Request.Name != "" {
+				break
+			}
+			switch len(call.Args) {
+			case 1:
+				h.Request = in.argType(call.Args[0], types)
+			case 2:
+				if sel.Sel.Name == "Bind" {
+					h.Request = in.argType(call.Args[1], types)
+				}
+			}
+		case "ShouldBindWith", "BindWith", "MustBindWith", "ShouldBindBodyWith", "ShouldBindBodyWithJSON":
+			// The explicit-binding forms: c.ShouldBindWith(&req, binding.JSON).
+			// They bind the same payload as ShouldBindJSON — the second argument
+			// only names the binder — so a handler written this way documented
+			// no request body at all until it was read here too.
+			if h.Request.Name == "" && len(call.Args) >= 1 {
+				h.Request = in.argType(call.Args[0], types)
 			}
 		case "Encode":
 			// net/http response body; status comes from a preceding WriteHeader.
 			if len(call.Args) == 1 {
-				t := ArgType(call.Args[0], types)
+				t := in.argType(call.Args[0], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
@@ -409,17 +801,22 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 		case "JSON", "IndentedJSON", "AbortWithStatusJSON", "PureJSON", "XML", "YAML":
 			// gin c.JSON(code, body): first arg is the status code.
 			if len(call.Args) >= 2 {
-				status := statusValue(call.Args[0])
-				t := ArgType(call.Args[len(call.Args)-1], types)
+				// A code that does not resolve stays 0, which the document
+				// renders as the default response. Assuming 200 would state
+				// something the source never said, and a handler that in fact
+				// answers 201 would be documented as returning 200 — worse
+				// than saying nothing, because a client believes it.
+				status := sc.statusValue(call.Args[0])
+				t := in.argType(call.Args[len(call.Args)-1], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
-				addResp(statusOr(status, 200), t)
+				addResp(status, t)
 			} else if len(call.Args) == 1 {
 				// render.JSON(w, r, x) style handled via Encode; here a bare
 				// JSON(x) is treated as a 200 body — unless it chains off
 				// fiber's c.Status(201).JSON(x), which names the code itself.
-				t := ArgType(call.Args[0], types)
+				t := in.argType(call.Args[0], types)
 				if h.Response.Name == "" {
 					h.Response = t
 				}
@@ -452,6 +849,22 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 			"QueryParam", "QueryParams":
 			// The last two are echo's spelling.
 			addParam(&h.Query, call)
+			// gin c.DefaultQuery("limit", "20") / echo c.QueryParam with a
+			// fallback: the second argument is what the server uses when the
+			// caller omits the parameter, and nothing else in the document
+			// would tell a client that.
+			if sel.Sel.Name == "DefaultQuery" && len(call.Args) == 2 {
+				if name, ok := StringLit(call.Args[0]); ok {
+					if def, ok := StringLit(call.Args[1]); ok {
+						if h.QueryDefaults == nil {
+							h.QueryDefaults = map[string]string{}
+						}
+						if _, seen := h.QueryDefaults[name]; !seen {
+							h.QueryDefaults[name] = def
+						}
+					}
+				}
+			}
 		case "GetHeader":
 			addParam(&h.Header, call)
 		case "Get":
@@ -469,9 +882,80 @@ func InspectHandlerWith(body *ast.BlockStmt, returns map[string]TypeInfo) Handle
 		}
 		return true
 	})
-	h.Responses = dedupeResponses(h.Responses)
-	h.Response = primaryResponse(h.Responses, h.Response)
-	return h
+}
+
+// descend follows a call into one of the package's own functions, so a handler
+// that speaks to the framework through a wrapper is read as if it had spoken
+// directly. The callee is matched by name — bindJSON(...) and httpx.Created(...)
+// alike — because knowing the receiver's type would need a full type check.
+//
+// A name that resolves to the wrong function only costs a response or a type
+// picked up from a body that was never called; stopping at the handler costs
+// the request body, the response type and the schemas of every endpoint in a
+// project that has such a helper, which is most of them.
+func (in *inspection) descend(call *ast.CallExpr, sc scope, depth int) {
+	if depth >= maxHelperDepth || (len(in.pkg.Funcs) == 0 && in.pkg.Resolve == nil) {
+		return
+	}
+	var name string
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		name = fun.Name
+	case *ast.SelectorExpr:
+		name = fun.Sel.Name
+	default:
+		return
+	}
+	var fd *ast.FuncDecl
+	if in.pkg.Resolve != nil {
+		fd = in.pkg.Resolve(call)
+	}
+	if fd == nil {
+		fd = in.pkg.Funcs[name]
+	}
+	// seen guards recursion: a helper that calls itself, or two that call each
+	// other, would otherwise walk until the stack ends.
+	if fd == nil || fd.Body == nil || in.seen[fd] {
+		return
+	}
+	in.seen[fd] = true
+	defer delete(in.seen, fd)
+	in.walk(fd.Body, in.bind(fd, call, sc), depth+1)
+}
+
+// bind builds the callee's scope: its own locals, then its parameters filled in
+// from the caller's arguments. Parameters are applied last because they are the
+// stronger fact — the argument is what the handler actually passed.
+func (in *inspection) bind(fd *ast.FuncDecl, call *ast.CallExpr, caller scope) scope {
+	sc := scope{
+		types:  localTypes(fd.Body, in.pkg.Returns, in.pkg.RecvFields),
+		status: map[string]int{},
+	}
+	params := paramNames(fd)
+	for i, arg := range call.Args {
+		if i >= len(params) || params[i] == "" || params[i] == "_" {
+			continue
+		}
+		if t := in.argType(arg, caller.types); t.Name != "" {
+			sc.types[params[i]] = t
+		}
+		if s := caller.statusValue(arg); s != 0 {
+			sc.status[params[i]] = s
+		}
+	}
+	return sc
+}
+
+// statusValue resolves a status expression in this scope, so a code the caller
+// passed in — respond(c, http.StatusCreated, body) — is still known inside the
+// helper that names it `code`.
+func (sc scope) statusValue(expr ast.Expr) int {
+	if id, ok := expr.(*ast.Ident); ok {
+		if s, found := sc.status[id.Name]; found {
+			return s
+		}
+	}
+	return statusValue(expr)
 }
 
 // chainedStatus reads the code out of fiber's c.Status(201).JSON(x) chain: the
@@ -627,6 +1111,25 @@ func callType(expr ast.Expr, returns map[string]TypeInfo) TypeInfo {
 	return TypeInfo{}
 }
 
+// indexType resolves h.users[id] to the map's value type — or the slice's
+// element type — from the receiver's field declarations. The receiver name is
+// not checked: a handler has one, and requiring the right identifier would
+// only fail on the projects that call it something other than `h`.
+func indexType(expr ast.Expr, recvFields map[string]TypeInfo) TypeInfo {
+	if len(recvFields) == 0 {
+		return TypeInfo{}
+	}
+	idx, ok := expr.(*ast.IndexExpr)
+	if !ok {
+		return TypeInfo{}
+	}
+	sel, ok := idx.X.(*ast.SelectorExpr)
+	if !ok {
+		return TypeInfo{}
+	}
+	return recvFields[sel.Sel.Name]
+}
+
 func exprType(expr ast.Expr) TypeInfo {
 	switch t := expr.(type) {
 	case *ast.CompositeLit:
@@ -634,6 +1137,19 @@ func exprType(expr ast.Expr) TypeInfo {
 	case *ast.UnaryExpr:
 		if t.Op == token.AND {
 			return exprType(t.X)
+		}
+	case *ast.CallExpr:
+		// make([]UserResponse, 0, len(m)) is how a handler that returns a list
+		// builds it — more often than []UserResponse{} is, because the length
+		// is usually known. Without this the slice has no type and the
+		// endpoint documents its payload as nothing at all.
+		//
+		// new(T) is the same statement about a single value.
+		if id, ok := t.Fun.(*ast.Ident); ok && len(t.Args) >= 1 {
+			switch id.Name {
+			case "make", "new":
+				return TypeName(t.Args[0])
+			}
 		}
 	}
 	return TypeInfo{}

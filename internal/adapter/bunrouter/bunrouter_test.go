@@ -3,7 +3,7 @@ package bunrouter
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func routeMap(routes []core.Route) map[string]core.Route {
@@ -85,4 +85,57 @@ func keys(m map[string]core.Route) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// Middleware reaches routes three ways: the constructor option, a Use()
+// statement scoped to the group it is in, and a chained receiver scoped to one
+// route.
+func TestBunrouterMiddleware(t *testing.T) {
+	routes, _, _, err := (&Adapter{}).Scan("testdata/middleware")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := routeMap(routes)
+
+	cases := []struct {
+		key  string
+		want []string
+	}{
+		{"get /health", []string{"RequestLogger"}},
+		{"get /search", []string{"RequestLogger", "RateLimit"}},
+		{"get /api/users", []string{"RequestLogger", "AuthRequired"}},
+		{"post /api/users", []string{"RequestLogger", "AuthRequired"}},
+	}
+	for _, tc := range cases {
+		route, ok := m[tc.key]
+		if !ok {
+			t.Fatalf("missing route %q; have %v", tc.key, keys(m))
+		}
+		var got []string
+		for _, mw := range route.Middleware {
+			got = append(got, mw.Name)
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("%s middleware = %v, want %v", tc.key, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s middleware = %v, want %v", tc.key, got, tc.want)
+				break
+			}
+		}
+	}
+
+	// A route-scoped middleware must not leak into what follows it.
+	for _, mw := range m["get /api/users"].Middleware {
+		if mw.Name == "RateLimit" {
+			t.Errorf("RateLimit leaked out of get /search: %+v", m["get /api/users"].Middleware)
+		}
+	}
+	for _, mw := range m["get /api/users"].Middleware {
+		if mw.Name == "AuthRequired" && (mw.Kind != "auth" || mw.Scheme != "bearerAuth") {
+			t.Errorf("AuthRequired = %+v, want auth/bearerAuth", mw)
+		}
+	}
 }

@@ -3,7 +3,7 @@
 //
 // # What this can and cannot know
 //
-// Specter reads syntax, not types. `store.Find(...)` and `cache.Find(...)` are
+// Spector reads syntax, not types. `store.Find(...)` and `cache.Find(...)` are
 // the same shape to the AST, and a `Get` could be a map lookup, a cache read,
 // or an HTTP call. There is no type checker here to resolve the receiver, so
 // classification rests on two syntactic signals:
@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // maxDepth bounds how far a handler is followed into the functions it calls.

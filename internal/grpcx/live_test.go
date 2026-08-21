@@ -1,3 +1,5 @@
+//go:build grpclive
+
 package grpcx
 
 import (
@@ -13,7 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
-	"github.com/user/specter/examples/shop/shoppb"
+	"github.com/bakhod1r/spector/examples/shop/shoppb"
 )
 
 const protoDir = "../../examples/shop/proto"

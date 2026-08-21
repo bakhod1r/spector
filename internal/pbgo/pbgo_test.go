@@ -3,7 +3,7 @@ package pbgo
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func serviceByName(doc *core.GrpcDoc, name string) *core.GrpcService {

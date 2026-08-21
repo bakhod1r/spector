@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 const refPrefix = "#/components/schemas/"
@@ -193,8 +193,12 @@ func (b *builder) operation(route core.Route) *core.Operation {
 		})(op)
 	}
 	for _, name := range route.QueryParams {
+		schema := &core.Schema{Type: "string"}
+		if def, ok := route.QueryDefaults[name]; ok {
+			schema.Default = def
+		}
 		core.WithParameter(core.Parameter{
-			Name: name, In: "query", Schema: &core.Schema{Type: "string"},
+			Name: name, In: "query", Schema: schema,
 		})(op)
 	}
 	for _, name := range route.HeaderParams {

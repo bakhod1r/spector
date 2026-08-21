@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func TestHARFullDocument(t *testing.T) {
@@ -20,7 +20,7 @@ func TestHARFullDocument(t *testing.T) {
 	if log.Log.Version != "1.2" {
 		t.Errorf("version = %q", log.Log.Version)
 	}
-	if log.Log.Creator.Name != "specter" {
+	if log.Log.Creator.Name != "spector" {
 		t.Errorf("creator = %+v", log.Log.Creator)
 	}
 	// One entry per operation: GET /users/{id}, POST /users, GET /health.

@@ -3,7 +3,7 @@ package proxy
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func manualDoc() *core.Document {

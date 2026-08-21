@@ -3,13 +3,13 @@ package mount
 import (
 	"net/http"
 
+	"github.com/bakhod1r/spector"
 	"github.com/gin-gonic/gin"
-	"github.com/user/specter"
 )
 
 // Gin registers the console on a gin router under cfg.BasePath
 // (default "/docs").
-func Gin(r gin.IRouter, cfg specter.Config) {
+func Gin(r gin.IRouter, cfg spector.Config) {
 	base, h := prepare(cfg)
 
 	r.GET(base, func(c *gin.Context) {

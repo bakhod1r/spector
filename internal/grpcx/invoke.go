@@ -1,3 +1,5 @@
+//go:build grpclive
+
 package grpcx
 
 import (
@@ -17,16 +19,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	reflectpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 )
-
-type Request struct {
-	Target     string            `json:"target"`
-	Symbol     string            `json:"symbol"` // package.Service/Method or package.Service.Method
-	Data       string            `json:"data"`   // request body as JSON
-	Headers    map[string]string `json:"headers,omitempty"`
-	TLS        bool              `json:"tls,omitempty"`
-	Insecure   bool              `json:"insecure,omitempty"`   // TLS but skip cert verify
-	TimeoutSec int               `json:"timeoutSec,omitempty"` // 0 -> 15s
-}
 
 func dialCreds(req Request) credentials.TransportCredentials {
 	if req.TLS {

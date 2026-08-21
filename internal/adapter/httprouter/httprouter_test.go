@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func routeMap(routes []core.Route) map[string]core.Route {
@@ -95,4 +95,67 @@ func keys(m map[string]core.Route) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// httprouter has no Use(): middleware is wrapping, either around one handler or
+// around the router where it is served. Both are read, outermost first.
+func TestHTTPRouterMiddleware(t *testing.T) {
+	routes, _, _, err := (&Adapter{}).Scan("testdata/middleware")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := map[string]core.Route{}
+	for _, r := range routes {
+		m[r.Method+" "+r.Path] = r
+	}
+
+	cases := []struct {
+		key  string
+		want []string
+	}{
+		{"get /health", []string{"RequestLogger"}},
+		{"get /users", []string{"RequestLogger", "AuthRequired"}},
+		{"post /users", []string{"RequestLogger", "RateLimit", "AuthRequired"}},
+	}
+	for _, tc := range cases {
+		route, ok := m[tc.key]
+		if !ok {
+			t.Fatalf("missing route %q; have %v", tc.key, keys(m))
+		}
+		var got []string
+		for _, mw := range route.Middleware {
+			got = append(got, mw.Name)
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("%s middleware = %v, want %v", tc.key, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s middleware = %v, want %v", tc.key, got, tc.want)
+				break
+			}
+		}
+	}
+
+	// The wrapper is middleware; the handler underneath is still the handler.
+	if h := m["get /users"].HandlerName; h != "listUsers" {
+		t.Errorf("handler = %q, want listUsers", h)
+	}
+	// A wrapped handler keeps its body analysis: the doc comment survives.
+	if s := m["get /users"].Summary; s != "returns every user." {
+		t.Errorf("summary = %q", s)
+	}
+	// AuthRequired is classified from its name, and its 401 read from its body.
+	for _, mw := range m["get /users"].Middleware {
+		if mw.Name != "AuthRequired" {
+			continue
+		}
+		if mw.Kind != "auth" || mw.Scheme != "bearerAuth" {
+			t.Errorf("AuthRequired = %+v, want auth/bearerAuth", mw)
+		}
+	}
+	if len(m["get /health"].Middleware) != 1 {
+		t.Errorf("health middleware = %+v", m["get /health"].Middleware)
+	}
 }

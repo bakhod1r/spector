@@ -2,7 +2,7 @@ package gen
 
 import "testing"
 
-import "github.com/user/specter/internal/core"
+import "github.com/bakhod1r/spector/internal/core"
 
 func sampleSchemas() map[string]*core.Schema {
 	return map[string]*core.Schema{

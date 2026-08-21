@@ -6,7 +6,7 @@ import (
 	"go/token"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func TestNilIndexCollectIsANoOp(t *testing.T) {

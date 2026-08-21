@@ -104,7 +104,7 @@ module.exports = async function run(BASE, MQTT_WS) {
     // Publishing goes through the pane's payload box + Send button. The
     // subscription is "#", so whatever we publish must come back from the
     // broker — that round-trip is what proves encode and decode.
-    const marker = 'specter-probe-' + Date.now();
+    const marker = 'spector-probe-' + Date.now();
     await pane.locator('textarea').first().fill(marker);
     await pane.getByRole('button', { name: 'Send', exact: true }).click();
 

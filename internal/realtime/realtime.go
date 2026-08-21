@@ -8,7 +8,7 @@
 // than omitting them, because it describes them wrongly. Reading the handler
 // body is what tells them apart.
 //
-// Detection is syntactic, like the rest of Specter, but the signals here are
+// Detection is syntactic, like the rest of Spector, but the signals here are
 // far more specific than a method name: upgrading a connection and writing a
 // text/event-stream content type are things code does for exactly one reason.
 package realtime
@@ -17,7 +17,7 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // Kinds of realtime endpoint.

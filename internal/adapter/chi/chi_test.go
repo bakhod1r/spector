@@ -3,7 +3,7 @@ package chi
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func hasRoute(rs []core.Route, method, path string) bool {

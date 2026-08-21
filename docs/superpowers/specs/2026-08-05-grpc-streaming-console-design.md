@@ -5,7 +5,7 @@ Status: Approved (design)
 
 ## Problem
 
-The console (`internal/ui/ui.html` served by `specter.Handler` in `specter.go`)
+The console (`internal/ui/ui.html` served by `spector.Handler` in `spector.go`)
 can already invoke gRPC methods, but only in a **batch, one-shot** way: the UI
 collects every request message, POSTs them together to the `grpc/invoke`
 endpoint, and `grpcx.Invoke` runs `grpcurl.InvokeRPC`, buffering every response
@@ -41,7 +41,7 @@ real time.
 
 ### Transport
 
-A new WebSocket endpoint. `specter.Handler` (in `specter.go`) already routes by
+A new WebSocket endpoint. `spector.Handler` (in `spector.go`) already routes by
 path suffix; add a branch for a path ending in `grpc/stream` that upgrades the
 connection to a WebSocket. Each WebSocket connection carries exactly one RPC
 invocation.
@@ -158,7 +158,7 @@ In the per-method gRPC panel (`renderGrpc` / method card builder):
 - Auth gate before upgrade (above).
 - `CheckOrigin` restricts the WebSocket to same-origin.
 - The console already documents that it can invoke the target's gRPC methods
-  (`specter.go` comment near `AccessKey`); this feature does not widen that
+  (`spector.go` comment near `AccessKey`); this feature does not widen that
   surface beyond what `grpc/invoke` already exposes — it only makes the existing
   capability interactive.
 
@@ -175,7 +175,7 @@ In the per-method gRPC panel (`renderGrpc` / method card builder):
 - `internal/ui/ui_test.go`: add the new control ids to `TestControlsHaveMarkup`;
   add a contract test that the page opens a WebSocket to `grpc/stream` and
   references the frame `type` constants.
-- `specter.go` handler test: WS upgrade rejected without the access key when one
+- `spector.go` handler test: WS upgrade rejected without the access key when one
   is configured.
 - Full suite: `go test ./...` green.
 

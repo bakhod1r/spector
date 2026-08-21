@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package tests holds end-to-end integration tests that drive the compiled
-// specter CLI the way a user would, rather than calling the library directly.
+// spector CLI the way a user would, rather than calling the library directly.
 // They are gated behind the `integration` build tag so the default
 // `go test ./...` stays fast and hermetic:
 //
@@ -20,16 +20,16 @@ import (
 	"testing"
 )
 
-// runSpecter runs `go run ../cmd/specter` with args and returns stdout. The
+// runSpector runs `go run ../cmd/spector` with args and returns stdout. The
 // working directory is this package's directory, so paths are relative to it.
-func runSpecter(t *testing.T, args ...string) []byte {
+func runSpector(t *testing.T, args ...string) []byte {
 	t.Helper()
-	full := append([]string{"run", "../cmd/specter"}, args...)
+	full := append([]string{"run", "../cmd/spector"}, args...)
 	cmd := exec.Command("go", full...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("specter %s: %v\nstderr:\n%s", strings.Join(args, " "), err, stderr.String())
+		t.Fatalf("spector %s: %v\nstderr:\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.Bytes()
 }
@@ -37,7 +37,7 @@ func runSpecter(t *testing.T, args ...string) []byte {
 // TestGenerateShopOpenAPI generates the example API's OpenAPI document and
 // checks it is well-formed and contains a route the scanner must have resolved.
 func TestGenerateShopOpenAPI(t *testing.T) {
-	out := runSpecter(t, "-dir", "../examples/shop", "-title", "Shop", "-version", "1.0.0")
+	out := runSpector(t, "-dir", "../examples/shop", "-title", "Shop", "-version", "1.0.0")
 
 	var doc struct {
 		OpenAPI string                            `json:"openapi"`

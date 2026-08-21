@@ -20,7 +20,7 @@ import (
 // The nested parts of each record (addresses, tags, line items) are stored as
 // JSON columns. A normalised schema would be more faithful to how a production
 // service is built, but it would also triple the size of an example whose
-// subject is Specter, not database design.
+// subject is Spector, not database design.
 type store struct{ db *sql.DB }
 
 var db *store

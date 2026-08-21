@@ -6,11 +6,11 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/user/specter/internal/adapter/astutil"
-	"github.com/user/specter/internal/calls"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/middleware"
-	"github.com/user/specter/internal/realtime"
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
+	"github.com/bakhod1r/spector/internal/calls"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/middleware"
+	"github.com/bakhod1r/spector/internal/realtime"
 )
 
 var methods = map[string]string{
@@ -30,9 +30,9 @@ func (a *Adapter) Name() string { return "stdlib" }
 func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	// ParseComments is required, not optional: summaries, descriptions and the
-	// specter: directives all live in doc comments, and without this flag
+	// spector: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -40,14 +40,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
 	mw := middleware.NewIndex()
-	var files []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			files = append(files, file)
-			scanner.Collect(file)
-			index.Collect(file)
-			mw.Collect(file)
-		}
+	for _, file := range files {
+		scanner.Collect(file)
+		index.Collect(file)
+		mw.Collect(file)
 	}
 
 	handlers := map[string]*ast.FuncDecl{}
@@ -60,6 +56,11 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
+	// scope resolves handler names against the package they were written in,
+	// reads handlers through the project's helper packages, and names the
+	// payload inside its response envelope — the parts of a scan that have
+	// nothing to do with which framework is in use.
+	scope := astutil.NewScope(fset, files)
 	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
 	mounts := collectMounts(files, res, loc, &diags)
@@ -127,12 +128,12 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 				HandlerName: name,
 				Middleware:  mw.Chain(wrappers),
 			}
-			fd := handlers[name]
+			fd := scope.Handler(handlerArg, handlers)
 			route.Source = loc.Handler(fd, call)
 			if fd != nil {
 				route.Calls = calls.Analyze(fd, index)
 				route.Realtime = realtime.Detect(fd, handlers)
-				astutil.InspectHandler(fd.Body).Apply(&route)
+				scope.Inspect(fd, scanner.Schemas).Apply(&route)
 				route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
 				d := astutil.ParseDirectives(fd.Doc)
 				route.Tags, route.Deprecated, route.OperationID = d.Tags, d.Deprecated, d.OperationID

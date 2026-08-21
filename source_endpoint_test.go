@@ -1,4 +1,4 @@
-package specter
+package spector
 
 import (
 	"encoding/json"
@@ -18,7 +18,7 @@ func getSource(t *testing.T, cfg Config, target string) *httptest.ResponseRecord
 }
 
 func TestSourceEndpointReturnsTheHandlerCode(t *testing.T) {
-	w := getSource(t, Config{Dir: "."}, "/source?file=specter.go&line=1")
+	w := getSource(t, Config{Dir: "."}, "/source?file=spector.go&line=1")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200\n%s", w.Code, w.Body.String())
 	}
@@ -32,10 +32,10 @@ func TestSourceEndpointReturnsTheHandlerCode(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &snip); err != nil {
 		t.Fatal(err)
 	}
-	if snip.File != "specter.go" || snip.Start != 1 {
-		t.Errorf("snippet = %+v, want specter.go from line 1", snip)
+	if snip.File != "spector.go" || snip.Start != 1 {
+		t.Errorf("snippet = %+v, want spector.go from line 1", snip)
 	}
-	if len(snip.Lines) == 0 || !strings.Contains(snip.Lines[0], "package specter") {
+	if len(snip.Lines) == 0 || !strings.Contains(snip.Lines[0], "package spector") {
 		t.Errorf("first line = %q, want the package clause", snip.Lines[0])
 	}
 }
@@ -88,7 +88,7 @@ func itoa(n int) string {
 func TestSourceEndpointRefusesEscapes(t *testing.T) {
 	cfg := Config{Dir: "examples/shop"}
 	for name, q := range map[string]string{
-		"parent traversal": "file=../../specter.go&line=1",
+		"parent traversal": "file=../../spector.go&line=1",
 		"deep traversal":   "file=../../../../etc/passwd&line=1",
 		"absolute":         "file=/etc/passwd&line=1",
 		"non-Go":           "file=../../go.mod&line=1",
@@ -106,7 +106,7 @@ func TestSourceEndpointRefusesEscapes(t *testing.T) {
 // The error must not say which guess was closer; that turns 404s into a probe
 // for what exists outside the tree.
 func TestSourceEndpointDoesNotLeakTheReason(t *testing.T) {
-	body := getSource(t, Config{Dir: "examples/shop"}, "/source?file=../../specter.go&line=1").Body.String()
+	body := getSource(t, Config{Dir: "examples/shop"}, "/source?file=../../spector.go&line=1").Body.String()
 	for _, leak := range []string{"outside", "scanned", "no such file", "directory", ".."} {
 		if strings.Contains(strings.ToLower(body), leak) {
 			t.Errorf("response mentions %q: %s", leak, body)
@@ -119,10 +119,10 @@ func TestSourceEndpointDoesNotLeakTheReason(t *testing.T) {
 func TestSourceEndpointIsGated(t *testing.T) {
 	cfg := Config{Dir: ".", AccessKey: "k"}
 
-	if code := getSource(t, cfg, "/source?file=specter.go&line=1").Code; code != http.StatusNotFound {
+	if code := getSource(t, cfg, "/source?file=spector.go&line=1").Code; code != http.StatusNotFound {
 		t.Errorf("without a key: status = %d, want 404", code)
 	}
-	if code := getSource(t, cfg, "/source?file=specter.go&line=1&key=k").Code; code != http.StatusOK {
+	if code := getSource(t, cfg, "/source?file=spector.go&line=1&key=k").Code; code != http.StatusOK {
 		t.Errorf("with the key: status = %d, want 200", code)
 	}
 }

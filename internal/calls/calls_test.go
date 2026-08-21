@@ -2,28 +2,26 @@ package calls
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // load parses the fixture package and returns an Index over it.
 func load(t *testing.T) *Index {
 	t.Helper()
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, "testdata/app", nil, 0)
+	files, err := astutil.ParseDir(fset, "testdata/app", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ix := NewIndex()
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			ix.Collect(file)
-		}
+	for _, file := range files {
+		ix.Collect(file)
 	}
 	return ix
 }

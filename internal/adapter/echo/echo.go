@@ -10,11 +10,11 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/user/specter/internal/adapter/astutil"
-	"github.com/user/specter/internal/calls"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/middleware"
-	"github.com/user/specter/internal/realtime"
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
+	"github.com/bakhod1r/spector/internal/calls"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/middleware"
+	"github.com/bakhod1r/spector/internal/realtime"
 )
 
 var methods = map[string]string{
@@ -33,7 +33,7 @@ func (a *Adapter) Name() string { return "echo" }
 
 func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -41,14 +41,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
 	mw := middleware.NewIndex()
-	var files []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			files = append(files, file)
-			scanner.Collect(file)
-			index.Collect(file)
-			mw.Collect(file)
-		}
+	for _, file := range files {
+		scanner.Collect(file)
+		index.Collect(file)
+		mw.Collect(file)
 	}
 
 	handlers := map[string]*ast.FuncDecl{}
@@ -61,19 +57,25 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
+	// scope resolves handler names against the package they were written in,
+	// reads handlers through the project's helper packages, and names the
+	// payload inside its response envelope — the parts of a scan that have
+	// nothing to do with which framework is in use.
+	scope := astutil.NewScope(fset, files)
 	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
-	groups := collectGroups(files, res, loc, &diags)
+	groups := astutil.NewGroupResolver(scope, files, res, &diags, loc)
 
 	var routes []core.Route
 	for _, file := range files {
-		collectRoutes(file, groups, handlers, &routes, loc, index, mw, res, &diags)
+		collectRoutes(file, groups, handlers, &routes, loc, index, mw, res, &diags, scope, scanner.Schemas)
 	}
 
 	return routes, scanner.Schemas, diags.List(), nil
 }
 
-func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index, res *astutil.Resolver, diags *astutil.Diagnostics) {
+func collectRoutes(file *ast.File, groups *astutil.GroupResolver, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index, res *astutil.Resolver, diags *astutil.Diagnostics,
+	scope *astutil.Scope, schemas map[string]*core.Schema) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -89,7 +91,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		if sel.Sel.Name == "Any" && len(call.Args) >= 2 {
 			if path, ok := res.Resolve(call.Args[0]); ok {
 				for _, m := range []string{"get", "post", "put", "patch", "delete"} {
-					addRoute(m, path, call.Args[1], call.Args[2:], sel, call, groups, handlers, routes, loc, index, mw)
+					addRoute(m, path, call.Args[1], call.Args[2:], sel, call, groups, handlers, routes, loc, index, mw, scope, schemas)
 				}
 			} else {
 				diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
@@ -101,7 +103,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 		if sel.Sel.Name == "Match" && len(call.Args) >= 3 {
 			if path, ok := res.Resolve(call.Args[1]); ok {
 				for _, m := range matchMethods(call.Args[0]) {
-					addRoute(m, path, call.Args[2], call.Args[3:], sel, call, groups, handlers, routes, loc, index, mw)
+					addRoute(m, path, call.Args[2], call.Args[3:], sel, call, groups, handlers, routes, loc, index, mw, scope, schemas)
 				}
 			} else {
 				diags.Add(loc.Position(call.Args[1].Pos()), "route", astutil.DescribeExpr(call.Args[1]))
@@ -118,7 +120,7 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 			diags.Add(loc.Position(call.Args[0].Pos()), "route", astutil.DescribeExpr(call.Args[0]))
 			return true
 		}
-		addRoute(method, path, call.Args[1], call.Args[2:], sel, call, groups, handlers, routes, loc, index, mw)
+		addRoute(method, path, call.Args[1], call.Args[2:], sel, call, groups, handlers, routes, loc, index, mw, scope, schemas)
 		return true
 	})
 }
@@ -127,15 +129,19 @@ func collectRoutes(file *ast.File, groups map[string]groupDef, handlers map[stri
 // registration itself: echo takes it after the handler, where gin takes it
 // before, so the slice is worked out by the caller rather than here.
 func addRoute(method, path string, handlerArg ast.Expr, inline []ast.Expr, sel *ast.SelectorExpr, call ast.Node,
-	groups map[string]groupDef, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index) {
+	groups *astutil.GroupResolver, handlers map[string]*ast.FuncDecl, routes *[]core.Route, loc astutil.Locator, index *calls.Index, mw *middleware.Index,
+	scope *astutil.Scope, schemas map[string]*core.Schema) {
 
 	prefix := ""
 	recvName := ""
 	if recv, ok := sel.X.(*ast.Ident); ok {
 		recvName = recv.Name
-		prefix = resolveGroup(recv.Name, groups)
+		prefix = groups.Prefix(recv.Name, scope.EnclosingFunc(call.Pos()))
 	}
 
+	if c, ok := call.(*ast.CallExpr); ok {
+		handlerArg = astutil.SpreadArg(handlerArg, c)
+	}
 	name := astutil.HandlerName(handlerArg)
 	route := core.Route{
 		Method:      method,
@@ -143,12 +149,12 @@ func addRoute(method, path string, handlerArg ast.Expr, inline []ast.Expr, sel *
 		HandlerName: name,
 		Middleware:  mw.For(recvName, call.Pos(), inline),
 	}
-	fd := handlers[name]
+	fd := scope.Handler(handlerArg, handlers)
 	route.Source = loc.Handler(fd, call)
 	if fd != nil {
 		route.Calls = calls.Analyze(fd, index)
 		route.Realtime = realtime.Detect(fd, handlers)
-		astutil.InspectHandler(fd.Body).Apply(&route)
+		scope.Inspect(fd, schemas).Apply(&route)
 		route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
 		d := astutil.ParseDirectives(fd.Doc)
 		route.Tags, route.Deprecated, route.OperationID = d.Tags, d.Deprecated, d.OperationID
@@ -178,64 +184,6 @@ func matchMethods(expr ast.Expr) []string {
 		}
 	}
 	return out
-}
-
-type groupDef struct {
-	recv   string
-	prefix string
-}
-
-// collectGroups records `v := e.Group("/prefix")` so routes registered on v
-// resolve to the full path. Groups nest, so each one remembers its receiver.
-func collectGroups(files []*ast.File, res *astutil.Resolver, loc astutil.Locator, diags *astutil.Diagnostics) map[string]groupDef {
-	groups := map[string]groupDef{}
-	for _, file := range files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-				return true
-			}
-			lhs, ok := as.Lhs[0].(*ast.Ident)
-			if !ok {
-				return true
-			}
-			call, ok := as.Rhs[0].(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
-				return true
-			}
-			prefix, ok := res.Resolve(call.Args[0])
-			if !ok {
-				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
-				return true
-			}
-			recv := ""
-			if id, ok := sel.X.(*ast.Ident); ok {
-				recv = id.Name
-			}
-			groups[lhs.Name] = groupDef{recv: recv, prefix: prefix}
-			return true
-		})
-	}
-	return groups
-}
-
-func resolveGroup(name string, groups map[string]groupDef) string {
-	seen := map[string]bool{}
-	prefix := ""
-	for {
-		g, ok := groups[name]
-		if !ok || seen[name] {
-			break // a group assigned from itself would otherwise loop
-		}
-		seen[name] = true
-		prefix = g.prefix + prefix
-		name = g.recv
-	}
-	return prefix
 }
 
 // normalizePath converts echo's `:id` and `*` into OpenAPI's `{id}`.

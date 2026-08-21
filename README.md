@@ -1,8 +1,8 @@
-# Specter
+# Spector
 
-<img src="assets/specter.png" alt="Specter" width="420">
+<img src="assets/spector.png" alt="Spector" width="420">
 
-Specter generates OpenAPI 3.0 documents and a browsable API console straight
+Spector generates OpenAPI 3.0 documents and a browsable API console straight
 from your Go source — no annotations, no code generation step, no runtime
 reflection. It reads your routing code and handlers as an AST and infers paths,
 parameters, request/response types, and status codes. It also documents gRPC
@@ -10,29 +10,55 @@ services from `.proto` files or generated `*.pb.go` stubs, and GraphQL schemas
 from `.graphql` SDL or gqlgen-generated Go code.
 
 ```
-go install github.com/user/specter/cmd/specter@latest
+go install github.com/bakhod1r/spector/cmd/spector@latest
 ```
+
+Two features are behind build tags because they are the only reason the
+install would be large. Everything described below is in the default build;
+these two are not:
+
+```sh
+# Live gRPC calling from the console ("try it" on a gRPC method).
+# Pulls grpcurl, grpc-go, protoreflect, go-spiffe and the envoy protos.
+# Scanning .proto and writing grpc.json need none of this and are always built.
+go install -tags grpclive github.com/bakhod1r/spector/cmd/spector@latest
+
+# The MCP server (spector -mcp), for editor agents.
+go install -tags mcp github.com/bakhod1r/spector/cmd/spector@latest
+
+# Both
+go install -tags "mcp grpclive" github.com/bakhod1r/spector/cmd/spector@latest
+```
+
+Or download a binary from the
+[releases page](https://github.com/bakhod1r/spector/releases) — linux, macOS
+and Windows, amd64 and arm64. **The published binaries are built with both
+tags**, so nothing above applies to them: a download that turns out to need
+live gRPC cannot be rebuilt with a flag, so it ships with the feature in.
+Verify what you fetched against the `checksums.txt` on the same release, and
+`spector -V` prints the version of the binary itself (`-version` is the version
+of the API being documented, which is a different thing).
 
 ## Quick start (CLI)
 
 ```sh
 # Every document a project has, in one command
-specter -all -dir . -o ./specs
+spector -all -dir . -o ./specs
 
 # OpenAPI from the current package
-specter -dir ./api -title "Users API" -version 1.0.0 -o openapi.json
+spector -dir ./api -title "Users API" -version 1.0.0 -o openapi.json
 
 # gRPC document from .proto or generated *.pb.go
-specter -grpc -dir ./proto -o grpc.json
+spector -grpc -dir ./proto -o grpc.json
 
 # GraphQL document from .graphql SDL or gqlgen-generated Go
-specter -graphql -dir ./graph -o graphql.json
+spector -graphql -dir ./graph -o graphql.json
 ```
 
 | Flag          | Description                                                |
 | ------------- | ---------------------------------------------------------- |
 | `-dir`        | Directory to scan (default `.`)                            |
-| `-config`     | Config file, JSON or YAML by extension (default: `specter.json`, `.yaml` or `.yml` in `-dir`, if present) |
+| `-config`     | Config file, JSON or YAML by extension (default: `spector.json`, `.yaml` or `.yml` in `-dir`, if present) |
 | `-adapter`    | `gin`, `chi`, `echo`, `fiber`, `gorillamux`, `httprouter`, `bunrouter`, or `stdlib`; autodetected when empty |
 | `-title`      | API title (defaults to the directory name)                 |
 | `-version`    | API version (default `0.1.0`)                              |
@@ -85,9 +111,9 @@ specter -graphql -dir ./graph -o graphql.json
 ### Client SDKs — ten languages
 
 ```sh
-specter -dir ./api -sdk ts -sdk-out ./web/src/api
-specter -dir ./api -sdk go -sdk-package usersapi -sdk-out ./client
-specter -dir ./api -sdk python -sdk-out ./clients/py
+spector -dir ./api -sdk ts -sdk-out ./web/src/api
+spector -dir ./api -sdk go -sdk-package usersapi -sdk-out ./client
+spector -dir ./api -sdk python -sdk-out ./clients/py
 ```
 
 A typed client in any of ten languages — **Go, TypeScript, Python, JavaScript,
@@ -120,7 +146,7 @@ users = api.list_users()  # list[User]
 ```
 
 The output is source you own: commit it, edit it, and regenerate when the API
-changes. It is not a framework to configure, and nothing imports specter at
+changes. It is not a framework to configure, and nothing imports spector at
 runtime.
 
 #### From an OpenAPI document
@@ -130,7 +156,7 @@ existing `openapi.json` or `openapi.yaml` (a hand-written spec, or a third-party
 API) and generate a client for it directly:
 
 ```sh
-specter -openapi ./openapi.yaml -sdk rust -sdk-out ./clients/rust
+spector -openapi ./openapi.yaml -sdk rust -sdk-out ./clients/rust
 ```
 
 ### Watch mode
@@ -140,18 +166,18 @@ It combines with the modes that write files — `-o`, `-all`, `-sdk` — so a cl
 or a spec stays in step with the code while you edit it:
 
 ```sh
-specter -dir ./api -o openapi.json -watch
-specter -dir ./api -sdk ts -sdk-out ./web/src/api -watch
+spector -dir ./api -o openapi.json -watch
+spector -dir ./api -sdk ts -sdk-out ./web/src/api -watch
 ```
 
 The tree is polled once a second and fingerprinted by name, size and mtime;
 `.git`, `vendor` and `node_modules` are skipped. A regeneration that fails does
 not end the watch — the next save may be the fix.
 
-### `specter.json` / `specter.yaml`
+### `spector.json` / `spector.yaml`
 
 Servers and security schemes are declared, not inferred, and a map of schemes
-does not fit on a command line. Put them in a `specter.json` next to the code
+does not fit on a command line. Put them in a `spector.json` next to the code
 and the CLI writes the same document the embedded console serves:
 
 ```json
@@ -168,7 +194,7 @@ and the CLI writes the same document the embedded console serves:
 ```
 
 The same settings can be written in YAML with identical keys — name the file
-`specter.yaml` (or `specter.yml`):
+`spector.yaml` (or `spector.yml`):
 
 ```yaml
 title: Shop API
@@ -184,7 +210,7 @@ basePath: /docs
 ### gRPC-Gateway (`google.api.http`)
 
 ```sh
-specter -gateway -dir ./proto -o openapi.yaml
+spector -gateway -dir ./proto -o openapi.yaml
 ```
 
 A service annotated for [gRPC-Gateway](https://github.com/grpc-ecosystem/grpc-gateway)
@@ -210,21 +236,21 @@ rpc GetUser(GetUserRequest) returns (User) {
 - `body: "*"` sends the whole request message; `body: "field"` sends that
   field's type. With no `body`, every request field the path did not consume
   becomes a query parameter — which is how the gateway reads them.
-- A server-streaming RPC is marked `x-specter-realtime: stream`, because the
+- A server-streaming RPC is marked `x-spector-realtime: stream`, because the
   gateway answers it with a stream of JSON messages rather than one body.
 - An RPC **without** the annotation is gRPC-only and is left out: the document
   describes the HTTP surface, not every method on the service.
 
 Servers, security, `-format` and manual route supplements apply exactly as they
 do to a scanned REST document, so one config describes both front doors. The
-library entry point is `specter.GenerateGateway(cfg)`.
+library entry point is `spector.GenerateGateway(cfg)`.
 
 ### YAML output
 
 ```sh
-specter -dir ./api -o openapi.yaml          # extension picks YAML
-specter -dir ./api -format yaml             # or say so explicitly
-specter -grpc -dir ./proto -format yaml
+spector -dir ./api -o openapi.yaml          # extension picks YAML
+spector -dir ./api -format yaml             # or say so explicitly
+spector -grpc -dir ./proto -format yaml
 ```
 
 The document is JSON by default. `-format yaml` emits the same document as
@@ -240,7 +266,7 @@ AsyncAPI are formats of their own and are unaffected.
 A route the AST genuinely cannot resolve — built in a loop, from a slice, or
 returned by a function — is reported as a diagnostic and documented nowhere.
 Declare it by hand in the config file's `routes:` list and it joins the
-document, marked `x-specter-manual` so a reader can tell an asserted route from
+document, marked `x-spector-manual` so a reader can tell an asserted route from
 a scanned one:
 
 ```yaml
@@ -261,10 +287,10 @@ not document, and never rewrites one it did. `fills` names the `file.go:line`
 the diagnostic reported; when it matches, that diagnostic is dropped, so a
 fully supplemented codebase passes `-strict-routes`. A `fills` that matches
 nothing leaves every diagnostic in place rather than silencing the wrong one.
-Library callers pass the same entries as `Config.Routes` (`[]specter.ManualRoute`).
+Library callers pass the same entries as `Config.Routes` (`[]spector.ManualRoute`).
 
-It is picked up automatically when it sits in `-dir` — `specter.json` is tried
-first, then `specter.yaml`, then `specter.yml`, and the first found wins.
+It is picked up automatically when it sits in `-dir` — `spector.json` is tried
+first, then `spector.yaml`, then `spector.yml`, and the first found wins.
 `-config` names one elsewhere, its format chosen by extension (`.yaml`/`.yml` is
 YAML, otherwise JSON). The file is a default, not an override — a flag you
 actually typed wins. A `-config` that does not exist, or a file that does not
@@ -272,35 +298,35 @@ parse, is an error rather than a silent fallback.
 
 ## Embedded console (library)
 
-Specter is meant to be added to a service you already have: import it, mount
+Spector is meant to be added to a service you already have: import it, mount
 it on the router you already built, and the console documents whatever that
 service serves. There is no build step and nothing to keep in sync — the
 document is derived from the source at startup.
 
 ```go
 import (
-    "github.com/user/specter"
-    "github.com/user/specter/mount"
+    "github.com/bakhod1r/spector"
+    "github.com/bakhod1r/spector/mount"
 )
 
 func main() {
     r := gin.Default()
     registerYourRoutes(r)          // the service you already have
 
-    mount.Gin(r, specter.Config{
+    mount.Gin(r, spector.Config{
         Dir:       ".",            // where to read the routing code
         Title:     "Users API",
         Version:   "1.0.0",
         BasePath:  "/docs",        // where to mount it; "/docs" is the default
-        AccessKey: cfg.SpecterKey, // your app decides where this comes from
+        AccessKey: cfg.SpectorKey, // your app decides where this comes from
     })
 
     r.Run(":8080")                 // one server, yours
 }
 ```
 
-**Specter never listens on anything.** The `mount` functions register routes on the router
-you pass it, and `specter.Handler` is a plain `http.Handler` — there is no
+**Spector never listens on anything.** The `mount` functions register routes on the router
+you pass it, and `spector.Handler` is a plain `http.Handler` — there is no
 second port to open, no goroutine started, and no separate process. The console
 is served by your server, behind your middleware and your TLS, and it goes away
 when your server does.
@@ -334,34 +360,34 @@ mount.GorillaMux(r, cfg) // *mux.Router
 ```
 
 Importing `mount` compiles all six frameworks into your binary. If that
-matters, skip the package: `specter.Handler(cfg)` is a plain `http.Handler`,
+matters, skip the package: `spector.Handler(cfg)` is a plain `http.Handler`,
 and mounting it by hand is two lines.
 
 ```go
-mux.Handle("/docs/", http.StripPrefix("/docs", specter.Handler(cfg)))
+mux.Handle("/docs/", http.StripPrefix("/docs", spector.Handler(cfg)))
 ```
 
-The root `specter` package does not import `mount`, so this path costs no
+The root `spector` package does not import `mount`, so this path costs no
 framework dependencies at all.
 
 Fiber is the one with a caveat: it runs on fasthttp, so each request crosses an
 adaptor that rebuilds it as an `*http.Request`. Fine for a console, worth
 knowing before you put it on a hot path.
 
-Everything Specter needs arrives through `Config`. The library reads no
+Everything Spector needs arrives through `Config`. The library reads no
 environment variables and no config files of its own, so where a value comes
 from — env, a secret manager, a flag, a config struct — stays your
 application's decision.
 
 ## Source links
 
-Specter reads the AST, so it knows the file and line every operation came from.
+Spector reads the AST, so it knows the file and line every operation came from.
 Each operation carries it as a vendor extension:
 
 ```json
 "get": {
   "operationId": "listCarts",
-  "x-specter-source": { "file": "main.go", "line": 463 }
+  "x-spector-source": { "file": "main.go", "line": 463 }
 }
 ```
 
@@ -418,16 +444,16 @@ Rules with no JSON Schema equivalent — `gtfield`, `required_with`, `contains`,
 custom validators — are ignored in silence, and so is a malformed tag. A typo in
 a struct tag is not a reason to stop documenting an API.
 
-Specter does not validate anything at runtime. It never sits in the request
+Spector does not validate anything at runtime. It never sits in the request
 path; it only reads the source.
 
 ## Standards advice
 
-Specter reviews the generated document against the HTTP and JSON standards and
+Spector reviews the generated document against the HTTP and JSON standards and
 reports where an API diverges, in the console next to each operation:
 
 ```json
-"x-specter-advice": [{
+"x-spector-advice": [{
   "rule": "rfc9457-content-type",
   "severity": "should",
   "message": "404 returns application/json; error responses should use application/problem+json …",
@@ -445,7 +471,7 @@ Current rules:
 | `post-created` | RFC 9110 | A creating POST should answer 201 with `Location` |
 | `delete-no-content` | RFC 9110 | An empty 200 on DELETE is better as 204 |
 
-**These are recommendations, never rewrites.** Specter documents what the code
+**These are recommendations, never rewrites.** Spector documents what the code
 does. Reshaping an error body in the document to match RFC 9457 would make it
 describe an aspiration instead of a service, so the advice is attached and the
 decision stays yours.
@@ -461,7 +487,7 @@ a cache, a queue. Each operation carries what was found, and the console shows
 it as a row of chips.
 
 ```json
-"x-specter-calls": [
+"x-spector-calls": [
   { "kind": "db",    "target": "db.ExecContext",      "confidence": "likely" },
   { "kind": "http",  "target": "http.Post",           "confidence": "certain" },
   { "kind": "queue", "target": "writer.WriteMessages","confidence": "likely" }
@@ -471,7 +497,7 @@ it as a row of chips.
 Handlers usually delegate, so calls are followed up to three levels down —
 handler → service → repository — which is where the query normally lives.
 
-**Read the confidence.** Specter has no type checker, so there are two ways a
+**Read the confidence.** Spector has no type checker, so there are two ways a
 call gets identified, and they are not equally trustworthy:
 
 - `certain` — the call went through an imported package (`http.Post`,
@@ -500,7 +526,7 @@ which is what makes a stale document worse than none: it is believed.
 own document:
 
 ```sh
-specter -contract ./contract -dir ./api
+spector -contract ./contract -dir ./api
 ```
 
 | File | What it is for |
@@ -510,8 +536,8 @@ specter -contract ./contract -dir ./api
 | `smoke.sh` | Status codes only, in POSIX shell — for a pipeline that has curl and nothing else. |
 
 ```sh
-SPECTER_BASE_URL=http://localhost:8080 go test -tags contract ./contract
-SPECTER_BASE_URL=http://localhost:8080 sh contract/smoke.sh
+SPECTOR_BASE_URL=http://localhost:8080 go test -tags contract ./contract
+SPECTOR_BASE_URL=http://localhost:8080 sh contract/smoke.sh
 ```
 
 Requests are runnable as written: path parameters are filled, required query and
@@ -546,11 +572,11 @@ yours.
 ## API evolution
 
 A version number is meant to encode one thing — is this safe to upgrade to? — and
-almost never actually does. Specter answers it from the two documents rather than
+almost never actually does. Spector answers it from the two documents rather than
 from a changelog someone remembered to write:
 
 ```sh
-specter -dir ./api -evolve -since HEAD~1
+spector -dir ./api -evolve -since HEAD~1
 ```
 
 Every difference is classified by what it does to a client already using the API,
@@ -572,12 +598,12 @@ The baseline comes from a git revision (`-since HEAD~1`, `-since v1.0.0`), anoth
 directory (`-baseline-dir`), or an existing document (`-baseline old.json`). A
 revision is exported with `git archive` into a temp directory and scanned — the
 working tree, the index, and any uncommitted work are never touched. Both sides go
-through the same scanner, so a change in how Specter reads code never masquerades
+through the same scanner, so a change in how Spector reads code never masquerades
 as an API change.
 
 ```sh
-specter -dir ./api -evolve -since v1.0.0 -evolve-format markdown  # a changelog section
-specter -dir ./api -evolve -since HEAD~1 -fail-on-breaking        # a CI gate
+spector -dir ./api -evolve -since v1.0.0 -evolve-format markdown  # a changelog section
+spector -dir ./api -evolve -since HEAD~1 -fail-on-breaking        # a CI gate
 ```
 
 `-evolve-format json` emits a stable-ordered, machine-readable diff; `-fail-on-breaking`
@@ -586,7 +612,7 @@ breaking change ships.
 
 ## Verifying proxy
 
-The contract artefacts check the document with requests Specter invented: one
+The contract artefacts check the document with requests Spector invented: one
 sample body, one path value, the happy path. Real traffic is not like that. It
 has empty lists, error cases, clients sending fields nobody documented, and
 endpoints the scanner never saw because they are registered somewhere it does
@@ -596,7 +622,7 @@ The proxy sits in front of the real API, forwards everything untouched, and
 reports where the traffic disagrees with the document:
 
 ```sh
-specter -dir ./api -proxy :8080 -proxy-target http://localhost:3000
+spector -dir ./api -proxy :8080 -proxy-target http://localhost:3000
 ```
 
 Point your clients (or your test suite) at `:8080` instead of the API, and every
@@ -652,7 +678,7 @@ local API and its help text says what it does.
 A frontend does not have to wait for the backend:
 
 ```sh
-specter -mock :8080 -dir ./api
+spector -mock :8080 -dir ./api
 ```
 
 Every documented path answers with a body that satisfies its own response
@@ -692,13 +718,13 @@ cross-origin request. By default it is open to anyone, which is right for a mock
 whose caller runs on whatever port the dev server picked today:
 
 ```sh
-specter -mock :8080 -dir ./api
+spector -mock :8080 -dir ./api
 ```
 
 Restrict it, or allow credentials, when the default does not fit:
 
 ```sh
-specter -mock :8080 -dir ./api \
+spector -mock :8080 -dir ./api \
   -mock-origin http://localhost:5173,http://localhost:3000 \
   -mock-credentials
 ```
@@ -721,8 +747,8 @@ a cache cannot hand one origin's response to another.
 As a library:
 
 ```go
-doc, _ := specter.Generate(cfg)
-specter.ServeMock(":8080", doc, specter.MockOptions{
+doc, _ := spector.Generate(cfg)
+spector.ServeMock(":8080", doc, spector.MockOptions{
     AllowOrigins:     []string{"http://localhost:5173"},
     AllowCredentials: true,
     MaxAge:           600,
@@ -740,8 +766,8 @@ Export the scanned API as a Postman collection v2.1 (Insomnia imports the same
 format):
 
 ```sh
-specter -postman -dir . -o api.postman_collection.json
-specter -postman-env -dir . -o api.postman_environment.json
+spector -postman -dir . -o api.postman_collection.json
+spector -postman-env -dir . -o api.postman_environment.json
 ```
 
 The collection imports ready to run:
@@ -768,7 +794,7 @@ Export the API as a [HAR 1.2](http://www.softwareishard.com/blog/har-12-spec/)
 archive — the log format browsers, proxies and load tools read:
 
 ```sh
-specter -har -dir . -o api.har
+spector -har -dir . -o api.har
 ```
 
 Each operation becomes one entry with a request body sampled from its schema and
@@ -781,7 +807,7 @@ relative when the document names none.
 Three routing mistakes compile cleanly, start cleanly, and fail silently:
 
 ```sh
-specter -lint -dir ./api
+spector -lint -dir ./api
 ```
 
 ```
@@ -801,7 +827,7 @@ main.go:97:  shadowed-route: GET /users/me may be shadowed by /users/{id} regist
 It exits 1 when it finds anything, so CI can gate on it:
 
 ```yaml
-- run: go run github.com/user/specter/cmd/specter -lint -dir ./api
+- run: go run github.com/bakhod1r/spector/cmd/spector -lint -dir ./api
 ```
 
 Handlers are recognised by signature rather than by name, so ordinary helpers
@@ -820,10 +846,10 @@ that ambiguity is worth removing either way.
 | fiber          |   ✅   |     ✅      |  ✅   |   ✅   |  `app.Group(...)`   |      ✅      |     ✅     |
 | gorilla/mux    |   ✅   |     ✅      |  ✅   |   ✅   | `PathPrefix(...).Subrouter()` | ✅ |    ✅     |
 | net/http (1.22)|   ✅   |     ✅      |  ✅   |   ✅   | sub-mux + `StripPrefix` | ✅      |     ✅     |
-| httprouter     |   ✅   |     ✅      |  ✅   |   ✅   |        —            |      ✅      |     —      |
-| bunrouter      |   ✅   |     ✅      |  ✅   |   ✅   | `WithGroup(...)`   |      ✅      |     —      |
+| httprouter     |   ✅   |     ✅      |  ✅   |   ✅   |        —            |      ✅      |     ✅     |
+| bunrouter      |   ✅   |     ✅      |  ✅   |   ✅   | `WithGroup(...)`   |      ✅      |     ✅     |
 
-What Specter infers from handlers:
+What Spector infers from handlers:
 
 - **Request/response bodies** from `c.ShouldBindJSON`, `c.Bind`, `c.BodyParser`,
   `c.JSON`, `json.Decoder/Encoder`, `render.JSON`, etc., resolved to `$ref`
@@ -842,7 +868,7 @@ structs (composed via `allOf`), `time.Time`, maps, and slices.
 
 ## gRPC
 
-Specter documents gRPC services two ways:
+Spector documents gRPC services two ways:
 
 - **`.proto` sources** — services, methods, streaming, messages, and enum
   variant names.
@@ -858,7 +884,7 @@ stream, plus Cancel to abort the call.
 
 ## GraphQL
 
-Specter documents GraphQL schemas two ways:
+Spector documents GraphQL schemas two ways:
 
 - **`.graphql` / `.graphqls` SDL** — object, input, interface and enum types
   plus the fields on the `Query`, `Mutation`, and `Subscription` root types,
@@ -877,13 +903,13 @@ security scheme — where the token goes, what format it is in — is a detail n
 middleware name reveals. Declare them:
 
 ```go
-specter.Config{
+spector.Config{
     Dir: ".",
-    Servers: []specter.Server{
+    Servers: []spector.Server{
         {URL: "https://api.example.com", Description: "production"},
         {URL: "http://localhost:8080"},
     },
-    Security: map[string]specter.SecurityScheme{
+    Security: map[string]spector.SecurityScheme{
         "bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
         "apiKeyAuth": {Type: "apiKey", Name: "X-API-Key", In: "header"},
     },
@@ -904,7 +930,7 @@ handler — it runs in middleware on the router — so a generator that reads on
 handler bodies documents every endpoint as public, including the ones that
 answer 401 to everybody.
 
-Specter follows the middleware instead, per route and in order:
+Spector follows the middleware instead, per route and in order:
 
 | Router     | How middleware is found                                        |
 | ---------- | -------------------------------------------------------------- |
@@ -912,6 +938,8 @@ Specter follows the middleware instead, per route and in order:
 | echo       | `e.Use(...)`, `e.Group(path, mw...)`, `e.GET(path, h, mw...)`   |
 | chi        | `r.Use(...)`, `r.Route`/`r.Group` closures, `r.With(mw).Get(...)` |
 | net/http   | wrapping: `mw(handler)`, a wrapped mounted sub-mux, and the wrapper around the server's own handler |
+| bunrouter  | `bunrouter.New(bunrouter.Use(...))`, `Use`/`WithMiddleware` in a group, `r.Use(mw).GET(...)` |
+| httprouter | wrapping: `r.GET(path, mw(h))`, and the wrapper around the router where it is served |
 
 Position decides: `r.Use(x)` applies to what is registered after it, and a
 guard on one group never reaches its siblings.
@@ -930,18 +958,18 @@ By default the console is served to anyone who can reach the route. Set an
 access key to require a shared secret:
 
 ```go
-mount.Gin(r, specter.Config{
+mount.Gin(r, spector.Config{
     Dir:       ".",
-    AccessKey: cfg.SpecterKey,   // empty = open, the default
+    AccessKey: cfg.SpectorKey,   // empty = open, the default
 })
 ```
 
-The key is a plain `Config` field: Specter never reads it from the environment
+The key is a plain `Config` field: Spector never reads it from the environment
 itself, so it fits whatever your service already uses for secrets.
 
 Open it once with the key in the URL — `/docs/?key=<value>` — and the key is
 stored in an `HttpOnly` cookie so the page's own requests carry it. Scripts and
-CI can send `X-Specter-Key` instead. Without a valid key every route under the
+CI can send `X-Spector-Key` instead. Without a valid key every route under the
 handler answers 404, including `grpc/invoke`.
 
 **This is a deployment gate, not authentication.** There are no accounts, no
@@ -954,7 +982,7 @@ per-user access.
 ## Realtime
 
 The console's Realtime tab connects to three transports from the browser. It
-is a client only — Specter does not infer these endpoints from your code, you
+is a client only — Spector does not infer these endpoints from your code, you
 type the URL.
 
 - **WebSocket** — connect, watch inbound frames, send payloads.
@@ -962,7 +990,7 @@ type the URL.
   auth has to ride in the query string. Named events reach only matching
   listeners, so the pane asks which names to subscribe to.
 - **MQTT** — over `ws://`, using a small hand-written MQTT 3.1.1 codec, since
-  Specter ships as one file with no external assets. Browsers cannot open raw
+  Spector ships as one file with no external assets. Browsers cannot open raw
   TCP, so the broker needs a WebSocket listener (Mosquitto: `listener 9001` +
   `protocol websockets`).
 
@@ -976,7 +1004,7 @@ vocabulary for these channels, so `-asyncapi` exports them as an
 [AsyncAPI 2.6](https://www.asyncapi.com/) document instead:
 
 ```sh
-specter -asyncapi -dir . -o asyncapi.json
+spector -asyncapi -dir . -o asyncapi.json
 ```
 
 Each realtime endpoint becomes a channel keyed by its path. A WebSocket is
@@ -990,8 +1018,8 @@ response, and the referenced schemas are carried into `components` so the
 ## Architecture
 
 ```
-specter.go            public API: Generate, GenerateGrpc, GenerateGraphql, Handler
-cmd/specter           CLI
+spector.go            public API: Generate, GenerateGrpc, GenerateGraphql, Handler
+cmd/spector           CLI
 internal/core         OpenAPI/gRPC/GraphQL model + struct→schema scanner
 internal/adapter/*    gin, chi, echo, fiber, gorillamux, stdlib route scanners
                       (shared handler analysis in astutil)

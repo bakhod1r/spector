@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // analyze reads a middleware's body and reports what it demands of a caller.

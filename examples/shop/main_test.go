@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/bakhod1r/spector"
 	"github.com/gin-gonic/gin"
-	"github.com/user/specter"
 )
 
 func TestMain(m *testing.M) {
@@ -143,16 +143,16 @@ func requiresFields(t *testing.T, ginPath string) bool {
 
 var (
 	docOnce sync.Once
-	docVal  *specter.Document
+	docVal  *spector.Document
 	docErr  error
 )
 
 // generatedDoc builds the document once for the whole test binary; scanning the
 // package is not cheap enough to redo per subtest.
-func generatedDoc(t *testing.T) *specter.Document {
+func generatedDoc(t *testing.T) *spector.Document {
 	t.Helper()
 	docOnce.Do(func() {
-		docVal, docErr = specter.Generate(specter.Config{Dir: ".", Title: "shop", Version: "test"})
+		docVal, docErr = spector.Generate(spector.Config{Dir: ".", Title: "shop", Version: "test"})
 	})
 	if docErr != nil {
 		t.Fatalf("generate: %v", docErr)

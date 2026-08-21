@@ -1,4 +1,4 @@
-# Specter — Postman-uslubidagi aqlli UI rejasi
+# Spector — Postman-uslubidagi aqlli UI rejasi
 
 ## Maqsad
 
@@ -10,7 +10,7 @@ auth turlari, va oddiy testlar/assertlar. Server tegmaydi — hamma narsa
 
 ## Arxitektura
 
-- Backend o'zgarmaydi: `specter.Handler` `/openapi.json` va UI beradi.
+- Backend o'zgarmaydi: `spector.Handler` `/openapi.json` va UI beradi.
 - Yangi ish faqat frontendda: bitta `ui.html` ichida holat boshqaruvi + `{{var}}`
   interpolatsiya + `localStorage` persistligi.
 - OpenAPI spec = so'rovlar shabloni manbasi; foydalanuvchi ustidan variantlar saqlaydi.
@@ -18,7 +18,7 @@ auth turlari, va oddiy testlar/assertlar. Server tegmaydi — hamma narsa
 ## Data schema (pseudocode)
 
 ```
-// localStorage kaliti: "specter.state" -> JSON(Store)
+// localStorage kaliti: "spector.state" -> JSON(Store)
 
 Store {
   activeEnvId: string
@@ -150,7 +150,7 @@ Har OpenAPI endpoint yonida "＋ Save as request" -> fromSpec() -> collectionga 
 5. **Chaining (ExtractRule)** — javob JSON'dan `$.id` -> env var -> keyingi so'rov.
 6. **Testlar (assert)** — status/json/header, pass-fail ko'rsatkichi.
 7. **Import/Export** — BAJARILDI. Butun Store JSON sifatida
-   (`format: "specter.collection"`, `version: 1`). Import merge yoki replace
+   (`format: "spector.collection"`, `version: 1`). Import merge yoki replace
    tanlovini so'raydi; merge'da id to'qnashuvlari yangi id oladi. Postman v2.1
    formatini o'qish hali yo'q — faqat o'z formatimiz.
 
@@ -170,7 +170,7 @@ ko'zda tutilmagan edi, kod keyinroq qo'shilgan.
 - SSE — native `EventSource`. GET-only, custom header yo'q; nomlangan
   hodisalar uchun panelda "Named events" maydoni bor.
 - MQTT — `ws://` ustidan, qo'lda yozilgan MQTT 3.1.1 codec bilan (CDN
-  client ishlatib bo'lmaydi, chunki Specter tashqi assetsiz bitta fayl).
+  client ishlatib bo'lmaydi, chunki Spector tashqi assetsiz bitta fayl).
 
 Tekshirilgan: `examples/shop` ning `/events` va `/ws` endpointlariga hamda
 mosquitto brokeriga qarshi, brauzerda haqiqiy kliklar bilan. MQTT uchun

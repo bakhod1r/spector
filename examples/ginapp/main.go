@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bakhod1r/spector"
+	"github.com/bakhod1r/spector/mount"
 	"github.com/gin-gonic/gin"
-	"github.com/user/specter"
-	"github.com/user/specter/mount"
 )
 
 type User struct {
@@ -76,7 +76,7 @@ func router() *gin.Engine {
 	v1.GET("/users/:id", getUser)
 	v1.POST("/users", createUser)
 
-	mount.Gin(r, specter.Config{
+	mount.Gin(r, spector.Config{
 		Dir:     ".",
 		Title:   "Users API",
 		Version: "1.0.0",

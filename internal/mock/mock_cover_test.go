@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // ---- sample edge cases ----
@@ -136,5 +136,17 @@ func TestCredentialsWildcardWithoutOrigin(t *testing.T) {
 	value, allowed := o.originFor("")
 	if !allowed || value != "" {
 		t.Errorf("= %q, %v; want empty and allowed", value, allowed)
+	}
+}
+
+// An operation whose only response is "default" — the scanner saw a body but
+// could not read the status — still has a body worth serving.
+func TestPrimaryUsesTheDefaultResponse(t *testing.T) {
+	op := core.NewOperation("op")
+	op.SetResponse(0, core.NewResponse("Response"))
+
+	status, resp := primary(op)
+	if status != 200 || resp == nil {
+		t.Errorf("primary = (%d, %v), want 200 with the default response", status, resp)
 	}
 }

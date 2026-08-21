@@ -1,6 +1,6 @@
 // Package adapter_test checks the one thing every adapter must agree on but
 // none of them shares code for: that each route carries the position of the
-// code it came from. Reading the AST is what lets Specter know this at all, and
+// code it came from. Reading the AST is what lets Spector know this at all, and
 // an adapter that forgets to record it loses the information silently — the
 // document still validates, the console still renders, and only the "view
 // source" link is quietly missing.
@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	chiadapter "github.com/user/specter/internal/adapter/chi"
-	echoadapter "github.com/user/specter/internal/adapter/echo"
-	ginadapter "github.com/user/specter/internal/adapter/gin"
-	stdlibadapter "github.com/user/specter/internal/adapter/stdlib"
-	"github.com/user/specter/internal/core"
+	chiadapter "github.com/bakhod1r/spector/internal/adapter/chi"
+	echoadapter "github.com/bakhod1r/spector/internal/adapter/echo"
+	ginadapter "github.com/bakhod1r/spector/internal/adapter/gin"
+	stdlibadapter "github.com/bakhod1r/spector/internal/adapter/stdlib"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 func adapters() map[string]core.Adapter {
@@ -103,7 +103,7 @@ func readLine(t *testing.T, path string, n int) string {
 	return ""
 }
 
-// Doc comments are where summaries, descriptions and the specter: directives
+// Doc comments are where summaries, descriptions and the spector: directives
 // live. An adapter that parses without ParseComments loses all three silently:
 // the document still generates, and every summary is simply absent.
 func TestEveryAdapterParsesDocComments(t *testing.T) {
@@ -132,7 +132,7 @@ func TestEveryAdapterReadsDirectives(t *testing.T) {
 			for _, r := range routes {
 				if r.HandlerName == "listUsers" {
 					if len(r.Tags) == 0 || r.Tags[0] != "users" {
-						t.Errorf("tags = %v, want [users] from the specter:tags directive", r.Tags)
+						t.Errorf("tags = %v, want [users] from the spector:tags directive", r.Tags)
 					}
 					return
 				}
@@ -143,13 +143,13 @@ func TestEveryAdapterReadsDirectives(t *testing.T) {
 }
 
 // A directive is an instruction to the generator, not prose. Leaving it in the
-// description would print "specter:tags users" in the rendered documentation.
+// description would print "spector:tags users" in the rendered documentation.
 func TestDirectivesAreStrippedFromTheDescription(t *testing.T) {
 	for name, a := range adapters() {
 		t.Run(name, func(t *testing.T) {
 			_, routes := scan(t, name, a)
 			for _, r := range routes {
-				if strings.Contains(r.Summary, "specter:") || strings.Contains(r.Description, "specter:") {
+				if strings.Contains(r.Summary, "spector:") || strings.Contains(r.Description, "spector:") {
 					t.Errorf("%s %s leaks a directive into its text: %q / %q",
 						r.Method, r.Path, r.Summary, r.Description)
 				}

@@ -9,7 +9,7 @@
 // So this file is the single source, and the contract generator copies its text
 // into the code it emits rather than reimplementing it. That is why the package
 // imports nothing but the standard library: the copy has to compile inside
-// someone else's package, where "github.com/user/specter/internal/..." does not
+// someone else's package, where "github.com/bakhod1r/spector/internal/..." does not
 // resolve. A test locks the two together.
 package conform
 

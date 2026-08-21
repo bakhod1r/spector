@@ -142,15 +142,15 @@ Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, e
 ```
 
 - All eight adapters updated to return `diags.List()`.
-- The single dispatch/caller (in `specter.go` / `cmd/specter/main.go`, wherever
+- The single dispatch/caller (in `spector.go` / `cmd/spector/main.go`, wherever
   `Adapter.Scan` is invoked — grep `.Scan(`) collects the diagnostics.
 - The CLI prints them to **stderr** (never stdout, which may carry the spec),
   one line each:
-  `specter: <file>:<line>: dynamic <kind>, cannot infer path (<reason>)`
+  `spector: <file>:<line>: dynamic <kind>, cannot infer path (<reason>)`
   plus a trailing summary count. A new flag `-strict-routes` (default off) makes
   any diagnostic a non-zero exit; default is warn-and-continue so existing runs
   are unaffected except for added stderr lines.
-- The library entry point (`specter.go` wrapper) exposes the diagnostics on its
+- The library entry point (`spector.go` wrapper) exposes the diagnostics on its
   result so programmatic callers (and 2b) can consume them without parsing
   stderr.
 

@@ -1,6 +1,6 @@
-# Contributing to Specter
+# Contributing to Spector
 
-Thanks for your interest in improving Specter. This document covers how to get
+Thanks for your interest in improving Spector. This document covers how to get
 set up, the bar a change needs to clear, and how the pieces fit together.
 
 ## Getting started
@@ -19,7 +19,7 @@ Node.js.
 ## Development workflow
 
 - Work on a branch, never directly on `main`.
-- Write the test first. Specter is a generator: a change without a test that
+- Write the test first. Spector is a generator: a change without a test that
   pins the new output is a change nobody can safely refactor later.
 - Keep commits focused and their messages in the imperative mood
   (`feat(chi): resolve local prefixes`, `fix: …`, `docs: …`).
@@ -53,13 +53,13 @@ Each adapter lives in `internal/adapter/<name>/` and implements `core.Adapter`.
 Follow the existing pattern: a `Scan` that parses the directory, walks the
 routing calls, resolves paths with `astutil` helpers, and returns routes,
 schemas, and diagnostics. Add `testdata/` packages and wire the adapter into
-`adapterFor`/`detect` in [`specter.go`](specter.go). Copy a small existing
+`adapterFor`/`detect` in [`spector.go`](spector.go). Copy a small existing
 adapter (e.g. `httprouter`) as a starting point.
 
 ## Adding an export format
 
 Export formats live in `internal/export/`. Add the encoder, a test with a
-golden `testdata` fixture, wire the flag in `cmd/specter/main.go`, and document
+golden `testdata` fixture, wire the flag in `cmd/spector/main.go`, and document
 it in the README.
 
 ## Reporting bugs and requesting features

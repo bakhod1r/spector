@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bakhod1r/spector"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
-	"github.com/user/specter"
 )
 
 // Fiber registers the console on a fiber app under cfg.BasePath
@@ -16,7 +16,7 @@ import (
 // adaptor that rebuilds it as an *http.Request. That copies the body, which is
 // fine for a documentation console but is worth knowing if you mount it on a
 // hot path.
-func Fiber(app fiber.Router, cfg specter.Config) {
+func Fiber(app fiber.Router, cfg spector.Config) {
 	base, h := prepare(cfg)
 
 	// fiber is non-strict by default, so a route for "/docs" also matches

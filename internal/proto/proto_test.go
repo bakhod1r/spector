@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bakhod1r/spector/internal/core"
 	"github.com/emicklei/proto"
-	"github.com/user/specter/internal/core"
 )
 
 func TestScan(t *testing.T) {

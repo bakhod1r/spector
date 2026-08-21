@@ -6,11 +6,11 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/user/specter/internal/adapter/astutil"
-	"github.com/user/specter/internal/calls"
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/middleware"
-	"github.com/user/specter/internal/realtime"
+	"github.com/bakhod1r/spector/internal/adapter/astutil"
+	"github.com/bakhod1r/spector/internal/calls"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/middleware"
+	"github.com/bakhod1r/spector/internal/realtime"
 )
 
 var methods = map[string]string{
@@ -29,9 +29,9 @@ func (a *Adapter) Name() string { return "gin" }
 func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []astutil.Diagnostic, error) {
 	fset := token.NewFileSet()
 	// ParseComments is required, not optional: summaries, descriptions and the
-	// specter: directives all live in doc comments, and without this flag
+	// spector: directives all live in doc comments, and without this flag
 	// fd.Doc is always nil and every one of them is silently lost.
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	files, err := astutil.ParseDir(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -39,14 +39,10 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	scanner := core.NewStructScanner()
 	index := calls.NewIndex()
 	mw := middleware.NewIndex()
-	var files []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			files = append(files, file)
-			scanner.Collect(file)
-			index.Collect(file)
-			mw.Collect(file)
-		}
+	for _, file := range files {
+		scanner.Collect(file)
+		index.Collect(file)
+		mw.Collect(file)
 	}
 
 	// Handlers are indexed by name, and a method must never displace a plain
@@ -85,11 +81,11 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	res := astutil.NewResolver(files)
 	var diags astutil.Diagnostics
 	loc := astutil.Locator{Fset: fset, Dir: dir}
-	groups := collectGroups(files, res, &diags, loc)
-	// Handlers that return a value from a store or service — the normal shape
-	// in real code — need the package's function result types to be
-	// documentable at all.
-	returns := astutil.Returns(files)
+	// scope is how a name, a helper package and a response envelope are
+	// resolved. It is shared with every other adapter: none of that is a gin
+	// question.
+	scope := astutil.NewScope(fset, files)
+	groups := astutil.NewGroupResolver(scope, files, res, &diags, loc)
 
 	var routes []core.Route
 	for _, file := range files {
@@ -113,9 +109,14 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 			}
 			prefix := ""
 			if recv, ok := sel.X.(*ast.Ident); ok {
-				prefix = resolveGroup(recv.Name, groups)
+				prefix = groups.Prefix(recv.Name, res.EnclosingFunc(call))
 			}
-			name := astutil.HandlerName(call.Args[len(call.Args)-1])
+			// A spread argument is a type guarantee: Go only accepts f(x)... in a
+			// variadic position when x is a []gin.HandlerFunc, so the call builds a
+			// handler chain whatever it is named, and the handler is its last
+			// argument — the same idiom as append, without the name allowlist.
+			handlerArg := astutil.SpreadArg(call.Args[len(call.Args)-1], call)
+			name := astutil.HandlerName(handlerArg)
 			route := core.Route{
 				Method:      method,
 				Path:        normalizePath(prefix + path),
@@ -129,10 +130,21 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 			}
 			route.Middleware = mw.For(recvName(sel), call.Pos(), inline)
 
-			fd := handlers[name]
+			// The index resolves the handler in the package the registration
+			// was written in. Only when it cannot — a name it has never seen —
+			// does the flat table decide, which is what a single-package
+			// project relies on.
+			fd := scope.Handler(handlerArg, handlers)
+			// A handler factory names nothing on its own — the argument is a
+			// call, not an identifier — so the operation would fall back to a
+			// path-derived id. The declaration behind the call is its name.
+			if name == "" && fd != nil {
+				name = fd.Name.Name
+				route.HandlerName = name
+			}
 			route.Source = loc.Handler(fd, call)
 			if fd != nil {
-				inspectHandler(fd, &route, returns)
+				inspectHandler(fd, &route, scope, scanner.Schemas)
 				route.Calls = calls.Analyze(fd, index)
 				route.Realtime = realtime.Detect(fd, handlers)
 			}
@@ -142,62 +154,6 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	}
 
 	return routes, scanner.Schemas, diags.List(), nil
-}
-
-type groupDef struct {
-	recv   string
-	prefix string
-}
-
-func collectGroups(files []*ast.File, res *astutil.Resolver, diags *astutil.Diagnostics, loc astutil.Locator) map[string]groupDef {
-	groups := map[string]groupDef{}
-	for _, file := range files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-				return true
-			}
-			lhs, ok := as.Lhs[0].(*ast.Ident)
-			if !ok {
-				return true
-			}
-			call, ok := as.Rhs[0].(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "Group" || len(call.Args) < 1 {
-				return true
-			}
-			prefix, ok := res.Resolve(call.Args[0])
-			if !ok {
-				diags.Add(loc.Position(call.Args[0].Pos()), "group-prefix", astutil.DescribeExpr(call.Args[0]))
-				return true
-			}
-			recv := ""
-			if id, ok := sel.X.(*ast.Ident); ok {
-				recv = id.Name
-			}
-			groups[lhs.Name] = groupDef{recv: recv, prefix: prefix}
-			return true
-		})
-	}
-	return groups
-}
-
-func resolveGroup(name string, groups map[string]groupDef) string {
-	seen := map[string]bool{}
-	prefix := ""
-	for {
-		g, ok := groups[name]
-		if !ok || seen[name] {
-			break
-		}
-		seen[name] = true
-		prefix = g.prefix + prefix
-		name = g.recv
-	}
-	return prefix
 }
 
 // recvName is the router variable a route was registered on, which is what
@@ -229,8 +185,8 @@ func normalizePath(path string) string {
 	return strings.Join(parts, "/")
 }
 
-func inspectHandler(fd *ast.FuncDecl, route *core.Route, returns map[string]astutil.TypeInfo) {
-	astutil.InspectHandlerWith(fd.Body, returns).Apply(route)
+func inspectHandler(fd *ast.FuncDecl, route *core.Route, scope *astutil.Scope, schemas map[string]*core.Schema) {
+	scope.Inspect(fd, schemas).Apply(route)
 	route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
 	applyDirectives(route, fd)
 }

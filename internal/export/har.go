@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/mock"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/mock"
 )
 
 // HAR 1.2 (http://www.softwareishard.com/blog/har-12-spec/) — the log format
@@ -99,7 +99,7 @@ func HAR(doc *core.Document) ([]byte, error) {
 	}
 	log := harFile{Log: harLog{
 		Version: "1.2",
-		Creator: harCreator{Name: "specter", Version: "1"},
+		Creator: harCreator{Name: "spector", Version: "1"},
 		Entries: []harEntry{},
 	}}
 	for _, path := range sortedPaths(doc) {

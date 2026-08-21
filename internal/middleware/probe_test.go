@@ -3,8 +3,8 @@ package middleware_test
 import (
 	"testing"
 
-	"github.com/user/specter/internal/core"
-	"github.com/user/specter/internal/middleware"
+	"github.com/bakhod1r/spector/internal/core"
+	"github.com/bakhod1r/spector/internal/middleware"
 )
 
 // A project's own middleware is the case that matters: real codebases are full

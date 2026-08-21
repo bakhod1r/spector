@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -24,8 +24,13 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # -coverpkg is scoped to the packages this project ships. Without it the
+      # examples and their generated protobuf stubs count as uncovered code,
+      # which drags the total below the floor for demo files nothing tests.
       - name: Test (race + coverage)
-        run: go test -race -coverprofile=coverage.out ./...
+        run: |
+          pkgs="$(go list ./... | grep -v -e '/examples/' -e '/benchmarks' | paste -sd, -)"
+          go test -race -coverpkg="$pkgs" -coverprofile=coverage.out ./...
 
       - name: Coverage floor
         run: |
@@ -44,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -60,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -69,3 +74,24 @@ jobs:
       # and run, without spending CI minutes on stable timing numbers.
       - name: Run benchmarks once
         run: go test -run '^$' -bench . -benchtime=1x -benchmem ./benchmarks/
+
+  # A dependency advisory is a test failure that arrives without a code change,
+  # so it is checked on every run rather than at release time. govulncheck
+  # reports only the vulnerabilities this code actually reaches.
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pinned, not @latest: an upstream govulncheck release must not be able
+      # to break CI on a commit that changed nothing. The advisory database is
+      # still fetched fresh on every run, so new vulnerabilities are still
+      # caught — only the tool itself is held still, and dependabot moves it.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...

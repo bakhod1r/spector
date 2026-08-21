@@ -12,10 +12,14 @@ playwright-report/
 
 # Go build output. The example binaries land here when built without -o.
 /shop
-/specter
+/spector
 /ginapp
 *.exe
 *.test
+
+# Release archives goreleaser builds into ./dist, including on a local
+# --snapshot run.
+dist/
 
 # Coverage
 coverage.out

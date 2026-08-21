@@ -1,4 +1,4 @@
-package specter
+package spector
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ const ProblemContentType = "application/problem+json"
 
 // APIError is an RFC 9457 problem document.
 //
-// Nothing in Specter requires this type. The console will document whatever
+// Nothing in Spector requires this type. The console will document whatever
 // error shape a service already returns, and the standards advice will point at
 // RFC 9457 without insisting. This exists so that a service that does want a
 // consistent error format does not have to write it out again, and gets a

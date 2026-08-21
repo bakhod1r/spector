@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/user/specter/internal/core"
+	"github.com/bakhod1r/spector/internal/core"
 )
 
 // byPackage maps an import path fragment to the kind of dependency reached
