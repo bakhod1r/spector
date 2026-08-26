@@ -8,7 +8,7 @@ require (
 	github.com/emicklei/proto v1.14.3
 	github.com/fullstorydev/grpcurl v1.9.3
 	github.com/gin-gonic/gin v1.12.0
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/gofiber/fiber/v2 v2.52.14
 	github.com/golang/protobuf v1.5.4
 	github.com/gorilla/mux v1.8.1
