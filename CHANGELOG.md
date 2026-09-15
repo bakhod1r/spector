@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-15
+
+### Added
+- `spector.LintAll` scans and lints in one pass, so the report also covers the
+  registrations the scan could not resolve. `Analyze` is handed resolved routes
+  only, and an unresolved registration produces none — so it could never see
+  them.
+- A new `unresolved-route` finding. An endpoint whose path is not a literal
+  serves traffic and appears in no document; an ordinary run printed it on
+  stderr, but `-lint` passed over it in silence, so a CI job gating on `-lint`
+  reported a clean tree for a codebase whose routes were half undocumented.
+- Query parameters are typed from the conversion the handler applies to them:
+  `strconv.Atoi(c.Query("page"))` makes `page` an integer. Both the nested form
+  and the two-line form that names the string first are read. A parameter with
+  no conversion stays a string, which is what every query value literally is.
+
+### Fixed
+- Two handlers with the same bare name in one package (`ProductHandler.Get` and
+  `OrderHandler.Get`) documented both endpoints from the same declaration: one
+  took the other's summary, response schema and status codes, and nothing in
+  the output said so. A name declared more than once is now left out of the
+  fallback table — a handler the scan cannot identify is left thin rather than
+  filled in from an unrelated function.
+- `operationId` is resolved against the whole route set, so no two operations
+  share one, as OpenAPI requires. A contested handler name is qualified by the
+  type it is a method on (`productGet`, `orderGet`), falling back to the
+  method-and-path form when that is still ambiguous. A contested name is
+  replaced for every route that claimed it, not for the losers of a first-wins
+  race, so the document does not depend on route order. An `operationId` the
+  author declared is left alone.
+- A group's index route (`r.Route("/products", func(r chi.Router) {
+  r.Get("/", list) })`) reads out of the AST as `/products/`, which is not how
+  the router is called. The document kept the slash and the Postman export
+  dropped it, so one scan described a single endpoint at two URLs. Paths are
+  now normalized once, above the adapters, so the document, the SDK, the
+  Postman and HAR exports, the linter and the mock are all handed the same
+  spelling.
+- A handler's `Authorization` header is no longer emitted as a parameter when
+  one of the operation's own security schemes already carries it — OpenAPI
+  forbids the duplicate, the console rendered two fields for one token, and a
+  generated client sent the header alongside the one the scheme set. A guard
+  requiring an unrelated header (`X-Tenant-ID` on a bearer-authenticated route)
+  still documents it. Shared parameters left unreferenced by the pruning are
+  dropped from `components.parameters`.
+- A resolver walking a bare name on a selector expression matched project
+  declarations that had nothing to do with the call —
+  `r.URL.Query().Get("page")` is `url.Values.Get`, not the project's `Get` — and
+  attributed an unrelated handler's responses to the route. The bare-name guess
+  is now made only for plain calls.
+- A summary taken from a Go doc comment keeps its leading capital. Dropping the
+  conventional leading identifier left "returns a page of products." rendered
+  that way in the console and in every export.
+
+### Documentation
+- README: `spector.json` / `spector.yaml` is read by the CLI and not by the
+  library, so a project with both entry points gets two documents from one
+  codebase unless `Servers` and `Security` are also passed in `Config`. Without
+  `Servers` the embedded console has no base URL to send a **try it** request
+  to.
+
 ## [0.5.4] - 2026-08-21
 
 ### Fixed
@@ -281,7 +341,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public baseline: zero-config OpenAPI generation from Go router source,
 a browser console, mock and verifying-proxy modes, and typed client SDKs.
 
-[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/bakhod1r/spector/compare/v0.5.4...v0.6.0
 [0.5.4]: https://github.com/bakhod1r/spector/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/bakhod1r/spector/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/bakhod1r/spector/compare/v0.5.1...v0.5.2
