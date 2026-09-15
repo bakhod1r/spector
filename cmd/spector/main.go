@@ -492,11 +492,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// problems rather than emitting a document, and its exit code is the
 	// result, so CI can gate on it.
 	if *lintOnly {
-		routes, serr := spector.ScanRoutes(cfg)
-		if serr != nil {
-			return fail(serr)
-		}
-		findings, lerr := spector.Lint(cfg, routes)
+		findings, lerr := spector.LintAll(cfg)
 		if lerr != nil {
 			return fail(lerr)
 		}

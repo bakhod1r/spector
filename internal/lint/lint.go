@@ -3,14 +3,17 @@
 // "A dead endpoint" is not quite the right phrase for a REST API: every
 // registered route is reachable over HTTP, so none of them is unreachable in
 // the sense a dead function is. What does happen, and what this package finds,
-// is three failures that produce no compiler error and no runtime error — just
-// an endpoint that never runs, or runs when a different one was meant to:
+// is four failures that produce no compiler error and no runtime error — just
+// an endpoint that never runs, runs when a different one was meant to, or runs
+// unmentioned by the document meant to describe it:
 //
 //   - a handler that is written but never registered (orphan);
 //   - the same method and path registered twice, where the framework silently
 //     keeps one and drops the other, or panics at startup;
 //   - a literal path shadowed by a parameterised one registered before it, so
-//     /users/me is answered by the /users/{id} handler.
+//     /users/me is answered by the /users/{id} handler;
+//   - a registration whose path is not a literal, which serves traffic but
+//     reaches no document (reported via AnalyzeWith).
 //
 // Each finding names a file and line, so the output is usable from CI.
 package lint
@@ -31,6 +34,9 @@ const (
 	OrphanHandler  = "orphan-handler"
 	DuplicateRoute = "duplicate-route"
 	ShadowedRoute  = "shadowed-route"
+	// UnresolvedRoute is a registration whose path the scan could not read as
+	// a literal, so the endpoint is in no document.
+	UnresolvedRoute = "unresolved-route"
 )
 
 // Finding is one problem, with where to look.
@@ -51,8 +57,20 @@ func (f Finding) String() string {
 // Analyze reports problems in the routes scanned from dir. Results are sorted
 // so a CI run's output is stable.
 func Analyze(dir string, routes []core.Route) ([]Finding, error) {
+	return AnalyzeWith(dir, routes, nil)
+}
+
+// AnalyzeWith is Analyze plus the diagnostics the scan itself produced.
+//
+// An unresolved registration is the most consequential routing problem there
+// is — the endpoint exists, serves traffic, and appears in no document — and
+// -lint used to pass it over in silence while an ordinary run printed it on
+// stderr. A CI job gating on -lint therefore reported a clean tree for a
+// codebase whose routes were half undocumented.
+func AnalyzeWith(dir string, routes []core.Route, diags []core.Diagnostic) ([]Finding, error) {
 	var out []Finding
 
+	out = append(out, fromDiagnostics(diags)...)
 	orphans, err := orphanHandlers(dir, routes)
 	if err != nil {
 		return nil, err
@@ -68,6 +86,23 @@ func Analyze(dir string, routes []core.Route) ([]Finding, error) {
 		return out[i].Message < out[j].Message
 	})
 	return out, nil
+}
+
+// fromDiagnostics reports each registration the scan could not resolve to a
+// literal path. The position is the registration's own, so the message points
+// at the line to either rewrite or answer with a `routes:` supplement.
+func fromDiagnostics(diags []core.Diagnostic) []Finding {
+	var out []Finding
+	for _, d := range diags {
+		out = append(out, Finding{
+			Kind: UnresolvedRoute,
+			Message: fmt.Sprintf(
+				"dynamic %s, cannot infer path (%s); this endpoint is in no document — declare it under routes: in the config, or register it with a literal path",
+				d.Kind, d.Reason),
+			Source: &core.Source{File: d.Pos.Filename, Line: d.Pos.Line},
+		})
+	}
+	return out
 }
 
 // duplicates finds the same method and path registered more than once. gin

@@ -43,7 +43,7 @@ func TestScanRoutes(t *testing.T) {
 	if list.HandlerName != "listUsers" {
 		t.Errorf("handler = %q", list.HandlerName)
 	}
-	if list.Summary != "returns every user." {
+	if list.Summary != "Returns every user." {
 		t.Errorf("summary = %q", list.Summary)
 	}
 	if schemas["User"] == nil {

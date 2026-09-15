@@ -70,7 +70,15 @@ func reviewOperation(method, path string, op *core.Operation) []Advice {
 	out = append(out, errorResponseAdvice(op)...)
 	out = append(out, statusCodeAdvice(method, op)...)
 
-	sort.Slice(out, func(i, j int) bool { return out[i].Rule < out[j].Rule })
+	// Rule then message: two findings of the same rule — one per status code —
+	// would otherwise keep whatever order they were appended in, which sort.Slice
+	// does not preserve.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Rule != out[j].Rule {
+			return out[i].Rule < out[j].Rule
+		}
+		return out[i].Message < out[j].Message
+	})
 	return out
 }
 
@@ -81,13 +89,21 @@ func errorResponseAdvice(op *core.Operation) []Advice {
 	var out []Advice
 	var errorCodes []string
 
-	for code, resp := range op.Responses {
+	// The codes are gathered and sorted before any advice is built: ranging a
+	// map here meant an operation failing with both 400 and 404 was reported
+	// against whichever code the map yielded first, so the same source scanned
+	// twice produced two different documents.
+	for code := range op.Responses {
 		n, err := strconv.Atoi(code)
 		if err != nil || n < 400 || n > 599 {
 			continue
 		}
 		errorCodes = append(errorCodes, code)
+	}
+	sort.Strings(errorCodes)
 
+	for _, code := range errorCodes {
+		resp := op.Responses[code]
 		if resp == nil || len(resp.Content) == 0 {
 			continue // an error with no body is a separate matter, below
 		}
@@ -105,8 +121,6 @@ func errorResponseAdvice(op *core.Operation) []Advice {
 			})
 		}
 	}
-
-	sort.Strings(errorCodes)
 
 	// An operation that documents no failure at all is the more common problem,
 	// and the more expensive one: a client written against the document has

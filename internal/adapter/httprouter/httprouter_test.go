@@ -44,7 +44,7 @@ func TestScanRoutes(t *testing.T) {
 	if got := m["get /api/v1/users"].HandlerName; got != "listUsers" {
 		t.Errorf("handler = %q", got)
 	}
-	if got := m["get /api/v1/users"].Summary; got != "returns every user." {
+	if got := m["get /api/v1/users"].Summary; got != "Returns every user." {
 		t.Errorf("summary = %q", got)
 	}
 	if schemas["User"] == nil {
@@ -143,7 +143,7 @@ func TestHTTPRouterMiddleware(t *testing.T) {
 		t.Errorf("handler = %q, want listUsers", h)
 	}
 	// A wrapped handler keeps its body analysis: the doc comment survives.
-	if s := m["get /users"].Summary; s != "returns every user." {
+	if s := m["get /users"].Summary; s != "Returns every user." {
 		t.Errorf("summary = %q", s)
 	}
 	// AuthRequired is classified from its name, and its 401 read from its body.

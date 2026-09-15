@@ -82,10 +82,10 @@ func TestDocComment(t *testing.T) {
 		wantDesc    string
 	}{
 		{"nil comment", "", "F", "", ""},
-		{"single line", "// F does a thing.", "F", "does a thing.", ""},
+		{"single line", "// F does a thing.", "F", "Does a thing.", ""},
 		{"name not stripped when different", "// Other does a thing.", "F", "Other does a thing.", ""},
-		{"multi line", "// F does a thing.\n// More detail here.", "F", "does a thing.", "More detail here."},
-		{"several detail lines", "// F summary.\n// one\n// two", "F", "summary.", "one\ntwo"},
+		{"multi line", "// F does a thing.\n// More detail here.", "F", "Does a thing.", "More detail here."},
+		{"several detail lines", "// F summary.\n// one\n// two", "F", "Summary.", "one\ntwo"},
 	}
 
 	for _, tc := range cases {

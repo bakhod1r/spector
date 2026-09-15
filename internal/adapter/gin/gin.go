@@ -55,8 +55,13 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 	// A route registers a plain function (v1.GET("/users", listUsers)), so the
 	// function is the right owner of the bare name. Methods are still indexed,
 	// but only where no function has claimed it.
+	// A method name carried by two types names neither of them: keeping one
+	// documented an endpoint from the other type's method — its summary, its
+	// response schema, its status codes. Such a name is dropped so the lookup
+	// fails visibly instead of resolving to the wrong declaration.
 	handlers := map[string]*ast.FuncDecl{}
 	byMethodName := map[string]*ast.FuncDecl{}
+	ambiguous := map[string]bool{}
 	for _, file := range files {
 		for _, decl := range file.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
@@ -64,18 +69,23 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 				continue
 			}
 			if fd.Recv != nil {
-				if _, taken := byMethodName[fd.Name.Name]; !taken {
-					byMethodName[fd.Name.Name] = fd
+				if prev, taken := byMethodName[fd.Name.Name]; taken {
+					if prev != fd {
+						ambiguous[fd.Name.Name] = true
+					}
+					continue
 				}
+				byMethodName[fd.Name.Name] = fd
 				continue
 			}
 			handlers[fd.Name.Name] = fd
 		}
 	}
 	for name, fd := range byMethodName {
-		if _, taken := handlers[name]; !taken {
-			handlers[name] = fd
+		if _, taken := handlers[name]; taken || ambiguous[name] {
+			continue
 		}
+		handlers[name] = fd
 	}
 
 	res := astutil.NewResolver(files)
@@ -188,5 +198,6 @@ func normalizePath(path string) string {
 func inspectHandler(fd *ast.FuncDecl, route *core.Route, scope *astutil.Scope, schemas map[string]*core.Schema) {
 	scope.Inspect(fd, schemas).Apply(route)
 	route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
+	route.HandlerType = astutil.ReceiverName(fd)
 	applyDirectives(route, fd)
 }

@@ -134,7 +134,7 @@ func TestChainedStatusRecorded(t *testing.T) {
 func TestDocCommentBecomesSummary(t *testing.T) {
 	m, _ := scan(t)
 	list := m["get /api/v1/users"]
-	if list.Summary != "returns every user." {
+	if list.Summary != "Returns every user." {
 		t.Errorf("summary = %q", list.Summary)
 	}
 	if list.Description == "" {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/bakhod1r/spector/internal/core"
 )
@@ -123,9 +124,25 @@ func DocComment(doc *ast.CommentGroup, funcName string) (summary, description st
 	}
 	lines := strings.Split(text, "\n")
 	summary = strings.TrimSpace(lines[0])
-	summary = strings.TrimPrefix(summary, funcName+" ")
+	// Go's convention writes the identifier first — "List returns a page of
+	// products." — and dropping it leaves a sentence with no subject, rendered
+	// in the console and in every export as "returns a page of products.".
+	// Restoring the capital is the rest of the same edit.
+	if trimmed := strings.TrimPrefix(summary, funcName+" "); trimmed != summary {
+		summary = upperFirst(trimmed)
+	}
 	rest := strings.TrimSpace(strings.Join(lines[1:], "\n"))
 	return summary, rest
+}
+
+// upperFirst capitalizes the first rune of s.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
 }
 
 // SourceOf resolves a node's position into a Source relative to the scanned
@@ -505,7 +522,12 @@ type Handler struct {
 	// QueryDefaults records the fallback of a c.DefaultQuery("limit", "20"),
 	// keyed by parameter name.
 	QueryDefaults map[string]string
-	Header        []string
+	// QueryTypes records the JSON type a parameter has where the handler
+	// converts it — strconv.Atoi("page") makes page an integer — keyed by
+	// parameter name. A parameter absent here stays a string, which is what
+	// every query value literally is.
+	QueryTypes map[string]string
+	Header     []string
 	// Responses lists every status-coded response the handler emits, in source
 	// order: gin c.JSON(201, x), net/http w.WriteHeader(code) + Encode(x), etc.
 	Responses []Response
@@ -526,6 +548,7 @@ func (h Handler) Apply(route *core.Route) {
 	route.ResponseType, route.ResponseArray = h.Response.Name, h.Response.Array
 	route.QueryParams = h.Query
 	route.QueryDefaults = h.QueryDefaults
+	route.QueryTypes = h.QueryTypes
 	route.HeaderParams = h.Header
 	for _, r := range h.Responses {
 		route.Responses = append(route.Responses, core.RouteResponse{
@@ -606,6 +629,38 @@ func FuncDecls(files []*ast.File) map[string]*ast.FuncDecl {
 	return out
 }
 
+// HandlerTable indexes every declaration in the tree by its bare name, for the
+// last-resort lookup Scope.Handler falls back to when the package structure
+// could not resolve a handler expression.
+//
+// A name declared more than once is left out. Every adapter used to keep it,
+// with the last file parsed winning, so a package holding ProductHandler.Get
+// and OrderHandler.Get documented both endpoints from the same declaration:
+// one of them got the other's summary, response schema and status codes, and
+// nothing in the output said so. A handler the scan cannot identify is better
+// left thin than filled in from an unrelated function.
+func HandlerTable(files []*ast.File) map[string]*ast.FuncDecl {
+	out := map[string]*ast.FuncDecl{}
+	ambiguous := map[string]bool{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			name := fd.Name.Name
+			if prev, seen := out[name]; seen && prev != fd {
+				ambiguous[name] = true
+			}
+			out[name] = fd
+		}
+	}
+	for name := range ambiguous {
+		delete(out, name)
+	}
+	return out
+}
+
 // maxHelperDepth is how many calls deep the inspection follows out of a
 // handler. Nearly every project wraps the framework in a helper —
 //
@@ -652,7 +707,132 @@ func InspectBodiesIn(bodies []*ast.BlockStmt, pkg Pkg) Handler {
 	h := in.h
 	h.Responses = dedupeResponses(h.Responses)
 	h.Response = primaryResponse(h.Responses, h.Response)
+	for _, body := range bodies {
+		collectQueryTypes(body, &h)
+	}
 	return h
+}
+
+// strconvTypes maps the conversions a handler puts a query value through to the
+// JSON type the parameter therefore has.
+var strconvTypes = map[string]string{
+	"Atoi":       "integer",
+	"ParseInt":   "integer",
+	"ParseUint":  "integer",
+	"ParseFloat": "number",
+	"ParseBool":  "boolean",
+}
+
+// collectQueryTypes types a query parameter from the conversion the handler
+// applies to it.
+//
+// Every query value arrives as a string, so a scan that reports what the
+// handler read reports `type: string` for all of them. But a handler that runs
+// strconv.Atoi over a value has stated what it accepts, and the document is the
+// only place a client learns it: typed as a string, `?page=abc` looks valid and
+// fails at the server, generated clients take a string where an int belongs,
+// and a mock or fuzzer generates bodies the API rejects.
+//
+// Both shapes are read: the conversion wrapped straight around the read, and
+// the two-line form that names the string first.
+func collectQueryTypes(body *ast.BlockStmt, h *Handler) {
+	if body == nil || len(h.Query) == 0 {
+		return
+	}
+	known := map[string]bool{}
+	for _, name := range h.Query {
+		known[name] = true
+	}
+	// Locals holding a query value, so `s := c.Query("page")` followed by
+	// strconv.Atoi(s) types "page" as well as the nested form does.
+	from := map[string]string{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		id, ok := as.Lhs[0].(*ast.Ident)
+		if !ok || id.Name == "_" {
+			return true
+		}
+		if name := queryRead(as.Rhs[0], known); name != "" {
+			from[id.Name] = name
+		}
+		return true
+	})
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || pkg.Name != "strconv" {
+			return true
+		}
+		typ, ok := strconvTypes[sel.Sel.Name]
+		if !ok {
+			return true
+		}
+		name := queryRead(call.Args[0], known)
+		if name == "" {
+			if id, isIdent := call.Args[0].(*ast.Ident); isIdent {
+				name = from[id.Name]
+			}
+		}
+		if name == "" {
+			return true
+		}
+		if h.QueryTypes == nil {
+			h.QueryTypes = map[string]string{}
+		}
+		// The first conversion wins: a handler that reads one value two ways
+		// has not said which is the contract, and the earlier line is the one
+		// that guards the rest.
+		if _, seen := h.QueryTypes[name]; !seen {
+			h.QueryTypes[name] = typ
+		}
+		return true
+	})
+}
+
+// queryRead reports the query parameter an expression reads, for the spellings
+// the frameworks use: c.Query("page"), c.QueryParam("page"),
+// r.URL.Query().Get("page"). It returns "" for anything else, including a read
+// of a name the handler was not already seen to use as a query parameter.
+func queryRead(expr ast.Expr, known map[string]bool) string {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return ""
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	switch sel.Sel.Name {
+	case "Query", "DefaultQuery", "QueryParam", "FormValue":
+	case "Get":
+		// Only the ...Query().Get(...) chain; r.Header.Get is a header.
+		inner, isCall := sel.X.(*ast.CallExpr)
+		if !isCall {
+			return ""
+		}
+		fn, isSel := inner.Fun.(*ast.SelectorExpr)
+		if !isSel || fn.Sel.Name != "Query" {
+			return ""
+		}
+	default:
+		return ""
+	}
+	name, ok := StringLit(call.Args[0])
+	if !ok || !known[name] {
+		return ""
+	}
+	return name
 }
 
 // scope is what a body's identifiers mean: the Go type behind a name, and the
@@ -910,7 +1090,15 @@ func (in *inspection) descend(call *ast.CallExpr, sc scope, depth int) {
 	if in.pkg.Resolve != nil {
 		fd = in.pkg.Resolve(call)
 	}
-	if fd == nil {
+	// A bare name is only a safe guess for a plain call. On a selector the name
+	// is a method of whatever the receiver happens to be, and most receivers in
+	// a handler are not the project's at all: r.URL.Query().Get("page") is
+	// url.Values.Get, w.Header().Set is http.Header.Set. Matching those against
+	// a project declaration of the same name walked into an unrelated handler
+	// and attributed its responses to this one — a list endpoint documented
+	// with another resource's schema and status codes. When Resolve is present
+	// it has already weighed the receiver's type, so its "no" is an answer.
+	if fd == nil && (in.pkg.Resolve == nil || isPlainCall(call)) {
 		fd = in.pkg.Funcs[name]
 	}
 	// seen guards recursion: a helper that calls itself, or two that call each
@@ -921,6 +1109,13 @@ func (in *inspection) descend(call *ast.CallExpr, sc scope, depth int) {
 	in.seen[fd] = true
 	defer delete(in.seen, fd)
 	in.walk(fd.Body, in.bind(fd, call, sc), depth+1)
+}
+
+// isPlainCall reports whether a call names a function directly — helper(c, x)
+// rather than value.Method(c, x).
+func isPlainCall(call *ast.CallExpr) bool {
+	_, ok := call.Fun.(*ast.Ident)
+	return ok
 }
 
 // bind builds the callee's scope: its own locals, then its parameters filled in

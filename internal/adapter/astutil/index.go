@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -171,6 +172,16 @@ func firstResultOf(fd *ast.FuncDecl) (TypeInfo, bool) {
 	return firstResult(fd.Type.Results)
 }
 
+// ReceiverName is the type a handler is a method on, or "" for a plain
+// function. It is what distinguishes two handlers a project spelled the same:
+// ProductHandler.Get and OrderHandler.Get share a name and nothing else.
+func ReceiverName(fd *ast.FuncDecl) string {
+	if fd == nil {
+		return ""
+	}
+	return recvTypeName(fd.Recv)
+}
+
 func recvTypeName(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
@@ -247,13 +258,36 @@ func (ix *FuncIndex) lookupSelector(file *ast.File, enclosing *ast.FuncDecl, sel
 		if fd, ok := ix.funcs[dir][name]; ok {
 			return fd
 		}
-		for key, fd := range ix.methods[dir] {
-			if strings.HasSuffix(key, "."+name) {
-				return fd
-			}
+		if fd := ix.methodByBareName(dir, name); fd != nil {
+			return fd
 		}
 	}
 	return unique(ix.global[name])
+}
+
+// methodByBareName is the last resort for `value.Method` when the value's type
+// could not be pinned down: the package declares the name on exactly one type,
+// so the pair is unambiguous even without knowing the receiver.
+//
+// Returning "whichever the map yielded first" instead is what made a scan
+// non-deterministic. A package with ProductHandler.Get and OrderHandler.Get
+// produced a different document on every run — each endpoint documented from
+// whichever Get won the race, with the other's summary, response schema and
+// status codes. When the name is declared on more than one type nothing here
+// can tell them apart, and no answer is better than a coin flip.
+func (ix *FuncIndex) methodByBareName(dir, name string) *ast.FuncDecl {
+	suffix := "." + name
+	var found *ast.FuncDecl
+	for key, fd := range ix.methods[dir] {
+		if !strings.HasSuffix(key, suffix) {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		found = fd
+	}
+	return found
 }
 
 // recvTypeDepth bounds recvTypeAt. Values reach a route registration through
@@ -288,6 +322,18 @@ func (ix *FuncIndex) recvTypeAt(file *ast.File, enclosing *ast.FuncDecl, expr as
 		}
 		return ix.dirOfFile[ix.fileOfDecl[fd]], t, true
 
+	case *ast.UnaryExpr:
+		// orders := &OrderHandler{} — the address of a literal is the literal's
+		// type. Without this the local resolved to nothing and the lookup fell
+		// through to matching the method's bare name across the package, which
+		// is how a handler ended up documented from another type's method.
+		if x.Op == token.AND {
+			return ix.recvTypeAt(file, enclosing, x.X, depth+1)
+		}
+
+	case *ast.CompositeLit:
+		return ix.litType(file, x.Type)
+
 	case *ast.Ident:
 		if enclosing == nil {
 			return "", "", false
@@ -301,6 +347,25 @@ func (ix *FuncIndex) recvTypeAt(file *ast.File, enclosing *ast.FuncDecl, expr as
 		if rhs, ok := assignedValue(enclosing.Body, x.Name); ok {
 			return ix.recvTypeAt(file, enclosing, rhs, depth+1)
 		}
+	}
+	return "", "", false
+}
+
+// litType is the directory and name of a composite literal's type. A bare name
+// is this file's package; a qualified one is resolved through the file's
+// imports, and falls back to the name alone when the import is outside the
+// scanned tree — `globalMeth` can still pin the pair down.
+func (ix *FuncIndex) litType(file *ast.File, expr ast.Expr) (string, string, bool) {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return ix.dirOfFile[file], t.Name, true
+	case *ast.SelectorExpr:
+		if id, ok := t.X.(*ast.Ident); ok {
+			if dir, isPkg := ix.imports[file][id.Name]; isPkg {
+				return dir, t.Sel.Name, true
+			}
+		}
+		return "", t.Sel.Name, true
 	}
 	return "", "", false
 }
@@ -461,17 +526,46 @@ func (ix *FuncIndex) PkgAt(fd *ast.FuncDecl, fallback Pkg) Pkg {
 	for name, decl := range ix.funcs[dir] {
 		funcs[name] = decl
 	}
+	// Methods are aliased by their bare name because a body calls `h.load()`
+	// without saying what h is. Two types in the package declaring the same
+	// method cannot be told apart here, and picking one at random made the
+	// response type of every body that called it change between runs, so an
+	// ambiguous name is left to the fallback instead.
 	for key, decl := range ix.methods[dir] {
-		funcs[key[strings.Index(key, ".")+1:]] = decl
+		bare := key[strings.Index(key, ".")+1:]
+		if other := ix.methodByBareName(dir, bare); other == nil || other != decl {
+			continue
+		}
+		funcs[bare] = decl
 	}
 	// A helper reached through an import of the handler's file resolves to
-	// that package's declaration, not to whichever tree-wide name won.
-	for _, imported := range ix.imports[file] {
+	// that package's declaration, not to whichever tree-wide name won. The
+	// imports are walked in a fixed order so two of them declaring the same
+	// helper resolve the same way on every scan.
+	fromImport := map[string]bool{}
+	for _, imported := range sortedValues(ix.imports[file]) {
 		for name, decl := range ix.funcs[imported] {
-			if _, taken := ix.funcs[dir][name]; !taken {
-				funcs[name] = decl
+			if _, taken := ix.funcs[dir][name]; taken || fromImport[name] {
+				continue
 			}
+			fromImport[name] = true
+			funcs[name] = decl
 		}
 	}
 	return Pkg{Returns: fallback.Returns, Funcs: funcs}
+}
+
+// sortedValues is the distinct values of m in a stable order.
+func sortedValues(m map[string]string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(m))
+	for _, v := range m {
+		if seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }

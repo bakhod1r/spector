@@ -1,0 +1,44 @@
+name: Flake hunt
+
+# Timing-sensitive tests (the watch loop, the proxy CLI, the gRPC servers) pass
+# comfortably on an idle runner and fail on a loaded one. Repeating them on a
+# schedule finds that class of bug on its own time instead of on someone's pull
+# request, where a red tick that goes green on a rerun teaches people to ignore
+# red ticks.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  repeat:
+    name: Race, repeated
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # -count disables the test cache, so every one of these is a real run.
+      # The examples stay in: examples/shop is where the gRPC serve test lives,
+      # which is the flake that started this. Only the benchmarks are dropped,
+      # since they measure rather than assert.
+      - name: Test (race x5)
+        run: |
+          pkgs="$(go list ./... | grep -v -e '/benchmarks')"
+          go test -race -count=5 -timeout 30m $pkgs
+
+      # A flake needs contention to show itself; a single sequential pass on an
+      # idle 4-core runner is exactly the condition under which these tests
+      # already pass. -cpu 1 squeezes the goroutine scheduling that the timing
+      # assumptions rest on.
+      - name: Test (race, single CPU)
+        run: go test -race -count=2 -cpu 1 -timeout 30m ./cmd/... ./internal/...

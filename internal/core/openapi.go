@@ -334,9 +334,12 @@ func (d *Document) AddOperation(path, method string, op *Operation) {
 
 // Route is the framework-agnostic result an adapter emits per endpoint.
 type Route struct {
-	Method        string // GET, POST, ...
-	Path          string // /users/:id  (adapter normalizes to /users/{id})
-	HandlerName   string
+	Method      string // GET, POST, ...
+	Path        string // /users/:id  (adapter normalizes to /users/{id})
+	HandlerName string
+	// HandlerType is the type the handler is a method on, "" for a plain
+	// function. It is what separates two handlers a project named the same.
+	HandlerType   string
 	RequestType   string // Go type name bound from body, "" if none
 	RequestArray  bool   // body is []RequestType
 	ResponseType  string // Go type name returned, "" if none
@@ -345,17 +348,20 @@ type Route struct {
 	// QueryDefaults holds the fallback value of the query parameters that have
 	// one, keyed by name; parameters without a default are absent.
 	QueryDefaults map[string]string
-	HeaderParams  []string
-	Summary       string          // first line of the handler doc comment
-	Description   string          // remaining lines of the handler doc comment
-	Responses     []RouteResponse // status-coded responses; falls back to ResponseType when empty
-	Source        *Source         // where the handler is defined; nil when unknown
-	Calls         []Call          // what the handler reaches outside the process
-	Realtime      string          // "websocket" | "sse" | "" for an ordinary handler
-	Tags          []string        // from a spector:tags directive; grouping the AST cannot infer
-	Deprecated    bool            // from a spector:deprecated directive
-	OperationID   string          // from a spector:operationId directive; overrides the handler name
-	Middleware    []Middleware    // what runs in front of the handler
+	// QueryTypes holds the JSON type of the query parameters the handler
+	// converts, keyed by name. Anything absent is a string.
+	QueryTypes   map[string]string
+	HeaderParams []string
+	Summary      string          // first line of the handler doc comment
+	Description  string          // remaining lines of the handler doc comment
+	Responses    []RouteResponse // status-coded responses; falls back to ResponseType when empty
+	Source       *Source         // where the handler is defined; nil when unknown
+	Calls        []Call          // what the handler reaches outside the process
+	Realtime     string          // "websocket" | "sse" | "" for an ordinary handler
+	Tags         []string        // from a spector:tags directive; grouping the AST cannot infer
+	Deprecated   bool            // from a spector:deprecated directive
+	OperationID  string          // from a spector:operationId directive; overrides the handler name
+	Middleware   []Middleware    // what runs in front of the handler
 }
 
 // Call is something a handler reaches outside the process: a database, another

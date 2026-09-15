@@ -25,8 +25,8 @@ func TestHandlerBehindAProjectChainHelper(t *testing.T) {
 	for _, tc := range []struct {
 		path, handler, summary, request, response string
 	}{
-		{"/signup", "createSignup", "registers a new account.", "SignupRequest", "SignupResponse"},
-		{"/signup/verify/request", "requestVerification", "sends a verification code.", "VerifyRequest", "VerifyResponse"},
+		{"/signup", "createSignup", "Registers a new account.", "SignupRequest", "SignupResponse"},
+		{"/signup/verify/request", "requestVerification", "Sends a verification code.", "VerifyRequest", "VerifyResponse"},
 	} {
 		r, ok := byPath[tc.path]
 		if !ok {

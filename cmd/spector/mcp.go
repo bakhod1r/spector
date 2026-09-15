@@ -188,11 +188,7 @@ func handleLintRoutes(_ context.Context, req mcp.CallToolRequest) (*mcp.CallTool
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	routes, err := spector.ScanRoutes(cfg)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	findings, err := spector.Lint(cfg, routes)
+	findings, err := spector.LintAll(cfg)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

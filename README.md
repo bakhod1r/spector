@@ -379,6 +379,25 @@ environment variables and no config files of its own, so where a value comes
 from — env, a secret manager, a flag, a config struct — stays your
 application's decision.
 
+That includes `spector.json` / `spector.yaml`: the CLI picks it up, the library
+does not. A project with both entry points therefore gets two documents from
+one codebase — the CLI's with `servers` and the declared security schemes, the
+embedded console's without — unless the same values are passed in `Config`:
+
+```go
+mount.Chi(r, spector.Config{
+    Dir:     ".",
+    Title:   "Shop API",
+    Version: "1.2.0",
+    Servers: []spector.Server{{URL: "https://api.example.com", Description: "production"}},
+    Security: map[string]spector.SecurityScheme{
+        "bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
+    },
+})
+```
+
+Without `Servers` the console has no base URL to send a **try it** request to.
+
 ## Source links
 
 Spector reads the AST, so it knows the file and line every operation came from.

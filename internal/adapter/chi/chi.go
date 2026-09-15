@@ -45,14 +45,7 @@ func (a *Adapter) Scan(dir string) ([]core.Route, map[string]*core.Schema, []ast
 		mw.Collect(file)
 	}
 
-	handlers := map[string]*ast.FuncDecl{}
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok {
-				handlers[fd.Name.Name] = fd
-			}
-		}
-	}
+	handlers := astutil.HandlerTable(files)
 
 	loc := astutil.Locator{Fset: fset, Dir: dir}
 	res := astutil.NewResolver(files)
@@ -159,6 +152,7 @@ func (w *walker) collectIn(node ast.Node, prefix string, scope []ast.Expr, route
 			route.Realtime = realtime.Detect(fd, w.handlers)
 			w.scope.Inspect(fd, w.schemas).Apply(&route)
 			route.Summary, route.Description = astutil.DocComment(fd.Doc, fd.Name.Name)
+			route.HandlerType = astutil.ReceiverName(fd)
 			d := astutil.ParseDirectives(fd.Doc)
 			route.Tags, route.Deprecated, route.OperationID = d.Tags, d.Deprecated, d.OperationID
 		}

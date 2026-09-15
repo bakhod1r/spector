@@ -118,14 +118,16 @@ grpcurl -plaintext \
 ```
 `host`/`port` env o'zgaruvchilaridan (`{{grpcHost}}`, default `localhost:50051`).
 
-## Bosqichlar
+## Bosqichlar — hammasi BAJARILDI
 
-1. `emicklei/proto` qo'shish + `internal/proto` parser (message/enum/service -> GrpcDoc) + test (testdata `.proto`).
-2. `spector.Generate`/`Handler`ga `/grpc.json` + `GrpcDoc` (faqat ishlatilgan message).
-3. UI tab-view: REST | gRPC almashish; gRPC service = kategoriya, method = card, schema toggle.
-4. **Copy as grpcurl** + env `grpcHost`.
-5. gRPC Messages bo'limi + `$ref` havolalar.
-6. (keyingi) grpc-web orqali haqiqiy Execute — alohida bosqich, ehtimoliy proxy.
+1. BAJARILDI — `emicklei/proto` + `internal/proto/proto.go` parser (message/enum/service -> GrpcDoc) + testlar (`internal/proto/testdata`).
+2. BAJARILDI — `Handler`da `/grpc.json` + `GrpcDoc` (faqat ishlatilgan message).
+3. BAJARILDI — UI tab-view: REST | gRPC almashish; service = kategoriya, method = card, schema toggle.
+   Eslatma: tab holati `spector.mode` kaliti ostida saqlanadi (rejadagi `spector.activeTab` emas).
+4. BAJARILDI — **Copy as grpcurl** + env `grpcHost`.
+5. BAJARILDI — gRPC Messages bo'limi + `$ref` havolalar.
+6. BAJARILDI — haqiqiy Execute, lekin grpc-web emas: server tomonda
+   `internal/grpcx/invoke.go` (unary) va `internal/grpcx/stream.go` (streaming).
 
 ## Misol / testdata
 
@@ -148,15 +150,19 @@ service UserService {
 Kutiladi: gRPC tab -> "UserService" kategoriyasi, 3 method (2 unary + 1 server-stream),
 Messages: User, GetUserRequest, ListUsersRequest, ListUsersResponse.
 
-## Cheklovlar (ataylab)
+## Holat (reja yozilgandagi cheklovlar bartaraf etilgan)
 
-- Import'lar orasidagi type-resolve boshda oddiy (bir paket / nom bo'yicha); to'liq
-  FileDescriptor resolve keyin.
-- Execute BAJARILDI (`internal/grpcx/invoke.go`), lekin brauzerdan emas: konsol
-  Spector serveriga so'rov yuboradi, server `grpcurl` kutubxonasi bilan chaqiradi
-  va javobni qaytaradi. Brauzerdan to'g'ridan-to'g'ri gRPC hamon mumkin emas.
-  Hozirgi cheklovlari: unary va server-streaming ishlaydi (tekshirilgan);
-  client-stream/bidi konsoldan chaqirilmaydi, chunki UI bitta xabar yuboradi.
-  Faqat plaintext (TLS yo'q), 15s timeout.
-- oneof/Any/well-known types soddalashtirilgan.
+- Import'lar orasidagi type-resolve ishlaydi — `internal/proto/importdata`,
+  `internal/proto/gateway.go`.
+- Execute brauzerdan emas: konsol Spector serveriga so'rov yuboradi, server
+  gRPC chaqiruvini bajaradi va javobni qaytaradi (brauzerdan to'g'ridan-to'g'ri
+  gRPC hamon mumkin emas — bu arxitektura tanlovi, kamchilik emas).
+  To'rt turi ham ishlaydi: unary, server-stream, client-stream, bidi
+  (`internal/ui/ui.html` bir nechta xabar maydonini qo'shadi).
+- TLS qo'llab-quvvatlanadi: `GrpcRequest.TLS` va `Insecure`
+  (`internal/grpcx/request.go`, `invoke.go`).
+- `oneof` -> `XOneof` guruhlari (`internal/proto/proto.go`).
+- Well-known types xaritalangan: Timestamp, Duration, Struct/Value, Empty, Any,
+  wrapper turlari (StringValue, Int32Value, Int64Value, BoolValue,
+  DoubleValue/FloatValue).
 ```

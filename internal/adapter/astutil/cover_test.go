@@ -24,7 +24,7 @@ func parseDoc(t *testing.T, doc string) *ast.CommentGroup {
 func TestDocCommentStripsDirectiveLines(t *testing.T) {
 	doc := parseDoc(t, "// F does things.\n// spector:tags a,b\n// More detail.\n")
 	summary, desc := DocComment(doc, "F")
-	if summary != "does things." {
+	if summary != "Does things." {
 		t.Errorf("summary = %q", summary)
 	}
 	if desc != "More detail." {

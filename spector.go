@@ -248,6 +248,46 @@ func (c Config) AdapterName() string {
 // adapterFor never fails: an unrecognised name falls back to gin rather than
 // erroring, so there is nothing for a caller to handle.
 func adapterFor(cfg Config) core.Adapter {
+	return normalized{pick(cfg)}
+}
+
+// normalized wraps an adapter so every consumer — the document, the SDK, the
+// Postman and HAR exports, the linter, the mock — is handed the same spelling
+// of a path. Doing it here rather than in each adapter is the point: eight
+// adapters agreeing by convention is what produced the disagreement.
+type normalized struct{ core.Adapter }
+
+func (n normalized) Scan(dir string) ([]core.Route, map[string]*core.Schema, []core.Diagnostic, error) {
+	routes, schemas, diags, err := n.Adapter.Scan(dir)
+	for i := range routes {
+		routes[i].Path = normalizePath(routes[i].Path)
+	}
+	return routes, schemas, diags, err
+}
+
+// normalizePath drops a trailing slash. A group registered the ordinary way,
+//
+//	r.Route("/products", func(r chi.Router) { r.Get("/", list) })
+//
+// reads out of the AST as "/products/", which is not how the router is called:
+// every framework here serves it at "/products". The document kept the slash
+// and the Postman export dropped it, so one scan described a single endpoint at
+// two URLs, and a generated client called the form the API redirects away from.
+func normalizePath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if len(p) > 1 && strings.HasSuffix(p, "/") {
+		// TrimRight alone would turn "//" into "", which is not a path at all.
+		if trimmed := strings.TrimRight(p, "/"); trimmed != "" {
+			return trimmed
+		}
+		return "/"
+	}
+	return p
+}
+
+func pick(cfg Config) core.Adapter {
 	name := cfg.Adapter
 	if name == "" {
 		name = detect(cfg.Dir)
@@ -325,6 +365,18 @@ func ScanRoutes(cfg Config) ([]Route, error) {
 // by a parameterised one. Pass the routes from ScanRoutes.
 func Lint(cfg Config, routes []Route) ([]Finding, error) {
 	return lint.Analyze(cfg.withDefaults().Dir, routes)
+}
+
+// LintAll scans and lints in one pass, so the report also covers the routes the
+// scan could not resolve. Lint cannot see those: it is handed the routes that
+// were resolved, and an unresolved registration produces none.
+func LintAll(cfg Config) ([]Finding, error) {
+	cfg = cfg.withDefaults()
+	routes, _, diags, err := adapterFor(cfg).Scan(cfg.Dir)
+	if err != nil {
+		return nil, err
+	}
+	return lint.AnalyzeWith(cfg.Dir, routes, diags)
 }
 
 // MockOptions configures the mock server, principally its CORS policy. The mock
@@ -627,6 +679,7 @@ func Generate(cfg Config) (*core.Document, error) {
 	doc.Diagnostics = diags
 	applyInferredSchemes(doc, routes)
 	applyDeclared(doc, cfg)
+	dropSchemeHeaders(doc)
 	applyAdvice(doc)
 	doc, err = applyManualRoutes(doc, cfg.Routes)
 	if err != nil {
@@ -801,6 +854,114 @@ func applyInferredSchemes(doc *core.Document, routes []core.Route) {
 		def := middleware.SchemeDefinition(name)
 		doc.Components.SecuritySchemes[name] = &def
 	}
+}
+
+// dropSchemeHeaders removes a header parameter that one of the operation's own
+// security schemes already carries.
+//
+// The auth middleware in front of a handler produces both facts: a security
+// requirement, and the header it reads. Emitting both describes one credential
+// twice — OpenAPI says an Authorization header covered by an http scheme must
+// not also appear as a parameter — and the tools downstream act on it: the
+// console renders two fields for one token, and a generated client sends the
+// header alongside the one the scheme already set.
+//
+// Only the header the scheme itself transmits is dropped. A guard that also
+// requires an unrelated header (X-Tenant-ID on a bearer-authenticated route)
+// still documents it, because no scheme accounts for that one.
+func dropSchemeHeaders(doc *core.Document) {
+	if doc == nil || len(doc.Components.SecuritySchemes) == 0 {
+		return
+	}
+	for _, ops := range doc.Paths {
+		for _, op := range ops {
+			covered := map[string]bool{}
+			for _, req := range securityOf(doc, op) {
+				for name := range req {
+					if h := schemeHeader(doc.Components.SecuritySchemes[name]); h != "" {
+						covered[strings.ToLower(h)] = true
+					}
+				}
+			}
+			if len(covered) == 0 {
+				continue
+			}
+			kept := op.Parameters[:0]
+			for _, p := range op.Parameters {
+				resolved := paramOf(doc, p)
+				if resolved.In == "header" && covered[strings.ToLower(resolved.Name)] {
+					continue
+				}
+				kept = append(kept, p)
+			}
+			op.Parameters = kept
+		}
+	}
+	pruneSharedParameters(doc)
+}
+
+// pruneSharedParameters drops a shared parameter nothing references any more.
+// components.parameters exists to be pointed at; an entry no operation points
+// at reads as a requirement of the API that in fact applies to nothing.
+func pruneSharedParameters(doc *core.Document) {
+	if len(doc.Components.Parameters) == 0 {
+		return
+	}
+	used := map[string]bool{}
+	for _, ops := range doc.Paths {
+		for _, op := range ops {
+			for _, p := range op.Parameters {
+				if name, ok := strings.CutPrefix(p.Ref, "#/components/parameters/"); ok {
+					used[name] = true
+				}
+			}
+		}
+	}
+	for name := range doc.Components.Parameters {
+		if !used[name] {
+			delete(doc.Components.Parameters, name)
+		}
+	}
+}
+
+// securityOf is the requirements that apply to an operation: its own when it
+// states them, the document's default otherwise — which is how a reader
+// resolves them too.
+func securityOf(doc *core.Document, op *core.Operation) []core.SecurityRequirement {
+	if len(op.Security) > 0 {
+		return op.Security
+	}
+	return doc.Security
+}
+
+// schemeHeader is the request header a scheme is transmitted in, or "" for a
+// scheme that travels elsewhere (an apiKey in a query string or a cookie).
+func schemeHeader(s *core.SecurityScheme) string {
+	if s == nil {
+		return ""
+	}
+	switch s.Type {
+	case "http":
+		return "Authorization"
+	case "apiKey":
+		if s.In == "header" {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+// paramOf follows a parameter reference into components, so a shared header is
+// read by the same rules an inline one is.
+func paramOf(doc *core.Document, p core.Parameter) core.Parameter {
+	name, ok := strings.CutPrefix(p.Ref, "#/components/parameters/")
+	if !ok {
+		return p
+	}
+	if shared := doc.Components.Parameters[name]; shared != nil {
+		return *shared
+	}
+	return p
 }
 
 // applyDeclared copies the parts of the document that cannot be read from

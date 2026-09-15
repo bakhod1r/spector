@@ -20,11 +20,14 @@ type builder struct {
 	// doc is needed because shared parameters are defined once in components
 	// and referenced from each operation that requires them.
 	doc *core.Document
+	// ids holds every route's operationId, resolved against the whole set so
+	// no two operations end up sharing one.
+	ids map[string]string
 }
 
 func Build(title, version string, routes []core.Route, schemas map[string]*core.Schema) *core.Document {
 	doc := core.NewDocument(title, version)
-	b := &builder{schemas: schemas, used: map[string]bool{}, doc: doc}
+	b := &builder{schemas: schemas, used: map[string]bool{}, doc: doc, ids: operationIDs(routes)}
 
 	for _, route := range routes {
 		doc.AddOperation(route.Path, route.Method, b.operation(route))
@@ -117,6 +120,108 @@ func operationID(route core.Route) string {
 	if route.HandlerName != "" {
 		return route.HandlerName
 	}
+	return pathOperationID(route)
+}
+
+// operationIDs assigns every route its operationId up front, because the name
+// one route can use depends on what the others claimed.
+//
+// The inferred name is the handler's, which is unique only where the project
+// happens to spell it so. Any package with ProductHandler.Get and
+// OrderHandler.Get gave two operations the same operationId — which OpenAPI
+// requires to be unique — and the tools downstream each broke differently: a
+// generated client emitted Get and Get2, a Postman collection listed two
+// entries under one name, and a generator keying a map off the id kept one
+// endpoint and dropped the other.
+//
+// A contested name is replaced for every route that claimed it, not for the
+// losers of a first-wins race, so the document does not depend on route order
+// and no endpoint keeps a name another one also answers to. An id the author
+// declared is left alone: it is a promise to their callers.
+func operationIDs(routes []core.Route) map[string]string {
+	claimed := map[string]int{}
+	for _, route := range routes {
+		claimed[operationID(route)]++
+	}
+	// A contested handler name is qualified by the type it is a method on,
+	// which is the fact that separated the two handlers in the first place:
+	// ProductHandler.Get and OrderHandler.Get become productGet and orderGet.
+	// Only when that is still not enough — the same type registered twice, or a
+	// plain function colliding with a method — does the method-and-path form
+	// decide, which is unique by construction but reads like a URL.
+	qualified := map[string]int{}
+	for _, route := range routes {
+		if id := typeOperationID(route); id != "" && claimed[operationID(route)] > 1 {
+			qualified[id]++
+		}
+	}
+	out := make(map[string]string, len(routes))
+	for _, route := range routes {
+		id := operationID(route)
+		if route.OperationID == "" && claimed[id] > 1 {
+			byType := typeOperationID(route)
+			if byType != "" && qualified[byType] == 1 && claimed[byType] == 0 {
+				id = byType
+			} else {
+				id = pathOperationID(route)
+			}
+		}
+		out[routeKey(route)] = id
+	}
+	return out
+}
+
+// handlerTypeSuffixes are the words a project appends to the type its handlers
+// hang off. They carry no information about the endpoint, so dropping them is
+// what turns ProductHandler.Get into productGet rather than productHandlerGet.
+var handlerTypeSuffixes = []string{"Handler", "Controller", "Resource", "Service", "API", "Api"}
+
+// typeOperationID names an operation after the receiver and the method —
+// orderGet — or returns "" for a handler that is a plain function and so has no
+// receiver to qualify it with.
+func typeOperationID(route core.Route) string {
+	recv := strings.TrimPrefix(route.HandlerType, "*")
+	if recv == "" || route.HandlerName == "" {
+		return ""
+	}
+	for _, suffix := range handlerTypeSuffixes {
+		if trimmed := strings.TrimSuffix(recv, suffix); trimmed != "" && trimmed != recv {
+			recv = trimmed
+			break
+		}
+	}
+	return lowerFirst(recv) + upperFirst(route.HandlerName)
+}
+
+// lowerFirst lowercases the first rune, so a name reads as one identifier.
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToLower(r[0])
+	return string(r)
+}
+
+// operationID is the id resolved for this route across the whole document,
+// falling back to the per-route inference when the builder was handed no set
+// (a caller assembling one operation on its own).
+func (b *builder) operationID(route core.Route) string {
+	if id, ok := b.ids[routeKey(route)]; ok {
+		return id
+	}
+	return operationID(route)
+}
+
+// routeKey identifies a route within one document. A method and path pair can
+// only be registered once, which is what makes it usable as a key.
+func routeKey(route core.Route) string {
+	return strings.ToLower(route.Method) + " " + route.Path
+}
+
+// pathOperationID names an operation after its method and path, which is unique
+// for the same reason routeKey is.
+func pathOperationID(route core.Route) string {
 	parts := []string{strings.ToLower(route.Method)}
 	for _, seg := range strings.Split(route.Path, "/") {
 		if seg == "" {
@@ -175,7 +280,7 @@ func sanitizeSegment(s string) string {
 // operation assembles the OpenAPI operation for a single route via the core
 // functional-options constructors.
 func (b *builder) operation(route core.Route) *core.Operation {
-	op := core.NewOperation(operationID(route),
+	op := core.NewOperation(b.operationID(route),
 		core.WithSummary(route.Summary),
 		core.WithDescription(route.Description),
 		core.WithSource(route.Source),
@@ -194,6 +299,9 @@ func (b *builder) operation(route core.Route) *core.Operation {
 	}
 	for _, name := range route.QueryParams {
 		schema := &core.Schema{Type: "string"}
+		if t, ok := route.QueryTypes[name]; ok {
+			schema.Type = t
+		}
 		if def, ok := route.QueryDefaults[name]; ok {
 			schema.Default = def
 		}

@@ -141,24 +141,27 @@ Layout:
 Har OpenAPI endpoint yonida "＋ Save as request" -> fromSpec() -> collectionga qo'shadi.
 ```
 
-## Bosqichlar
+## Bosqichlar — hammasi BAJARILDI
 
-1. **Environments + `{{var}}` interpolatsiya** — topbar selektor, baseUrl/token o'zgaruvchilari, so'rov/cURL'da almashtirish. (asosiy qiymat)
-2. **Saqlanadigan so'rovlar (collections) + localStorage** — endpointdan Save, tahrirlash, qayta yuborish.
-3. **History** — har Send yozib boradi, bir bosishda qayta yuborish.
-4. **Auth turlari** — bearer/basic/apiKey, env'dan {{token}}.
-5. **Chaining (ExtractRule)** — javob JSON'dan `$.id` -> env var -> keyingi so'rov.
-6. **Testlar (assert)** — status/json/header, pass-fail ko'rsatkichi.
-7. **Import/Export** — BAJARILDI. Butun Store JSON sifatida
+1. BAJARILDI — **Environments + `{{var}}` interpolatsiya**: topbar selektor, baseUrl/token o'zgaruvchilari, so'rov/cURL'da almashtirish.
+2. BAJARILDI — **Saqlanadigan so'rovlar (collections) + localStorage**: endpointdan Save, tahrirlash, qayta yuborish.
+3. BAJARILDI — **History**: har Send yozib boradi, bir bosishda qayta yuborish.
+4. BAJARILDI — **Auth turlari**: bearer/basic/apiKey, env'dan `{{token}}`.
+5. BAJARILDI — **Chaining (ExtractRule)**: javob JSON'dan `$.id` -> env var -> keyingi so'rov.
+6. BAJARILDI — **Testlar (assert)**: status/json/header, pass-fail ko'rsatkichi.
+7. BAJARILDI — **Import/Export**: butun Store JSON sifatida
    (`format: "spector.collection"`, `version: 1`). Import merge yoki replace
-   tanlovini so'raydi; merge'da id to'qnashuvlari yangi id oladi. Postman v2.1
-   formatini o'qish hali yo'q — faqat o'z formatimiz.
+   tanlovini so'raydi; merge'da id to'qnashuvlari yangi id oladi.
+   Postman v2.1 o'qish ham qo'shilgan — `isPostmanV21()` / `postmanToStore()`
+   (`info.schema` yoki `info._postman_id` bo'yicha aniqlanadi), auth
+   `mapPostmanAuth()` orqali xaritalanadi.
 
-## Cheklovlar (ataylab)
+## Holat (reja yozilgandagi cheklovlar)
 
-- jsonPath faqat oddiy dotted/indeks (`$.a.b[0]`) — to'liq JSONPath emas.
-- pre-request script (ixtiyoriy JS) — xavfsizlik uchun boshda yo'q; keyin `Function` sandbox bilan qo'shilishi mumkin.
-- Hammasi bitta faylda, tashqi kutubxonasiz.
+- jsonPath — o'z tokenizeri bor (`tokenizeJsonPath`/`stepJsonPath`), dotted +
+  indeks (`$.a.b[0]`) qo'llab-quvvatlanadi. To'liq JSONPath emas, ataylab.
+- pre-request script — BAJARILDI, `SavedRequest.preRequestScript` maydoni.
+- Hammasi bitta faylda, tashqi kutubxonasiz — o'zgarmagan.
 ```
 
 ## Realtime (rejadan tashqari qo'shilgan)
