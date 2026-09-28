@@ -117,7 +117,10 @@ func TestWatchLoopQuietWithoutChanges(t *testing.T) {
 
 // A failing regeneration keeps the watch alive: the next save may fix it.
 func TestWatchLoopSurvivesEmitFailure(t *testing.T) {
-	fastWatch(t, 60)
+	// The budget is iterations, not time: 60 polls (300ms) ran out on a slow
+	// CI runner under -race before the second edit was seen. 600 polls give
+	// three seconds; the test waits for both calls rather than for the loop.
+	fastWatch(t, 600)
 	dir := writeTree(t, map[string]string{"app/main.go": ginSrc})
 
 	var calls atomic.Int64
@@ -137,13 +140,16 @@ func TestWatchLoopSurvivesEmitFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("watchLoop did not return")
-	}
+	waitFor(t, func() bool { return calls.Load() >= 2 })
 	if got := calls.Load(); got < 2 {
 		t.Errorf("emit called %d times; a failure ended the watch", got)
+	}
+	// The loop must end before fastWatch's cleanup restores the globals it
+	// reads.
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("watchLoop did not return")
 	}
 }
 
