@@ -3,6 +3,7 @@ package sdk
 import (
 	"fmt"
 	"go/format"
+	"go/token"
 	"sort"
 	"strings"
 
@@ -124,12 +125,12 @@ func writeGoStruct(b *strings.Builder, name string, s *core.Schema) {
 	if s == nil {
 		return
 	}
-	typeName := exportName(name)
+	typeName := identName(name)
 	// A schema that is nothing but an allOf of a single ref is an alias for the
 	// type it composes — emit a named alias so callers still see that type
 	// rather than any/unknown.
 	if len(s.AllOf) == 1 && len(s.Properties) == 0 && s.Type != "object" && s.AllOf[0].Ref != "" {
-		fmt.Fprintf(b, "type %s = %s\n\n", typeName, exportName(refName(s.AllOf[0].Ref)))
+		fmt.Fprintf(b, "type %s = %s\n\n", typeName, identName(refName(s.AllOf[0].Ref)))
 		return
 	}
 	// With no allOf and no object shape (an enum string, say) it is a plain
@@ -143,7 +144,7 @@ func writeGoStruct(b *strings.Builder, name string, s *core.Schema) {
 	fmt.Fprintf(b, "type %s struct {\n", typeName)
 	for _, a := range s.AllOf {
 		if a.Ref != "" {
-			fmt.Fprintf(b, "\t%s\n", exportName(refName(a.Ref)))
+			fmt.Fprintf(b, "\t%s\n", identName(refName(a.Ref)))
 		}
 	}
 	props := make([]string, 0, len(s.Properties))
@@ -160,13 +161,13 @@ func writeGoStruct(b *strings.Builder, name string, s *core.Schema) {
 		if !required[p] {
 			tag += ",omitempty"
 		}
-		fmt.Fprintf(b, "\t%s %s `json:%q`\n", exportName(p), goType(s.Properties[p]), tag)
+		fmt.Fprintf(b, "\t%s %s `json:%q`\n", identName(p), goType(s.Properties[p]), tag)
 	}
 	fmt.Fprintf(b, "}\n\n")
 }
 
 func writeGoMethod(b *strings.Builder, op operation) {
-	name := exportName(op.Name)
+	name := identName(op.Name)
 
 	var params []string
 	params = append(params, "ctx context.Context")
@@ -199,7 +200,12 @@ func writeGoMethod(b *strings.Builder, op operation) {
 	}
 	fmt.Fprintf(b, "func (c *Client) %s(%s) %s {\n", name, strings.Join(params, ", "), ret)
 
+	// The path becomes a Sprintf format when it has parameters, so a literal
+	// '%' in it must be doubled first.
 	path := op.Path
+	if len(op.PathParams) > 0 {
+		path = strings.ReplaceAll(path, "%", "%%")
+	}
 	var args []string
 	for _, p := range op.PathParams {
 		path = strings.ReplaceAll(path, "{"+p+"}", "%s")
@@ -236,7 +242,7 @@ func goType(s *core.Schema) string {
 		return "any"
 	}
 	if s.Ref != "" {
-		return exportName(refName(s.Ref))
+		return identName(refName(s.Ref))
 	}
 	switch s.Type {
 	case "string":
@@ -265,6 +271,14 @@ func goParamName(name string) string {
 		return "param"
 	}
 	n = strings.ToLower(n[:1]) + n[1:]
+	// A digit cannot start an identifier, and a keyword ("type", "func",
+	// "range") cannot be one.
+	if n[0] >= '0' && n[0] <= '9' {
+		return "p" + n
+	}
+	if token.IsKeyword(n) {
+		return n + "Param"
+	}
 	// Guard the few likely collisions with identifiers the method builds.
 	switch n {
 	case "ctx", "body", "query", "path", "out", "err", "c":

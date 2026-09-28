@@ -217,6 +217,20 @@ func exportName(s string) string {
 	return b.String()
 }
 
+// identName is exportName for a name that is written as a Go identifier with
+// no fallback of its own — a type or field. A name with no letters ("", "123",
+// "-") must still be one, or the generated code does not parse.
+func identName(s string) string {
+	out := exportName(s)
+	if out == "" {
+		return "X"
+	}
+	if out[0] >= '0' && out[0] <= '9' {
+		return "X" + out
+	}
+	return out
+}
+
 // refName pulls "User" out of "#/components/schemas/User".
 func refName(ref string) string {
 	i := strings.LastIndex(ref, "/")

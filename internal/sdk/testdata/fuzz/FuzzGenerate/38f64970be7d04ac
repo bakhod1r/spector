@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"pAths\":{\"A/{A\":{\"a a\":{\"pArAmeters\":[{\"nAme\":\"0\",\"in\":\"path\"}]}}}}")
