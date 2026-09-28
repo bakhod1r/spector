@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-28
+
+### Security
+
+- **Breaking:** the console's live gRPC endpoints (`grpc/invoke`, `grpc/stream`) answer only a loopback caller unless an `AccessKey` is set or `AllowRemoteGRPC` (`allowRemoteGrpc`) opts in. They dial whatever host a request names, so an open console was an SSRF proxy.
+- `grpc/invoke` requires `Content-Type: application/json`, refuses a foreign `Origin`, caps the body at 1 MiB and answers 400 to malformed JSON.
+- Generated SDKs: operation summaries from an untrusted `-openapi` document can no longer break out of comments and inject code.
+- Proxy recordings redact credential-named query parameters and form-body fields; an existing recording file is made owner-only.
+- `-since` refuses a revision that starts with `-` (it was passed to `git archive` as an option).
+- `ServeMock`, `ServeConsole` and the proxy set `ReadHeaderTimeout`.
+- grpc upgraded to v1.83.2 (GO-2026-6443, GO-2026-6348).
+
+### Fixed
+
+- Data race in the console when a rescan rebuilt the document while other requests served it.
+- The proxy truncated request bodies over 1 MiB; bodies are now forwarded whole.
+- WebSocket upgrades through `-proxy` failed.
+- Declared security schemes replaced the inferred ones, leaving operations referencing undefined schemes.
+- A schema used only as a map value (`additionalProperties`) was dropped from components.
+- An `allOf` cycle crashed the proxy with a stack overflow; non-integral numbers now fail an `integer` check.
+- gin and echo mounts had no `/mock/*` route, so the console's Mock button returned 404.
+- Generated Go clients failed to parse for empty or numeric names, keyword parameter names, or `%` in a path.
+- Proxy findings and learned endpoints are bounded (1000 each).
+
+### Tests
+
+- Fuzz targets for every SDK emitter, route matching, the conformance checker, path normalisation and query redaction.
+
 ## [0.6.0] - 2026-09-15
 
 ### Added
@@ -341,7 +369,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public baseline: zero-config OpenAPI generation from Go router source,
 a browser console, mock and verifying-proxy modes, and typed client SDKs.
 
-[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/bakhod1r/spector/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/bakhod1r/spector/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/bakhod1r/spector/compare/v0.5.4...v0.6.0
 [0.5.4]: https://github.com/bakhod1r/spector/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/bakhod1r/spector/compare/v0.5.2...v0.5.3
