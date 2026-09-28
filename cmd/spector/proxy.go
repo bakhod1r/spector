@@ -61,6 +61,11 @@ func runProxy(doc *spector.Document, cfg proxyConfig, stdout, stderr io.Writer) 
 			return fail(err)
 		}
 		defer f.Close()
+		// OpenFile's mode applies only to a new file; an existing one keeps
+		// whatever it had, which may be world-readable.
+		if err := f.Chmod(0o600); err != nil {
+			return fail(err)
+		}
 		recorder = proxy.NewRecorder(f, cfg.recordRaw)
 		opts.Recorder = recorder
 
@@ -115,6 +120,9 @@ func runProxy(doc *spector.Document, cfg proxyConfig, stdout, stderr io.Writer) 
 	fmt.Fprintf(stderr, "\nspector: %d request(s) observed, %d distinct finding(s)\n", p.Requests(), len(findings))
 	for _, f := range findings {
 		fmt.Fprintf(stderr, "  [%d×] %s\n", f.Count, f.String())
+	}
+	if d := p.Dropped(); d > 0 {
+		fmt.Fprintf(stderr, "  (%d further distinct finding(s) not kept: limit reached)\n", d)
 	}
 
 	if cfg.report != "" {

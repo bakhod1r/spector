@@ -39,6 +39,9 @@ type observed struct {
 	count  int
 }
 
+// maxLearned bounds the distinct endpoints a Learner keeps.
+const maxLearned = 1000
+
 func NewLearner() *Learner {
 	return &Learner{seen: map[string]*observed{}}
 }
@@ -60,6 +63,9 @@ func (l *Learner) Observe(ex Exchange, documentedPath string) {
 	defer l.mu.Unlock()
 
 	o := l.seen[key]
+	if o == nil && len(l.seen) >= maxLearned {
+		return // bounded: scanner traffic must not grow the learner forever
+	}
 	if o == nil {
 		o = &observed{method: ex.Method, path: path, statuses: map[int]int{}, bodies: map[int]any{}}
 		l.seen[key] = o

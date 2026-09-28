@@ -3,7 +3,9 @@ package proxy
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +67,10 @@ func (r *Recorder) Record(ex Exchange) {
 	ex.Request = bodyValue(ex.RequestBody, r.raw)
 	ex.Response = bodyValue(ex.ResponseBody, r.raw)
 	if !r.raw {
+		ex.Query = redactQuery(ex.Query)
+		if isForm(ex.ReqHeader) {
+			ex.Request = formValue(ex.RequestBody)
+		}
 		ex.ReqHeader = redactHeaders(ex.ReqHeader)
 		ex.ResHeader = redactHeaders(ex.ResHeader)
 	}
@@ -189,4 +195,40 @@ func maskFields(value any) any {
 		return out
 	}
 	return value
+}
+
+// redactQuery masks query parameters whose names say they are credentials
+// (?api_key=, ?token=, ?password=). A query that does not parse is dropped
+// whole rather than stored with a secret in it.
+func redactQuery(q string) string {
+	if q == "" {
+		return ""
+	}
+	vals, err := url.ParseQuery(q)
+	if err != nil {
+		return redacted
+	}
+	for name := range vals {
+		if isSensitiveName(name) {
+			vals[name] = []string{redacted}
+		}
+	}
+	return vals.Encode()
+}
+
+func isForm(h http.Header) bool {
+	ct, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
+	return ct == "application/x-www-form-urlencoded"
+}
+
+// formValue records a form body with sensitive fields masked, as a string.
+func formValue(body []byte) json.RawMessage {
+	if len(body) == 0 {
+		return nil
+	}
+	out, err := json.Marshal(redactQuery(string(body)))
+	if err != nil {
+		return nil
+	}
+	return out
 }

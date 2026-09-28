@@ -98,7 +98,12 @@ type Proxy struct {
 	mu       sync.Mutex
 	findings map[string]*Finding
 	requests int
+	dropped  int
 }
+
+// maxFindings bounds the distinct findings a proxy keeps. Scanner traffic
+// hits endless distinct paths, and a long-running proxy must not grow with it.
+const maxFindings = 1000
 
 // New builds a proxy for doc that forwards to opts.Target.
 func New(doc *core.Document, opts Options) (*Proxy, error) {
@@ -242,6 +247,11 @@ func (p *Proxy) report(opts Options, f Finding, requestPath string) {
 		p.mu.Unlock()
 		return
 	}
+	if len(p.findings) >= maxFindings {
+		p.dropped++
+		p.mu.Unlock()
+		return
+	}
 	f.Count = 1
 	f.First = requestPath
 	p.findings[key] = &f
@@ -252,6 +262,14 @@ func (p *Proxy) report(opts Options, f Finding, requestPath string) {
 	if opts.OnFinding != nil {
 		opts.OnFinding(f)
 	}
+}
+
+// Dropped is how many new findings were not kept because the proxy already
+// held maxFindings distinct ones.
+func (p *Proxy) Dropped() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.dropped
 }
 
 // Findings returns what has been seen, most frequent first. The order is total,
