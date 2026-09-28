@@ -16,6 +16,7 @@ package conform
 import (
 	_ "embed"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -51,7 +52,18 @@ type Schema struct {
 //
 // components resolves $ref; it may be nil when the schema has none.
 func Check(components map[string]*Schema, s *Schema, value any, path string) []string {
+	return check(components, s, value, path, nil)
+}
+
+// check is Check with the schemas already applied to this same value through
+// allOf. allOf keeps the value and the path, so a cycle through it (A allOf
+// A) would otherwise recurse until the stack overflows — fatal, and beyond
+// recover.
+func check(components map[string]*Schema, s *Schema, value any, path string, applied map[*Schema]bool) []string {
 	s = Deref(components, s)
+	if s != nil && applied[s] {
+		return nil
+	}
 	if s == nil || value == nil {
 		// A null where a value was documented is worth reporting, but only when
 		// the document actually said something about the shape.
@@ -79,7 +91,7 @@ func Check(components map[string]*Schema, s *Schema, value any, path string) []s
 		}
 		var out []string
 		for i, item := range items {
-			out = append(out, Check(components, s.Items, item, fmt.Sprintf("%s[%d]", path, i))...)
+			out = append(out, check(components, s.Items, item, fmt.Sprintf("%s[%d]", path, i), nil)...)
 		}
 		return out
 	case "object", "":
@@ -98,11 +110,15 @@ func Check(components map[string]*Schema, s *Schema, value any, path string) []s
 		}
 		for name, prop := range s.Properties {
 			if v, present := obj[name]; present {
-				out = append(out, Check(components, prop, v, path+"."+name)...)
+				out = append(out, check(components, prop, v, path+"."+name, nil)...)
 			}
 		}
+		next := map[*Schema]bool{s: true}
+		for k := range applied {
+			next[k] = true
+		}
 		for _, part := range s.AllOf {
-			out = append(out, Check(components, part, value, path)...)
+			out = append(out, check(components, part, value, path, next)...)
 		}
 		return out
 	case "string":
@@ -110,8 +126,12 @@ func Check(components map[string]*Schema, s *Schema, value any, path string) []s
 			return []string{fmt.Sprintf("%s: documented as a string, got %s", path, KindOf(value))}
 		}
 	case "integer", "number":
-		if _, ok := value.(float64); !ok {
+		f, ok := value.(float64)
+		if !ok {
 			return []string{fmt.Sprintf("%s: documented as a %s, got %s", path, s.Type, KindOf(value))}
+		}
+		if s.Type == "integer" && f != math.Trunc(f) {
+			return []string{fmt.Sprintf("%s: documented as an integer, got %v", path, f)}
 		}
 	case "boolean":
 		if _, ok := value.(bool); !ok {
@@ -145,7 +165,7 @@ func Undocumented(components map[string]*Schema, s *Schema, value any, path stri
 		if len(s.Properties) == 0 && len(s.AllOf) == 0 {
 			return nil // nothing was documented, so nothing is missing from it
 		}
-		known := documentedProperties(components, s)
+		known := documentedProperties(components, s, map[*Schema]bool{})
 		var out []string
 		for name := range v {
 			if known[name] == nil {
@@ -159,13 +179,17 @@ func Undocumented(components map[string]*Schema, s *Schema, value any, path stri
 	return nil
 }
 
-func documentedProperties(components map[string]*Schema, s *Schema) map[string]*Schema {
+func documentedProperties(components map[string]*Schema, s *Schema, seen map[*Schema]bool) map[string]*Schema {
 	out := map[string]*Schema{}
+	if s == nil || seen[s] {
+		return out
+	}
+	seen[s] = true
 	for name, prop := range s.Properties {
 		out[name] = prop
 	}
 	for _, part := range s.AllOf {
-		for name, prop := range documentedProperties(components, Deref(components, part)) {
+		for name, prop := range documentedProperties(components, Deref(components, part), seen) {
 			out[name] = prop
 		}
 	}
