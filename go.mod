@@ -3,7 +3,7 @@ module github.com/bakhod1r/spector
 go 1.26.6
 
 require (
-	github.com/bakhod1r/oneenv v1.1.0
+	github.com/bakhod1r/oneenv v1.10.2
 	github.com/bakhod1r/synth v1.7.0
 	github.com/emicklei/proto v1.14.3
 	github.com/fullstorydev/grpcurl v1.9.3
