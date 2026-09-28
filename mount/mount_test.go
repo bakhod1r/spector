@@ -128,7 +128,9 @@ var probes = map[string]string{
 // Every endpoint the console fetches must be routed. One missing would surface
 // only as a broken pane in the browser.
 func TestEveryEndpointIsReachable(t *testing.T) {
-	forEach(t, spector.Config{}, func(t *testing.T, serve serveFunc) {
+	// Routing is what is under test; the gRPC endpoints' loopback-only gate
+	// would otherwise 404 the probe (httptest peers are not loopback).
+	forEach(t, spector.Config{AllowRemoteGRPC: true}, func(t *testing.T, serve serveFunc) {
 		for _, e := range endpoints {
 			status, _, _ := serve(t, e.method, "/docs"+e.path+probes[e.path])
 			if status == http.StatusNotFound {
@@ -249,6 +251,18 @@ func TestGatedWithKey(t *testing.T) {
 	forEach(t, spector.Config{AccessKey: "k"}, func(t *testing.T, serve serveFunc) {
 		if status, _, _ := serve(t, http.MethodGet, "/docs/?key=k"); status != http.StatusOK {
 			t.Errorf("status = %d, want 200", status)
+		}
+	})
+}
+
+// The console's Mock button posts to <base>/mock/<documented path>. Routers
+// that register endpoints by name (gin, echo) must route that subtree too, or
+// the button answers the router's own 404.
+func TestMockRouteIsReachable(t *testing.T) {
+	forEach(t, spector.Config{}, func(t *testing.T, serve serveFunc) {
+		_, header, _ := serve(t, http.MethodGet, "/docs/mock/anything")
+		if ct := header.Get("Content-Type"); !strings.Contains(ct, "json") {
+			t.Errorf("GET /docs/mock/anything: Content-Type %q, want the mock's JSON (route not mounted?)", ct)
 		}
 	})
 }

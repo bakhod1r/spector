@@ -335,7 +335,10 @@ func TestHandlerEmptyGrpcAndGraphqlStillJSON(t *testing.T) {
 }
 
 func TestHandlerGrpcInvokeRejectsGET(t *testing.T) {
-	w := get(t, handlerFor(t), "/docs/grpc/invoke")
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/docs/grpc/invoke", nil)
+	req.RemoteAddr = "127.0.0.1:1234" // the console's own machine
+	handlerFor(t).ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want 405", w.Code)
 	}
@@ -345,6 +348,7 @@ func TestHandlerGrpcInvokeRejectsBadJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke", strings.NewReader("{not json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1234" // the console's own machine
 	handlerFor(t).ServeHTTP(w, req)
 
 	var body map[string]string
@@ -363,6 +367,7 @@ func TestHandlerGrpcInvokeUnreachableTarget(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke",
 		strings.NewReader(`{"target":"127.0.0.1:1","symbol":"demo.v1.Echo/Say","data":"{}"}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1234" // the console's own machine
 	handlerFor(t).ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadGateway {

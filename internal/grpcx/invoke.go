@@ -27,8 +27,15 @@ func dialCreds(req Request) credentials.TransportCredentials {
 	return insecure.NewCredentials()
 }
 
+// maxTimeout caps what a request may ask for: the call holds a connection
+// and a goroutine for its whole length, and a huge value also overflowed.
+const maxTimeout = 5 * time.Minute
+
 func timeoutOf(req Request) time.Duration {
 	if req.TimeoutSec > 0 {
+		if req.TimeoutSec >= int(maxTimeout/time.Second) {
+			return maxTimeout
+		}
 		return time.Duration(req.TimeoutSec) * time.Second
 	}
 	return 15 * time.Second

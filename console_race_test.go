@@ -57,6 +57,7 @@ func TestGrpcInvokeRefusesCrossSiteRequests(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke", strings.NewReader(body))
 			req.Header.Set("Content-Type", c.ctype)
+			req.RemoteAddr = "127.0.0.1:1234"
 			if c.origin != "" {
 				req.Header.Set("Origin", c.origin)
 			}
@@ -74,6 +75,7 @@ func TestGrpcInvokeBadBodyIs400(t *testing.T) {
 	h := Handler(Config{Dir: dir})
 	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke", strings.NewReader(`{not json`))
 	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1234" // the console's own machine
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {

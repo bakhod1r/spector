@@ -53,10 +53,16 @@ func (h *wsHandler) OnReceiveTrailers(st *status.Status, _ metadata.MD) {
 	h.send(outFrame{Type: "status", Code: st.Code().String(), Message: st.Message()})
 }
 
+// maxFrame bounds one WebSocket frame from the console.
+const maxFrame = 1 << 20
+
 // Stream drives one RPC over a WebSocket connection. It expects an init frame
 // carrying the Request, then send/halfClose/cancel frames.
 func Stream(protoDir string, conn *websocket.Conn) error {
 	defer conn.Close()
+	// Frames are request messages typed into the console; a megabyte is far
+	// more than that, and without a limit one frame could exhaust memory.
+	conn.SetReadLimit(maxFrame)
 
 	// First frame must be init.
 	var initFrame inFrame

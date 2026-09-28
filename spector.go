@@ -9,7 +9,9 @@ import (
 	"hash/fnv"
 	iofs "io/fs"
 	"mime"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,6 +113,12 @@ type Config struct {
 	// same access as anyone else, and the console can invoke your gRPC methods,
 	// so treat it as a deployment secret rather than a login.
 	AccessKey string
+
+	// AllowRemoteGRPC lets a caller on another machine use the console's live
+	// gRPC endpoints without an AccessKey. Those endpoints make the server
+	// dial whatever host the request names, so by default, with no key, they
+	// answer only a loopback caller. Set AccessKey instead where you can.
+	AllowRemoteGRPC bool
 
 	// Mock mounts the documented API on the console's own origin: a request to
 	// a documented path is answered with a shaped mock body instead of falling
@@ -1417,8 +1425,12 @@ func Handler(cfg Config) http.Handler {
 		// unauthenticated caller can reach internal addresses, cloud metadata
 		// services and closed ports through it. Production says this deployment
 		// is exposed, so there they exist only behind an access key.
-		if cfg.Production && cfg.AccessKey == "" &&
-			(endpoint(r.URL.Path, "grpc/stream") || endpoint(r.URL.Path, "grpc/invoke")) {
+		//
+		// Without a key they answer only a caller on this machine, unless the
+		// operator opted in; in Production they need the key regardless.
+		if cfg.AccessKey == "" &&
+			(endpoint(r.URL.Path, "grpc/stream") || endpoint(r.URL.Path, "grpc/invoke")) &&
+			(cfg.Production || (!cfg.AllowRemoteGRPC && !loopbackPeer(r))) {
 			http.Error(w, "not available", http.StatusNotFound)
 			return
 		}
@@ -1554,4 +1566,14 @@ func Handler(cfg Config) http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(page)
 	})
+}
+
+// loopbackPeer reports whether the request's direct peer is this machine.
+func loopbackPeer(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	a, err := netip.ParseAddr(host)
+	return err == nil && a.Unmap().IsLoopback()
 }

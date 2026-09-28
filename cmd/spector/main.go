@@ -702,6 +702,9 @@ type fileConfig struct {
 	// AccessKey gates the console. It is read here so one file describes the
 	// whole deployment, but it has no effect on the document the CLI writes.
 	AccessKey string `json:"accessKey" yaml:"accessKey"`
+	// AllowRemoteGRPC opens the console's live gRPC endpoints to callers on
+	// other machines without an access key. Off, they answer loopback only.
+	AllowRemoteGRPC bool `json:"allowRemoteGrpc" yaml:"allowRemoteGrpc"`
 	// Production hides the scanned source from the document and console. A
 	// passed -prod flag still wins over the file.
 	Production bool `json:"production" yaml:"production"`
@@ -787,6 +790,7 @@ func applyConfigFile(cfg *spector.Config, fs *flag.FlagSet, path, dir string) er
 	cfg.Security = fc.Security
 	cfg.BasePath = fc.BasePath
 	cfg.AccessKey = fc.AccessKey
+	cfg.AllowRemoteGRPC = fc.AllowRemoteGRPC
 	cfg.Production = fc.Production
 	cfg.Routes = fc.Routes
 	return nil

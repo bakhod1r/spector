@@ -50,6 +50,7 @@ func TestHandlerGrpcInvokeSucceeds(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1234" // the console's own machine
 	h.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
