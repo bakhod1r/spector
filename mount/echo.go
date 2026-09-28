@@ -27,4 +27,6 @@ func Echo(e *echo.Echo, cfg spector.Config) {
 			e.GET(base+ep.path, wrapped)
 		}
 	}
+	// The Mock button sends any method to <base>/mock/<documented path>.
+	e.Any(base+"/mock/*", wrapped)
 }

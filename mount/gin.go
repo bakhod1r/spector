@@ -28,4 +28,6 @@ func Gin(r gin.IRouter, cfg spector.Config) {
 			r.GET(base+e.path, wrapped)
 		}
 	}
+	// The Mock button sends any method to <base>/mock/<documented path>.
+	r.Any(base+"/mock/*path", wrapped)
 }

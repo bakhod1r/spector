@@ -501,4 +501,6 @@ func (b *builder) walk(schema *core.Schema) {
 	for _, s := range schema.AllOf {
 		b.walk(s)
 	}
+	// A map value (map[string]User) is reached only through here.
+	b.walk(schema.AdditionalProperties)
 }
