@@ -313,6 +313,11 @@ type capture struct {
 	wroteHeader bool
 }
 
+// Unwrap exposes the client's writer to http.NewResponseController, which is
+// how httputil.ReverseProxy reaches Hijack for a 101 upgrade. Without it every
+// WebSocket through the proxy failed.
+func (c *capture) Unwrap() http.ResponseWriter { return c.ResponseWriter }
+
 func (c *capture) WriteHeader(status int) {
 	if c.wroteHeader {
 		return

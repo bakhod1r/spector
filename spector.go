@@ -397,7 +397,20 @@ func MockHandler(doc *Document, opts MockOptions) http.Handler {
 
 // ServeMock runs the mock on addr until the process stops.
 func ServeMock(addr string, doc *Document, opts MockOptions) error {
-	return http.ListenAndServe(addr, MockHandler(doc, opts))
+	return newServer(addr, MockHandler(doc, opts)).ListenAndServe()
+}
+
+// newServer is an http.Server with header and idle timeouts, so a client that
+// opens connections and trickles headers (slowloris) cannot hold them open
+// forever. There is no write timeout: the console streams gRPC over a
+// WebSocket and a long response is legitimate.
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 }
 
 // ServeConsole runs the interactive console on addr until the process stops.
@@ -406,7 +419,7 @@ func ServeMock(addr string, doc *Document, opts MockOptions) error {
 // cfg lazily on the first request (see Handler), so a scan error surfaces as a
 // 500 on that request rather than preventing the server from starting.
 func ServeConsole(addr string, cfg Config) error {
-	return http.ListenAndServe(addr, Handler(cfg))
+	return newServer(addr, Handler(cfg)).ListenAndServe()
 }
 
 // ProxyOptions configures the traffic-verifying proxy.
@@ -516,6 +529,12 @@ func baselineDoc(cfg Config, opts EvolveOptions) (*Document, error) {
 // checked out, so the working tree, the index, and any uncommitted work are
 // untouched — the comparison has no side effects on the repository it reads.
 func revisionDoc(cfg Config, rev string) (*Document, error) {
+	// The revision becomes a git argument. One that starts with "-" is an
+	// option ("--output=/path" makes git archive write a file anywhere), and
+	// no ref name starts with one.
+	if rev == "" || strings.HasPrefix(rev, "-") {
+		return nil, fmt.Errorf("invalid revision %q", rev)
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, fmt.Errorf("git is required to compare against a revision, and it was not found on PATH")
 	}

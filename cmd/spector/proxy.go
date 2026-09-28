@@ -83,7 +83,7 @@ func runProxy(doc *spector.Document, cfg proxyConfig, stdout, stderr io.Writer) 
 		return fail(err)
 	}
 
-	server := &http.Server{Addr: cfg.addr, Handler: p.Handler()}
+	server := &http.Server{Addr: cfg.addr, Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
 	// A signal ends the run cleanly, which is the normal way to stop a proxy —
 	// so it is not an error, and the summary and reports are written on the way
