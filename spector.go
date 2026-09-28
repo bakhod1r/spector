@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"hash/fnv"
 	iofs "io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -974,7 +975,12 @@ func applyDeclared(doc *core.Document, cfg Config) {
 		return
 	}
 
-	doc.Components.SecuritySchemes = map[string]*core.SecurityScheme{}
+	// Merge rather than replace: schemes inferred from middleware are already
+	// here and operations reference them by name. A declared scheme of the
+	// same name wins, since it describes the scheme exactly.
+	if doc.Components.SecuritySchemes == nil {
+		doc.Components.SecuritySchemes = map[string]*core.SecurityScheme{}
+	}
 	names := make([]string, 0, len(cfg.Security))
 	for name := range cfg.Security {
 		names = append(names, name)
@@ -1226,61 +1232,71 @@ func fingerprint(dir string) string {
 // request. A variable so tests do not have to sleep.
 var consoleRecheck = time.Second
 
-func Handler(cfg Config) http.Handler {
-	var (
-		doc  *core.Document
-		gdoc *core.GrpcDoc
-		qdoc *core.GraphqlDoc
-		err  error
-		gerr error
-		qerr error
-	)
-	var mockHandler http.Handler
+// consoleState is one build of everything the console serves. A build is
+// never modified after it is made: a rescan makes a new one and swaps the
+// pointer, so a request keeps serving the build it started with while another
+// request triggers the next.
+type consoleState struct {
+	doc  *core.Document
+	gdoc *core.GrpcDoc
+	qdoc *core.GraphqlDoc
+	err  error
+	gerr error
+	qerr error
+
+	mockHandler http.Handler
 	// consoleMock answers the console's own mock route. It exists whatever
 	// cfg.Mock says: the console's Mock button is a switch a reader flips while
 	// reading, and requiring a restart with -serve-mock to make it work would
 	// make it a switch that usually does nothing.
-	var consoleMock http.Handler
+	consoleMock http.Handler
+}
+
+func Handler(cfg Config) http.Handler {
 	var (
 		mu    sync.Mutex
-		built bool
+		state *consoleState
 		// checked and stamp throttle the rescan: the tree is fingerprinted at
 		// most once a second, and rebuilt only when that fingerprint moves.
 		checked time.Time
 		stamp   string
 	)
-	build := func() {
-		doc, err = Generate(cfg)
-		gdoc, gerr = GenerateGrpc(cfg)
-		qdoc, qerr = GenerateGraphql(cfg)
-		mockHandler, consoleMock = nil, nil
-		if err == nil {
-			consoleMock = MockHandler(doc, MockOptions{})
+	build := func() *consoleState {
+		st := &consoleState{}
+		st.doc, st.err = Generate(cfg)
+		st.gdoc, st.gerr = GenerateGrpc(cfg)
+		st.qdoc, st.qerr = GenerateGraphql(cfg)
+		if st.err == nil {
+			st.consoleMock = MockHandler(st.doc, MockOptions{})
 			if cfg.Mock {
-				mockHandler = consoleMock
+				st.mockHandler = st.consoleMock
 			}
 		}
+		return st
 	}
 	// ensure keeps the console showing the code as it is now. A once.Do would
 	// be wrong twice over for a tool that reads source: an edit would not show
 	// until a restart, and a scan that failed on a half-written file would keep
 	// answering 500 long after the file was fixed.
 	scanDir := cfg.withDefaults().Dir
-	ensure := func() {
+	ensure := func() *consoleState {
 		mu.Lock()
 		defer mu.Unlock()
 		now := time.Now()
-		if built && err == nil && now.Sub(checked) < consoleRecheck {
-			return
+		// A failed build is rechecked on the same throttle as a good one:
+		// otherwise every request while the tree is broken fingerprints the
+		// whole tree under the lock and the console serialises.
+		if state != nil && now.Sub(checked) < consoleRecheck {
+			return state
 		}
 		cur := fingerprint(scanDir)
 		checked = now
-		if built && err == nil && cur == stamp {
-			return
+		if state != nil && state.err == nil && cur == stamp {
+			return state
 		}
 		stamp = cur
-		built = true
-		build()
+		state = build()
+		return state
 	}
 
 	// consolePath reports whether a request is for the console page (or its own
@@ -1374,7 +1390,8 @@ func Handler(cfg Config) http.Handler {
 			})
 		}
 
-		ensure()
+		st := ensure()
+		doc, err := st.doc, st.err
 		// The gRPC endpoints make the server open a connection to a host the
 		// request names. That is a useful console button on a developer's
 		// machine and a server-side request forgery anywhere else: an
@@ -1399,8 +1416,21 @@ func Handler(cfg Config) http.Handler {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)
 				return
 			}
+			// A cross-site page can send a text/plain POST with no preflight,
+			// and this endpoint dials whatever host the body names. Requiring
+			// JSON forces a preflight the console never answers, and a
+			// foreign Origin is refused outright, as the stream endpoint does.
+			if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct != "application/json" {
+				http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+				return
+			}
+			if o := r.Header.Get("Origin"); o != "" && !sameOrigin(o, r.Host) {
+				http.Error(w, "cross-origin request refused", http.StatusForbidden)
+				return
+			}
 			var req grpcx.Request
-			if derr := json.NewDecoder(r.Body).Decode(&req); derr != nil {
+			if derr := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); derr != nil {
+				w.WriteHeader(http.StatusBadRequest)
 				writeJSON(w, map[string]string{"error": derr.Error()})
 				return
 			}
@@ -1434,19 +1464,19 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if endpoint(r.URL.Path, "grpc.json") {
-			if gerr != nil || gdoc == nil {
+			if st.gerr != nil || st.gdoc == nil {
 				writeJSON(w, core.NewGrpcDoc())
 				return
 			}
-			writeJSON(w, gdoc)
+			writeJSON(w, st.gdoc)
 			return
 		}
 		if endpoint(r.URL.Path, "graphql.json") {
-			if qerr != nil || qdoc == nil {
+			if st.qerr != nil || st.qdoc == nil {
 				writeJSON(w, core.NewGraphqlDoc())
 				return
 			}
-			writeJSON(w, qdoc)
+			writeJSON(w, st.qdoc)
 			return
 		}
 		if err != nil {
@@ -1483,7 +1513,7 @@ func Handler(cfg Config) http.Handler {
 		// documented one; the mock is handed a copy of the request wearing it,
 		// because the caller's request is not ours to rewrite.
 		if p, ok := mockPath(r.URL.Path); ok {
-			if consoleMock == nil {
+			if st.consoleMock == nil {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				writeJSON(w, map[string]string{"error": "spector: the mock has no document to answer from"})
 				return
@@ -1492,14 +1522,14 @@ func Handler(cfg Config) http.Handler {
 			u := *r.URL
 			u.Path = p
 			mr.URL = &u
-			consoleMock.ServeHTTP(w, mr)
+			st.consoleMock.ServeHTTP(w, mr)
 			return
 		}
 		// In mock mode, anything that is not the console page is a call to the
 		// documented API: answer it from the mock so the console's Send returns
 		// a real body on the same origin.
-		if mockHandler != nil && !consolePath(r.URL.Path) {
-			mockHandler.ServeHTTP(w, r)
+		if st.mockHandler != nil && !consolePath(r.URL.Path) {
+			st.mockHandler.ServeHTTP(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

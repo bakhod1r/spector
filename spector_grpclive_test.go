@@ -48,7 +48,9 @@ func TestHandlerGrpcInvokeSucceeds(t *testing.T) {
 
 	body := `{"target":"` + target + `","symbol":"shop.v1.UserService/GetUser","data":"{\"id\":7}"}`
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke", strings.NewReader(body)))
+	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())

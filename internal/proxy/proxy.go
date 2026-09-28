@@ -348,17 +348,22 @@ func (c *capture) Flush() {
 // schema check needs and far less than a file download.
 const maxBody = 1 << 20
 
-// drain reads a request body and puts it back, so the handler downstream still
-// receives it.
+// drain reads up to maxBody of a request body for inspection and puts the
+// body back whole, so the handler downstream receives every byte: what was
+// read first, then the rest still unread on the original body.
 func drain(r *http.Request) []byte {
-	if r.Body == nil {
+	if r.Body == nil || r.Body == http.NoBody {
 		return nil
 	}
 	data, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
+	orig := r.Body
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(data), orig), orig}
 	if err != nil {
 		return nil
 	}
-	r.Body = io.NopCloser(bytes.NewReader(data))
 	return data
 }
 

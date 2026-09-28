@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"fmt"
+	"html"
 	"strings"
 
 	"github.com/bakhod1r/spector/internal/core"
@@ -167,7 +168,7 @@ func writeCSharpMethod(b *strings.Builder, op operation) {
 
 	b.WriteString("\n")
 	if op.Summary != "" {
-		fmt.Fprintf(b, "    /// <summary>%s</summary>\n", op.Summary)
+		fmt.Fprintf(b, "    /// <summary>%s</summary>\n", html.EscapeString(op.Summary))
 	}
 	if op.Deprecated {
 		fmt.Fprintf(b, "    [Obsolete(\"the API marks this operation deprecated\")]\n")

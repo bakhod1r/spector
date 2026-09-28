@@ -80,6 +80,7 @@ func TestProductionKeepsGrpcInvokeBehindKey(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke?key=s3cret",
 		strings.NewReader(`{"target":"127.0.0.1:1","symbol":"a/B","data":"{}"}`))
+	req.Header.Set("Content-Type", "application/json")
 	h.ServeHTTP(w, req)
 	if w.Code == http.StatusNotFound {
 		t.Errorf("status = 404 with the key; want the endpoint to exist")

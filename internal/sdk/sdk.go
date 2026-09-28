@@ -107,7 +107,7 @@ func flatten(doc *core.Document) []operation {
 			o := operation{
 				Method:     strings.ToUpper(method),
 				Path:       path,
-				Summary:    op.Summary,
+				Summary:    commentText(op.Summary),
 				Deprecated: op.Deprecated,
 			}
 			for _, p := range op.Parameters {
@@ -231,4 +231,32 @@ func sortedSchemaNames(doc *core.Document) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// commentText makes a summary safe to write inside a comment in every target
+// language. The summary can come from a document the user did not write
+// (-openapi), so it is folded onto one line — a newline would end a line
+// comment and put the rest into code — and the sequences that close a comment
+// in one of the languages are broken up: "*/" (Go, TS, JS, Java, Kotlin) and
+// "?>" (which ends a PHP line comment). Control characters, including the
+// U+2028/U+2029 JavaScript line terminators, are dropped.
+func commentText(s string) string {
+	var b strings.Builder
+	space := false
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t' || r == '\u2028' || r == '\u2029':
+			space = true
+			continue
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
+			continue
+		}
+		if space && b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		space = false
+		b.WriteRune(r)
+	}
+	out := strings.ReplaceAll(b.String(), "*/", "* /")
+	return strings.ReplaceAll(out, "?>", "? >")
 }

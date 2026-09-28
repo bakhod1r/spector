@@ -344,6 +344,7 @@ func TestHandlerGrpcInvokeRejectsGET(t *testing.T) {
 func TestHandlerGrpcInvokeRejectsBadJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke", strings.NewReader("{not json"))
+	req.Header.Set("Content-Type", "application/json")
 	handlerFor(t).ServeHTTP(w, req)
 
 	var body map[string]string
@@ -361,6 +362,7 @@ func TestHandlerGrpcInvokeUnreachableTarget(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/docs/grpc/invoke",
 		strings.NewReader(`{"target":"127.0.0.1:1","symbol":"demo.v1.Echo/Say","data":"{}"}`))
+	req.Header.Set("Content-Type", "application/json")
 	handlerFor(t).ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadGateway {
