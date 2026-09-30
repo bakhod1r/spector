@@ -120,6 +120,9 @@ func TestCreateUser(t *testing.T) {
 	if u.ID == 0 {
 		t.Error("no id assigned")
 	}
+	// users is package state; drop Grace so -count=N and the filter
+	// tests see only the seed users.
+	t.Cleanup(func() { delete(users, u.ID) })
 }
 
 func TestCreateUserRejectsMalformedJSON(t *testing.T) {
